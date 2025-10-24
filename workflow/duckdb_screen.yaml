@@ -1,0 +1,95 @@
+# DuckDB 财务筛选工作流
+pipeline:
+  name: "DuckDB财务基线筛选管道"
+  orchestration:
+    granularity: node
+    soft_fail: true
+    task_runner: "sequential"
+    max_workers: 4
+    retry_count: 1
+    retry_delay: 10
+    timeout: 1200
+
+  steps:
+    - name: "Load_Financial_Data"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["load_file"]
+      parameters:
+        path: "data/polars/5yd_final_industry.csv"
+      outputs:
+        parameters:
+          - name: Raw_Data
+
+    # ========== ROIC 趋势分析(三位一体过滤) ==========
+    - name: "Analyze_ROIC_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'roic'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: ROIC_Trend_Result
+
+    - name: "Score_ROIC_Quality"
+      component: "business_engine"
+      engine: "scoring"
+      method: ["score_quality"]
+      parameters:
+        data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+        report_path: "data/filter_middle/roic_quality_report.txt"
+      outputs:
+        parameters:
+          - name: ROIC_Quality_Result
+
+    - name: "store_ROIC_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/roic_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+
+    - name: "store_ROIC_Quality"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/roic_quality_scored.csv"
+        format: "csv"
+        data: "steps.Score_ROIC_Quality.outputs.parameters.ROIC_Quality_Result"
+
+    # ========== ROIIC 趋势分析 (增量资本回报) ==========
+    - name: "Analyze_ROIIC_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'roiic'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: ROIIC_Trend_Result
+
+    - name: "store_ROIIC_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/roiic_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"

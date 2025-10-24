@@ -1,0 +1,42 @@
+# Equity Analysis - 解耦引擎架构依赖清单
+# Decoupled Engine Architecture Requirements
+
+# ===== 核心数据处理引擎 =====
+polars>=0.20.0              # 高性能数据处理引擎
+pandas>=2.0.0               # 传统数据分析引擎
+duckdb>=0.9.0               # 列式分析数据库
+
+# ===== 数据验证与配置 =====
+pydantic>=2.0.0             # 数据验证和设置管理
+pyyaml>=6.0                 # YAML配置文件解析
+
+# ===== 日志系统 =====
+loguru>=0.7.0               # 优雅的日志库
+
+# ===== 金融数据源 =====
+akshare>=1.0.0              # 金融数据接口
+tushare>=1.4.0              # Tushare Pro数据接口
+
+# ===== 网络请求 =====
+requests>=2.28.0            # HTTP请求库
+
+# ===== 数据科学与分析 =====
+numpy>=1.24.0               # 数值计算基础库
+scipy>=1.11.0               # 统计学与回归分析
+
+# ===== 系统工具 =====
+typing-extensions>=4.5.0    # 类型提示扩展
+psutil>=5.9.0               # 系统资源监控
+
+# ===== 开发和测试 (可选) =====
+pytest>=7.0.0              # 测试框架
+pytest-asyncio>=0.21.0     # 异步测试支持
+openpyxl>=3.1.0             # Excel文件读写
+
+# ===== 最新架构依赖 =====
+python-dateutil>=2.8.0     # 日期时间处理
+typer>=0.9.0                # CLI工具框架
+rich>=13.0.0                # 终端美化输出
+sqlalchemy>=2.0.0           # SQL工具包
+prefect>=3.4.0             # 工作流编排 (Hybrid 架构必需)
+kedro>=1.0.0               # 数据管道构建 (由 Prefect 包装执行)

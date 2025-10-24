@@ -1,0 +1,69 @@
+# Tushare财务指标数据测试
+pipeline:
+  name: "Tushare财务指标数据清理管道"
+  orchestration:
+    granularity: node  # 节点级任务模式
+    soft_fail: true
+    task_runner: "concurrent"   # 并行执行：sequential | concurrent
+    max_workers: 10               # 并发任务最大工作线程数
+    retry_count: 2               # Flow级重试次数
+    retry_delay: 20              # Flow级重试间隔秒
+    timeout: 1800                # Flow级超时
+
+  # 定义业务步骤
+  steps:
+    - name: "Read_CSV_Data"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "load_data"
+      parameters:
+        file_path: "data/5yd_base"
+        pattern: "*_fina_indicator.csv"
+        exclude: "final_concat.*"
+        # 多列排序示例：按 ts_code 升序，再按 end_date 升序；也可写 "ts_code,end_date" 或 ["ts_code", "end_date"]
+        # 降序写法示例："-ts_code,end_date:desc" 或 sort_desc: [True, False]
+        sort_by: "ts_code,end_date"
+        deduplicate: true
+        dedup_keys: ["ts_code", "end_date"]
+        dedup_strategy: "first"
+      outputs:
+        parameters:
+          - name: Read_CSV_Data  # 返回 DataFrame, 注册为可被后续引用
+
+    # - name: "Polars_Data"
+    #   component: "data_engine"
+    #   engine: "polars"
+    #   method:
+    #     - "filter_mapped_columns"
+    #   parameters:
+    #     include_all_mapped: true
+    #     show_schema: true  # 显示字段的中文含义说明
+    #     data: "steps.Read_CSV_Data.outputs.parameters.Read_CSV_Data"
+    #   outputs:
+    #     parameters:
+    #       - name: Polars_Data
+
+    - name: "Filter_Industry"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "filter_industry"
+      parameters:
+        #financial_path: "data/polars/final_concat.parquet"
+        data: "steps.Read_CSV_Data.outputs.parameters.Read_CSV_Data"
+        basic_info_path: "data/polars/stack_basic.csv"
+        strict: true
+      outputs:
+        parameters:
+          - name: Filter_Industry
+
+    - name: "store_data"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/polars/5yd_final_industry.csv"
+        format: "csv"
+        data: "steps.Filter_Industry.outputs.parameters.Filter_Industry"

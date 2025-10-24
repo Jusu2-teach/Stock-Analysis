@@ -1,0 +1,55 @@
+# Tushare财务指标数据测试
+pipeline:
+  name: "Tushare财务指标数据清理管道"
+  orchestration:
+    granularity: node  # 节点级任务模式
+    soft_fail: true
+    task_runner: "concurrent"   # 并行执行：sequential | concurrent
+    max_workers: 10               # 并发任务最大工作线程数
+    retry_count: 2               # Flow级重试次数
+    retry_delay: 20              # Flow级重试间隔秒
+    timeout: 1800                # Flow级超时
+
+  # 定义业务步骤
+  steps:
+    # 获取tushare原始数据
+    - name: "catch_data"
+      component: "datahub"
+      engine: "tushare"
+      method:
+        - "stock_basic"
+      outputs:
+        parameters:
+          - name: catch_data  # 返回 DataFrame, 注册为可被后续引用
+
+    - name: "存储财务指标数据"
+      component: "datahub"
+      engine: "tushare"
+      method:
+        - "store"
+      parameters:
+        data: "steps.catch_data.outputs.parameters.catch_data"
+        path: "data/polars/stack_basic.parquet"
+      depends_on: ["catch_data"]
+
+    # 注释掉数据获取步骤，使用已有数据
+    # - name: "catch_data"
+    #   component: "datahub"
+    #   engine: "tushare"
+    #   method:
+    #     - "fina_indicator_vip"
+    #   parameters:
+    #     period: "20151231"  # 2024年年报
+    #     # ts_code: "000001.SZ"  # 可选：指定特定股票，不指定则获取全部
+    #   outputs:
+    #     parameters:
+    #       - name: catch_data  # 返回 DataFrame, 注册为可被后续引用
+
+    # - name: "存储财务指标数据"
+    #   component: "datahub"
+    #   engine: "tushare"
+    #   method:
+    #     - "store"
+    #   parameters:
+    #     path: "data/20151231_fina_indicator.csv"
+    #   depends_on: ["获取财务指标数据"]
