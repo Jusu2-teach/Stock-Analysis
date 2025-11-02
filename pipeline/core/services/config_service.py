@@ -1,58 +1,48 @@
-"""ConfigService: 负责配置加载/解析/拓扑/节点构建 (从 ExecuteManager 拆分)
+"""ConfigService: 负责配置加载/解析/拓扑/节点构建
 
-保持无状态核心算法 + 轻状态引用 (通过 manager 访问共享数据结构)，便于后续单元测试。
+重构为依赖 PipelineContext 而非 ExecuteManager，降低耦合。
 """
 from __future__ import annotations
-from typing import Any, Dict, List, Set, TYPE_CHECKING
+from typing import Any, Dict, List, Set
 from collections import defaultdict, deque
 import yaml
 import hashlib
 import re
-from dataclasses import dataclass, field
+import logging
 
+from ..context import PipelineContext, StepSpec, StepOutput
 
-@dataclass
-class StepOutput:
-    name: str
-    source_key: str | None = None
-    global_key: str | None = None
-
-
-@dataclass
-class StepSpec:
-    name: str
-    component: str
-    engine: str
-    methods: List[str]
-    raw_parameters: Dict[str, Any] = field(default_factory=dict)
-    outputs: List[StepOutput] = field(default_factory=list)
-
-
-if TYPE_CHECKING:  # 避免运行时循环引用
-    from pipeline.core.execute_manager import ExecuteManager
 
 class ConfigService:
+    """配置服务（解耦版本）
+
+    通过 PipelineContext 访问共享状态，而非直接依赖 ExecuteManager。
+    """
+
+    __slots__ = ('ctx', 'logger')
+
     REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
 
-    def __init__(self, manager: 'ExecuteManager'):
-        self.mgr = manager
-        self.logger = manager.logger
+    def __init__(self, context: PipelineContext, logger: logging.Logger | None = None):
+        self.ctx = context
+        self.logger = logger or logging.getLogger(__name__)
 
     # ---- public orchestrated methods ----
     def load_config(self, path: str) -> Dict[str, Any]:
+        """加载并解析配置文件"""
         with open(path, 'r', encoding='utf-8') as f:
-            self.mgr.config = yaml.safe_load(f)
+            self.ctx.config = yaml.safe_load(f)
         self.logger.info(f"🧾 已加载配置: {path}")
         self._parse_steps()
         self._compute_execution_order()
-        return self.mgr.config
+        return self.ctx.config
 
-    # ---- internal pieces (ported) ----
+    # ---- internal pieces ----
     def _parse_steps(self):
-        mgr = self.mgr
-        mgr.steps.clear()
-        pipeline = mgr.config.get('pipeline', {}) if mgr.config else {}
-        raw_steps = pipeline.get('steps') or mgr.config.get('steps')
+        """解析配置中的步骤定义"""
+        self.ctx.steps.clear()
+        pipeline = self.ctx.config.get('pipeline', {}) if self.ctx.config else {}
+        raw_steps = pipeline.get('steps') or self.ctx.config.get('steps')
         if not isinstance(raw_steps, list):
             raise ValueError("配置中 pipeline.steps 必须为列表")
         # 预扫描引用
@@ -124,16 +114,17 @@ class ConfigService:
                 raw_parameters=self._mark_references(params),
                 outputs=outputs
             )
-            mgr.steps[name] = spec
+            self.ctx.steps[name] = spec
 
     def _mark_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """标记参数中的引用"""
         def walk(val):
             if isinstance(val, str):
                 m = self.REF_PATTERN.match(val.strip())
                 if m:
                     ref = val.strip()
                     ghash = self._hash_reference(ref)
-                    self.mgr.reference_to_hash.setdefault(ref, ghash)
+                    self.ctx.reference_to_hash.setdefault(ref, ghash)
                     return {"__ref__": ref, "hash": ghash}
                 return val
             if isinstance(val, list):
@@ -144,22 +135,25 @@ class ConfigService:
         return {k: walk(v) for k, v in params.items()}
 
     def _hash_reference(self, ref: str) -> str:
+        """生成引用的哈希值"""
         return hashlib.md5(ref.encode('utf-8')).hexdigest()[:16]
 
     def _compute_execution_order(self):
-        mgr = self.mgr
+        """计算步骤执行顺序（拓扑排序）"""
         deps: Dict[str, Set[str]] = defaultdict(set)
-        for name, spec in mgr.steps.items():
+        for name, spec in self.ctx.steps.items():
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
                     m = self.REF_PATTERN.match(ref)
                     if m:
                         deps[name].add(m.group('step'))
-        in_degree = {name: 0 for name in mgr.steps}
+
+        in_degree = {name: 0 for name in self.ctx.steps}
         for name, pres in deps.items():
             for pre in pres:
                 if pre in in_degree:
                     in_degree[name] += 1
+
         queue = deque([n for n, d in in_degree.items() if d == 0])
         order: List[str] = []
         while queue:
@@ -170,50 +164,61 @@ class ConfigService:
                     in_degree[succ] -= 1
                     if in_degree[succ] == 0:
                         queue.append(succ)
-        if len(order) != len(mgr.steps):
-            missing = set(mgr.steps) - set(order)
+
+        if len(order) != len(self.ctx.steps):
+            missing = set(self.ctx.steps) - set(order)
             raise ValueError(f"检测到循环或缺失依赖: {missing}")
-        mgr.execution_order = order
+
+        self.ctx.execution_order = order
         self.logger.info(f"🧭 执行顺序: {order}")
 
     def _extract_refs(self, val) -> List[str]:
+        """递归提取引用标记"""
         refs = []
-        if isinstance(val, dict) and '__ref__' in val:
-            refs.append(val['__ref__'])
+        if isinstance(val, dict):
+            if '__ref__' in val:
+                refs.append(val['__ref__'])
+            else:
+                for v in val.values():
+                    refs.extend(self._extract_refs(v))
         elif isinstance(val, list):
             for v in val:
-                refs.extend(self._extract_refs(v))
-        elif isinstance(val, dict):  # second dict case retained for symmetry
-            for v in val.values():
                 refs.extend(self._extract_refs(v))
         return refs
 
     def build_auto_nodes(self) -> Dict[str, Any]:
-        mgr = self.mgr
+        """构建自动节点配置"""
         auto_nodes = []
-        for step_name in mgr.execution_order:
-            spec = mgr.steps[step_name]
+
+        for step_name in self.ctx.execution_order:
+            spec = self.ctx.steps[step_name]
             resolved_params = dict(spec.raw_parameters)
-            # 已移除自动输入推断，保持原始参数
-            node_outs = [mgr._dataset_name(spec.name, o.name) for o in spec.outputs]
-            # 模式5推进: 为每个方法创建 MethodHandle（engine=auto -> 延迟；显式 engine -> fixed）
+            node_outs = [self.ctx.dataset_name(spec.name, o.name) for o in spec.outputs]
+
+            # 使用工厂方法创建 MethodHandle（避免循环导入）
             engine_val = spec.engine
             handles = []
-            from pipeline.core.handles.method_handle import MethodHandle  # 局部导入避免循环
+
             if not spec.methods:
                 raise ValueError(f"step 未提供 methods: {spec.name}")
+
+            # 导入工厂方法（接口层，无循环依赖）
+            from pipeline.core.protocols import create_method_handle
+
             for mname in spec.methods:
                 if engine_val == 'auto':
-                    h = MethodHandle(spec.component, mname, prefer='auto')
+                    h = create_method_handle(spec.component, mname, prefer='auto')
                     handles.append(h)
                 else:
                     # 显式引擎 -> 固定
-                    h = MethodHandle(spec.component, mname, prefer='fixed', fixed_engine=engine_val)
+                    h = create_method_handle(spec.component, mname, prefer='fixed', fixed_engine=engine_val)
                     handles.append(h)
-            # node-level engine 字段: 保持兼容（非 auto 时写原值；auto 用占位符）
+
+            # node-level engine 字段
             if engine_val == 'auto':
                 engine_val = '<handle:auto>'
                 self.logger.info(f"🧷 延迟绑定引擎(多方法支持): step={spec.name} methods={spec.methods}")
+
             node_cfg = {
                 'name': spec.name,
                 'component': spec.component,
@@ -223,23 +228,31 @@ class ConfigService:
                 'outputs': node_outs,
                 'primary_output': node_outs[0] if node_outs else None
             }
+
             if handles:
                 node_cfg['handles'] = handles
+
+            # 收集输入依赖
             inputs = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
                     m = self.REF_PATTERN.match(ref)
                     if m:
-                        ds_in = mgr._dataset_name(m.group('step'), m.group('param'))
+                        ds_in = self.ctx.dataset_name(m.group('step'), m.group('param'))
                         if ds_in not in inputs:
                             inputs.append(ds_in)
             if inputs:
                 node_cfg['inputs'] = inputs
+
             auto_nodes.append(node_cfg)
-        mgr.config.setdefault('pipeline', {}).setdefault('kedro_pipelines', {})['__auto__'] = {
+
+        # 更新配置
+        self.ctx.config.setdefault('pipeline', {}).setdefault('kedro_pipelines', {})['__auto__'] = {
             'description': 'auto-generated from steps list',
             'nodes': auto_nodes
         }
+
         return {'nodes': auto_nodes}
 
-__all__ = ["ConfigService", "StepSpec", "StepOutput"]
+
+__all__ = ["ConfigService"]

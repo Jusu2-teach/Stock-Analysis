@@ -169,7 +169,7 @@ class PrefectEngine:
                 # 获取Kedro管道 & pipeline 定义
                 pipeline = self.kedro_engine.pipelines[pipeline_name]
                 catalog = self.kedro_engine.data_catalog
-                pipeline_def = self.execute_manager.config.get('pipeline', {}).get('kedro_pipelines', {}).get(pipeline_name, {})
+                pipeline_def = self.execute_manager.ctx.config.get('pipeline', {}).get('kedro_pipelines', {}).get(pipeline_name, {})
                 node_defs = pipeline_def.get('nodes', []) or []
                 declared_inputs = set()
                 declared_outputs = set()
@@ -677,7 +677,7 @@ class PrefectEngine:
             执行结果
         """
         try:
-            config = self.execute_manager.config
+            config = self.execute_manager.ctx.config
 
             self.logger.info("🚀 启动Prefect-Kedro混合执行")
 
@@ -766,7 +766,7 @@ class PrefectEngine:
 
             # 显示管道结构
             if self.kedro_engine:
-                config = self.execute_manager.config
+                config = self.execute_manager.ctx.config
                 pipeline_configs = self.kedro_engine.parse_pipeline_config(config)
                 execution_order = self.kedro_engine.get_pipeline_execution_order(pipeline_configs)
 

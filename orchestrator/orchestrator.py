@@ -39,9 +39,15 @@ class AStockOrchestrator:
 
     # --------- execution facades ---------
     def execute(self, component_type: str, method_name: str, *args, **kwargs) -> Any:
+        """执行方法（支持策略选择和引擎偏好）
+
+        特殊参数（从 kwargs 中提取）：
+            _strategy: 选择策略 ('default' | 'prefer_latest' | 'prefer_stable' | 'highest_priority')
+            _preferred_engine: 优先使用的引擎类型
+        """
         strategy = kwargs.pop('_strategy', 'default')
-        prefer = kwargs.pop('_engine_type', None) or kwargs.pop('_prefer_engine', None)
-        return self.registry.execute(component_type, method_name, *args, strategy=strategy, preferred_engine=prefer, **kwargs)
+        preferred_engine = kwargs.pop('_preferred_engine', None)
+        return self.registry.execute(component_type, method_name, *args, strategy=strategy, preferred_engine=preferred_engine, **kwargs)
 
     def execute_with_engine(self, component_type: str, engine_type: str, method_name: str, *args, **kwargs) -> Any:
         return self.registry.execute_with_engine(component_type, engine_type, method_name, *args, **kwargs)

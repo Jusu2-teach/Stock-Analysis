@@ -121,16 +121,16 @@ class AStockCLI:
             # ==========================================
 
             # Step filtering: only/exclude/resume must happen before building auto nodes
-            steps_list = self.manager.config.get('pipeline', {}).get('steps', [])
+            steps_list = self.manager.ctx.config.get('pipeline', {}).get('steps', [])
             if getattr(args, 'only', None):
                 only_set = {s.strip() for s in args.only.split(',') if s.strip()}
                 steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') in only_set]
-                self.manager.config['pipeline']['steps'] = steps_list
+                self.manager.ctx.config['pipeline']['steps'] = steps_list
                 print(f"[CFG] Applied --only -> {len(steps_list)} steps")
             if getattr(args, 'exclude', None):
                 exclude_set = {s.strip() for s in args.exclude.split(',') if s.strip()}
                 steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') not in exclude_set]
-                self.manager.config['pipeline']['steps'] = steps_list
+                self.manager.ctx.config['pipeline']['steps'] = steps_list
                 print(f"[CFG] Applied --exclude -> {len(steps_list)} steps")
             if getattr(args, 'resume', None):
                 fail_dir = Path('.pipeline') / 'failures'
@@ -162,7 +162,7 @@ class AStockCLI:
                                         include.add(p)
                                         changed = True
                     steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') in include]
-                    self.manager.config['pipeline']['steps'] = steps_list
+                    self.manager.ctx.config['pipeline']['steps'] = steps_list
                     print(f"[CFG] Resume(dep-aware) -> failed={failed} total_included={len(steps_list)}")
                 else:
                     print('[CFG] Resume: no failure snapshots found – running all steps.')
@@ -173,7 +173,7 @@ class AStockCLI:
             # Override granularity if provided
             if getattr(args, 'granularity', None):
                 try:
-                    pipe_block = self.manager.config.setdefault('pipeline', {})
+                    pipe_block = self.manager.ctx.config.setdefault('pipeline', {})
                     orch_block = pipe_block.setdefault('orchestration', {})
                     orch_block['granularity'] = args.granularity
                     print(f"[CFG] Override orchestration.granularity={args.granularity}")

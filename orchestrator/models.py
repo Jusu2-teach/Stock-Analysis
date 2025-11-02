@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional, Tuple
 
 
@@ -17,7 +17,7 @@ class MethodRegistration:
     tags:           业务/技术标签
     signature:      函数签名字符串(缓存，避免反射热点)
     module_path:    源模块路径
-    callable:       真实可调用对象 (lazy 模式下可为 None, 需要 loader 绑定)
+    callable:       真实可调用对象
     """
 
     component_type: str
@@ -31,10 +31,8 @@ class MethodRegistration:
     priority: int = 0
     signature: str = ""
     module_path: str = ""
-    registered_at: datetime = field(default_factory=datetime.utcnow)
+    registered_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def full_key(self) -> str:
         return f"{self.component_type}::{self.engine_type}::{self.engine_name}"
-
-    # （已移除旧兼容别名 callable_method）

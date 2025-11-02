@@ -35,7 +35,7 @@ class KedroEngine:
         # Persistent cache control
         self.enable_persist = True
         try:
-            opts = (execute_manager.config or {}).get('pipeline', {}).get('__options__', {}) or {}
+            opts = (execute_manager.ctx.config or {}).get('pipeline', {}).get('__options__', {}) or {}
             cache_opts = opts.get('cache', {}) if isinstance(opts.get('cache'), dict) else {}
             # 默认开启，显式 persist=False 可关闭
             self.enable_persist = cache_opts.get('persist', True)
@@ -98,7 +98,7 @@ class KedroEngine:
             return None
         # ---------- I/O manager 构建 ----------
         step_name = node_config.get('name') or node_config.get('id') or (node_config.get('outputs') or ['unknown_step'])[0]
-        io_manager = IOManager(self.global_catalog, self.logger, strict_pipeline=bool(self.execute_manager.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.config else False)
+        io_manager = IOManager(self.global_catalog, self.logger, strict_pipeline=bool(self.execute_manager.ctx.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.ctx.config else False)
         io_cfg = io_manager.build_config(node_config)
 
         def execute_node(*args, **kwargs):
@@ -220,7 +220,7 @@ class KedroEngine:
                 ttl_expired = False
                 try:
                     step_cfg_search = None
-                    for s in (self.execute_manager.config.get('pipeline', {}).get('steps') or []):
+                    for s in (self.execute_manager.ctx.config.get('pipeline', {}).get('steps') or []):
                         if isinstance(s, dict) and s.get('name') == step_name:
                             step_cfg_search = s
                             break
@@ -345,7 +345,7 @@ class KedroEngine:
                     except Exception:
                         setattr(resolved_inputs, 'sig_param_names', [])
                     schema_meta = getattr(callable_obj, '__schema__', None)
-                    strict_pipeline = bool(self.execute_manager.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.config else False
+                    strict_pipeline = bool(self.execute_manager.ctx.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.ctx.config else False
                     strict_schema = bool(schema_meta.get('strict')) if isinstance(schema_meta, dict) else False
                     effective_strict = strict_pipeline or strict_schema
                     call_params = build_call_params(callable_obj, result, base_params)

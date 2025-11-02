@@ -1,60 +1,89 @@
-"""ResultAssembler: 封装输出注册与最终结果字典构建逻辑"""
+"""ResultAssembler: 封装输出注册与最终结果字典构建逻辑
+
+重构为依赖 PipelineContext，降低耦合。
+"""
 from __future__ import annotations
-from typing import Any, Dict, TYPE_CHECKING
-if TYPE_CHECKING:  # 避免循环导入
-    from pipeline.core.execute_manager import ExecuteManager
+from typing import Any, Dict
+import logging
+import hashlib
+
+from ..context import PipelineContext
+
 
 class ResultAssembler:
-    def __init__(self, manager: 'ExecuteManager'):
-        self.mgr = manager
-        self.logger = manager.logger
+    """结果组装服务（解耦版本）
+
+    通过 PipelineContext 访问共享状态，而非直接依赖 ExecuteManager。
+    """
+
+    __slots__ = ('ctx', 'logger')
+
+    def __init__(self, context: PipelineContext, logger: logging.Logger | None = None):
+        self.ctx = context
+        self.logger = logger or logging.getLogger(__name__)
 
     def register_catalog(self, catalog: Dict[str, Any]):
+        """注册 catalog 输出到上下文
+
+        Args:
+            catalog: Kedro catalog 输出字典（key=dataset_name, value=数据对象）
+        """
         for ds_name, obj in catalog.items():
             if '__' in ds_name:
                 step, out = ds_name.split('__', 1)
                 ref = f"steps.{step}.outputs.parameters.{out}"
-                h = self.mgr._hash_reference(ref)
-                if h not in self.mgr.global_registry:
-                    self.mgr.reference_to_hash.setdefault(ref, h)
-                    self.mgr.reference_values[ref] = obj
-                    self.mgr.global_registry[h] = obj
+                h = self._hash_reference(ref)
+                if h not in self.ctx.global_registry:
+                    self.ctx.reference_to_hash.setdefault(ref, h)
+                    self.ctx.reference_values[ref] = obj
+                    self.ctx.global_registry[h] = obj
 
-    def assemble(self, raw: Dict[str, Any], started_at: str) -> Dict[str, Any]:
-        raw.setdefault('mode', 'prefect')
-        raw.setdefault('executed_steps', self.mgr.execution_order)
-        raw['started_at'] = started_at
+    @staticmethod
+    def _hash_reference(ref: str) -> str:
+        """生成引用的哈希值"""
+        return hashlib.sha256(ref.encode()).hexdigest()[:16]
+
+    def assemble(
+        self,
+        raw: Dict[str, Any],
+        started_at: str,
+        kedro_engine: Any = None,
+        cache_stats: Dict[str, Any] | None = None
+    ) -> Dict[str, Any]:
+        """组装执行结果
+
+        Args:
+            raw: 原始执行结果
+            started_at: 开始时间
+            kedro_engine: Kedro 引擎实例（可选，用于获取 lineage/metrics）
+            cache_stats: 缓存统计（可选）
+
+        Returns:
+            完整的执行结果字典
+        """
         from datetime import datetime
+
+        raw.setdefault('mode', 'prefect')
+        raw.setdefault('executed_steps', self.ctx.execution_order)
+        raw['started_at'] = started_at
         raw['finished_at'] = datetime.now().isoformat()
         raw['outputs'] = {
-            'by_reference': list(self.mgr.reference_values.keys()),
-            'registry_size': len(self.mgr.global_registry)
+            'by_reference': list(self.ctx.reference_values.keys()),
+            'registry_size': len(self.ctx.global_registry)
         }
+
         # 附加: 缓存统计（如果可用）
-        if hasattr(self.mgr, '_cache_stats_service'):
-            try:
-                stats = self.mgr._cache_stats_service.summary()
-                if stats:
-                    raw.setdefault('metrics', {})['cache'] = stats
-            except Exception:
-                pass
+        if cache_stats:
+            raw.setdefault('metrics', {})['cache'] = cache_stats
+
         # 附加: lineage & node_metrics (供外部分析)
-        kedro_engine = None
-        try:
-            from pipeline.engines.prefect_engine import PrefectEngine  # lazy import
-            # FlowExecutor 未保留 PrefectEngine 引用，这里只尝试在执行后 manager 上查找
-        except Exception:
-            pass
-        for attr in ('kedro_engine',):
-            if hasattr(self.mgr, attr):
-                kedro_engine = getattr(self.mgr, attr)
-        # PrefectEngine 情况下由其内部注入 (当前未直接暴露)；保留 future 接口
         if kedro_engine:
             try:
                 raw.setdefault('lineage', kedro_engine.lineage)
                 raw.setdefault('node_metrics', kedro_engine.node_metrics)
             except Exception:
                 pass
+
         return raw
 
 __all__ = ["ResultAssembler"]

@@ -44,8 +44,16 @@ class EngineOverrideStrategy:
         raise RegistryMethodNotFound(f"engine {self.engine_type} not found among candidates")
 
 
-def resolve_strategy(name: str, *, preferred: Optional[str] = None):
-    name = name or 'default'
+def resolve_strategy(name: str = 'default', *, preferred_engine: Optional[str] = None):
+    """解析选择策略
+
+    Args:
+        name: 策略名称
+        preferred_engine: 优先引擎（仅当 name='engine_override' 时使用）
+
+    Returns:
+        SelectionStrategy: 策略实例
+    """
     if name == 'default':
         return DefaultStrategy()
     if name == 'prefer_latest':
@@ -55,7 +63,7 @@ def resolve_strategy(name: str, *, preferred: Optional[str] = None):
     if name == 'highest_priority':
         return HighestPriorityStrategy()
     if name == 'engine_override':
-        if not preferred:
-            raise RegistryStrategyError('engine_override requires preferred engine')
-        return EngineOverrideStrategy(preferred)
+        if not preferred_engine:
+            raise RegistryStrategyError('engine_override requires preferred_engine parameter')
+        return EngineOverrideStrategy(preferred_engine)
     raise RegistryStrategyError(f'unknown strategy: {name}')

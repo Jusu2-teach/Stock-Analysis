@@ -1,5 +1,6 @@
 from __future__ import annotations
 import inspect
+import threading
 from typing import Any, Dict, Optional
 from ..models import MethodRegistration
 from ..errors import (
@@ -15,9 +16,17 @@ from .loader import ModuleLoader
 
 
 class Registry:
-    """精简协调器：管理方法注册 / 策略选择 / 执行 / 统计 / 发现加载"""
+    """方法注册中心（线程安全的单例）
 
-    _instance: 'Registry' | None = None
+    职责：
+    - 方法注册与索引管理
+    - 策略选择与执行
+    - 指标收集与钩子管理
+    - 自动发现与模块加载
+    """
+
+    _instance: Optional['Registry'] = None
+    _lock = threading.Lock()
 
     def __init__(self, config: Optional[RegistryConfig] = None):
         self.config = config or RegistryConfig()
@@ -27,12 +36,22 @@ class Registry:
         self.hooks = HookBus()
         self.loader = ModuleLoader(self.index, self.config)
 
-    # ---------------- Singleton -----------------
+    # ---------------- Singleton (Thread-Safe) -----------------
     @classmethod
     def get(cls) -> 'Registry':
+        """获取单例实例（线程安全）"""
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._lock:
+                # Double-check locking
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """重置单例（主要用于测试）"""
+        with cls._lock:
+            cls._instance = None
 
     # ---------------- Registration --------------
     def register(self, reg: MethodRegistration) -> bool:
@@ -61,10 +80,18 @@ class Registry:
 
     # ---------------- Selection -----------------
     def select(self, component_type: str, method_name: str, *, strategy: str = 'default', preferred_engine: Optional[str] = None) -> MethodRegistration:
+        """选择最佳方法实现
+
+        Args:
+            component_type: 组件类型
+            method_name: 方法名
+            strategy: 选择策略
+            preferred_engine: 优先引擎（当strategy='engine_override'时必需）
+        """
         candidates = self.index.method_candidates(component_type, method_name)
         if not candidates:
             raise RegistryMethodNotFound(f'{component_type}.{method_name} not found')
-        strat = resolve_strategy(strategy, preferred=preferred_engine)
+        strat = resolve_strategy(strategy, preferred_engine=preferred_engine)
         return strat.select(candidates)
 
     # ---------------- Execute -------------------
