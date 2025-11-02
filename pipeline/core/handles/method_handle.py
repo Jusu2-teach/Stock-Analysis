@@ -93,29 +93,6 @@ class MethodHandle:
             # 缓存有效
             if self._is_cache_valid():
                 return self._resolved_engine  # type: ignore
-            # 预测快速路径 (可通过 env 关闭)
-            fast_enabled = os.getenv('ASTOCK_HANDLE_PREDICT_FASTPATH', '1') == '1'
-            if fast_enabled and self._last_prediction:
-                pred = self._last_prediction
-                # 允许使用最近预测 (5 秒内 或 小于 TTL) 作为快速解析
-                pred_ts = pred.get('ts') or 0
-                if (time.time() - pred_ts) < min(self._ttl, 5):
-                    self._resolved_engine = pred.get('engine_type')
-                    self._resolved_at = time.time()
-                    self._explain = {
-                        'component': self.component,
-                        'method': self.method,
-                        'strategy': 'predicted_fastpath',
-                        'candidates': pred.get('candidates', []),  # 预测时可附带
-                        'selected': {
-                            'engine_type': pred.get('engine_type'),
-                            'version': pred.get('version'),
-                            'priority': pred.get('priority'),
-                            'reason': 'fastpath'
-                        },
-                        'ts': self._resolved_at
-                    }
-                    return self._resolved_engine  # type: ignore
             # 正常解析
             self._perform_resolution(orchestrator)
             if self._resolved_engine is None:

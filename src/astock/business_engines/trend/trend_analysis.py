@@ -7,6 +7,10 @@
 2. 线性回归斜率计算 (保留作为对照)
 3. 加权平均计算
 4. 趋势评估与淘汰规则
+
+注意：本模块正在重构中。
+- 新代码：使用 services/ 下的服务类
+- 旧代码：保留用于向后兼容，将逐步删除
 """
 
 import logging
@@ -29,207 +33,47 @@ from .trend_models import (
 from .config import (
     get_cyclical_thresholds,
     get_decline_thresholds,
+    TrendAnalysisConfig,
+    get_default_config,
+)
+
+# 导入新的服务（重构后的实现）
+from .services import (
+    DataQualityChecker,
+    OutlierDetectorFactory,
+    calculate_log_trend_slope as _new_calculate_log_trend_slope,
+    detect_cyclical_pattern as _new_detect_cyclical_pattern,
 )
 
 logger = logging.getLogger(__name__)
 
-# ========== 配置参数 ==========
+# ========== 配置管理 ==========
+# 使用统一的配置类管理所有参数
+_config = get_default_config()
 
-# 加权方案: 线性递减(最早→最新)
-WEIGHTS = np.array([0.1, 0.15, 0.2, 0.25, 0.3])
 
-# Log斜率阈值 (v2.0 新增)
-LOG_SEVERE_DECLINE_SLOPE = -0.30    # 严重衰退: 每年-30% (5年从10%→2.4%)
-LOG_MILD_DECLINE_SLOPE = -0.15      # 轻度衰退: 每年-15% (5年从10%→4.4%)
-
-# Log计算安全值
-LOG_SAFE_MIN_VALUE = 0.01           # 最小值截断(防止log(0)或log(负数))
-MEAN_NEAR_ZERO_EPS = 1e-6          # 均值接近0时的稳健判定阈值
-# 鲁棒斜率计算置信区间水平 (Theil–Sen)
-ROBUST_ALPHA = 0.95
-
-# 异常值检测阈值 (v2.3 调整)
-Z_SCORE_THRESHOLD = 3.0              # Z-score阈值：超过3.0倍标准差视为异常
-IQR_MULTIPLIER = 1.5                 # IQR倍数：用于箱线图异常检测
-MAD_Z_THRESHOLD = 3.5                # Modified Z-score阈值（默认3.5）
-MAD_NORMALIZER = 0.6745              # 将MAD缩放为类标准差的系数
-
-# 默认异常检测方法
-DEFAULT_OUTLIER_METHOD = 'mad'
-
-# 置信度因子权重 (v2.2.1 调整)
-FACTOR_WEIGHTS = {
-    'industry': 0.25,
-    'peak_to_trough': 0.20,
-    'low_r_squared': 0.20,
-    'wave_pattern': 0.15,
-    'high_cv': 0.15,
-    'middle_peak': 0.05,
-}
-
-# 周期性置信度饱和倍率 (v2.2.2 使用对数缩放)
-PEAK_TO_TROUGH_SATURATION_MULTIPLIER = 9.0  # 峰谷比达到阈值的9倍即记满分
-CV_SATURATION_MULTIPLIER = 4.0             # CV达到阈值的4倍即记满分
-
+# ========== 辅助函数 ==========
 
 def _ensure_window(values: List[float], window: int = 5) -> np.ndarray:
-    """Return the latest ``window`` values as a NumPy array.
-
-    Accepts any sequence length >= ``window`` and trims older observations.
-    """
-
-    arr = np.asarray(values, dtype=float)
-    if arr.size < window:
-        raise ValueError(f"需要至少{window}期数据, 实际仅{arr.size}期")
-    if arr.size > window:
-        arr = arr[-window:]
-    return arr
-
-
-def _classify_quality(values_array: np.ndarray) -> Tuple[str, bool, int, bool, int]:
-    """Assess data quality based on亏损/贴近0的期数."""
-
-    loss_mask = values_array < 0
-    near_zero_mask = (values_array >= 0) & (values_array < 1.0)
-
-    loss_count = int(np.sum(loss_mask))
-    near_zero_count = int(np.sum(near_zero_mask))
-
-    if loss_count >= 2 or near_zero_count >= 2:
-        quality = "poor"
-    elif loss_count == 1:
-        quality = "has_loss"
-    elif near_zero_count == 1:
-        quality = "has_near_zero"
-    else:
-        quality = "good"
-
-    return (
-        quality,
-        bool(loss_count > 0),
-        loss_count,
-        bool(near_zero_count > 0),
-        near_zero_count,
-    )
+    """确保数据窗口大小，内部使用"""
+    checker = DataQualityChecker(_config)
+    return checker.ensure_window(values, window)
 
 
 def detect_outliers(
-    values: List[float], method: str = DEFAULT_OUTLIER_METHOD
+    values: List[float], method: str = "mad"
 ) -> OutlierDetectionResult:
-    """
-    检测异常值 (v2.1新增 - 数据质量检查)
-
-    核心目的: 识别会计调整、一次性收益等导致的异常数据点
-
-    方法:
-    1. Z-Score: |value - mean| > 阈值 * std
-    2. IQR: value < Q1 - multiplier*IQR 或 value > Q3 + multiplier*IQR
-    3. MAD: Modified Z-Score > 阈值 (对重尾分布更鲁棒)
+    """检测异常值
 
     Args:
-        values: 5年数据列表 [年份1, 年份2, 年份3, 年份4, 年份5]
+        values: 5年数据列表
         method: 检测方法 ('mad', 'z_score' 或 'iqr')
 
     Returns:
-        `OutlierDetectionResult` 数据类，包含异常检测指标、清洗结果与风险提示。
+        OutlierDetectionResult 数据类
     """
-    values_array = _ensure_window(values)
-    outlier_indices = []
-    outlier_values = []
-    method_normalized = (method or DEFAULT_OUTLIER_METHOD).lower()
-    threshold_value: Optional[float] = None
-
-    if method_normalized == "z_score":
-        mean_val = np.mean(values_array)
-        std_val = np.std(values_array, ddof=1)
-        if std_val > 0:
-            threshold_value = Z_SCORE_THRESHOLD
-            z_scores = np.abs((values_array - mean_val) / std_val)
-            outlier_mask = z_scores > threshold_value
-            outlier_indices = np.where(outlier_mask)[0].tolist()
-            outlier_values = values_array[outlier_mask].tolist()
-        else:
-            pass
-    elif method_normalized == "iqr":
-        q1 = np.percentile(values_array, 25)
-        q3 = np.percentile(values_array, 75)
-        iqr = q3 - q1
-        threshold_value = IQR_MULTIPLIER
-        lower_bound = q1 - threshold_value * iqr
-        upper_bound = q3 + threshold_value * iqr
-        outlier_mask = (values_array < lower_bound) | (values_array > upper_bound)
-        outlier_indices = np.where(outlier_mask)[0].tolist()
-        outlier_values = values_array[outlier_mask].tolist()
-    elif method_normalized == "mad":
-        median_val = np.median(values_array)
-        abs_deviation = np.abs(values_array - median_val)
-        mad = np.median(abs_deviation)
-        threshold_value = MAD_Z_THRESHOLD
-        if mad > 0:
-            modified_z = (MAD_NORMALIZER * abs_deviation) / mad
-            outlier_mask = modified_z > threshold_value
-            outlier_indices = np.where(outlier_mask)[0].tolist()
-            outlier_values = values_array[outlier_mask].tolist()
-        else:
-            outlier_mask = np.zeros_like(values_array, dtype=bool)
-    else:
-        raise ValueError(f"不支持的检测方法: {method}")
-
-    cleaned_values = values_array.copy()
-    if len(outlier_indices) > 0:
-        median_val = np.median(values_array)
-        for idx in outlier_indices:
-            cleaned_values[idx] = median_val
-
-    has_outliers = len(outlier_indices) > 0
-    cleaning_ratio = len(outlier_indices) / float(values_array.size)
-    cleaning_applied = has_outliers
-
-    # v2.1.2新增: 多异常值风险标记
-    outlier_count = len(outlier_indices)
-    if outlier_count >= 2:
-        data_contamination = "high"  # 高度污染：2个或以上异常值
-        risk_level = "high"
-    elif outlier_count == 1:
-        data_contamination = "low"  # 轻度污染：1个异常值
-        risk_level = "medium"
-    else:
-        data_contamination = "none"  # 无污染
-        risk_level = "low"
-
-    warnings: List[TrendWarning] = []
-    if data_contamination == "high":
-        warnings.append(
-            TrendWarning(
-                code="OUTLIER_HEAVY_CONTAMINATION",
-                level="warn",
-                message="存在多个异常值, 结果依赖中位数替换",
-                context={"count": outlier_count, "method": method_normalized},
-            )
-        )
-    elif has_outliers:
-        warnings.append(
-            TrendWarning(
-                code="OUTLIER_DETECTED",
-                level="info",
-                message="检测到异常值并使用中位数替换",
-                context={"count": outlier_count, "method": method_normalized},
-            )
-        )
-
-    return OutlierDetectionResult(
-        method=method_normalized,
-        threshold=threshold_value,
-        has_outliers=bool(has_outliers),
-        indices=outlier_indices,
-        values=outlier_values,
-        cleaned_values=cleaned_values.tolist(),
-        cleaning_ratio=cleaning_ratio,
-        cleaning_applied=cleaning_applied,
-        data_contamination=data_contamination,
-        risk_level=risk_level,
-        warnings=warnings,
-    )
+    detector = OutlierDetectorFactory.create(method, _config)
+    return detector.detect(values)
 
 
 def calculate_weighted_average(
@@ -245,7 +89,7 @@ def calculate_weighted_average(
         加权平均值
     """
     if weights is None:
-        weight_array = WEIGHTS
+        weight_array = _config.default_weights
         window = weight_array.size
     else:
         weight_array = np.asarray(weights, dtype=float)
@@ -268,231 +112,23 @@ def calculate_weighted_average(
 def calculate_log_trend_slope(
     values: List[float],
     check_outliers: bool = True,
-    outlier_method: str = DEFAULT_OUTLIER_METHOD,
+    outlier_method: str = "mad",
 ) -> LogTrendResult:
-    """
-    计算5年数据的Log斜率趋势 (基于CAGR的专业金融标准)
-
-    v2.1改进: 正确处理负值和微小正值
-    - 负值(亏损): 标记为loss_year，不参与log回归
-    - 微小正值(0-1%): 标记为near_zero，特殊处理
-    - 正常正值(>1%): 正常log回归
-    - 2025.10调整: 使用asinh双曲变换保留穿零方向且在0点连续
-
-    核心优势:
-    1. 识别基数效应: 10%→20%(翻倍) vs 50%→60%(仅20%增长)
-    2. 识别致命衰退: 10%→0%(归零) vs 30%→20%(高基数回落)
-    3. 符合金融标准: Log斜率 ≈ 连续复合年化增长率(CAGR)
-    4. 处理极端值: 更稳健,不被异常值主导
-    5. 正确区分亏损和微利
+    """计算Log斜率趋势 (基于CAGR的金融标准)
 
     Args:
-        values: 5年数据列表 [最早, ..., 最新]
-        check_outliers: 是否启用异常值检测并使用清洗后数据 (默认启用)
-    outlier_method: 异常值检测方法 ('mad', 'z_score' 或 'iqr')
+        values: 5年数据列表
+        check_outliers: 是否启用异常值检测
+        outlier_method: 异常值检测方法
 
     Returns:
-        `LogTrendResult` 数据类，统一封装趋势回归结果与元数据。
+        LogTrendResult 数据类
     """
-    window_values = _ensure_window(values)
-    years = np.arange(window_values.size)
-    values_original = window_values.astype(float)
-    values_to_use = values_original.copy()
-    outlier_result: Optional[OutlierDetectionResult] = None
-    used_cleaned = False
-
-    if check_outliers:
-        try:
-            outlier_result = detect_outliers(
-                window_values.tolist(), method=outlier_method
-            )
-            if outlier_result.has_outliers:
-                values_to_use = np.array(outlier_result.cleaned_values, dtype=float)
-                used_cleaned = bool(outlier_result.cleaning_applied)
-        except Exception as exc:  # 防御性处理，异常时退回原数据
-            logger.warning("异常值检测失败，使用原始数据: %s", exc)
-            outlier_result = None
-            values_to_use = values_original.copy()
-
-    values_array = values_to_use
-
-    # v2.1: 数据质量检查（原始数据 + 清洗后数据）
-    (
-        data_quality_original,
-        has_loss_years,
-        loss_year_count,
-        has_near_zero_years,
-        near_zero_count,
-    ) = _classify_quality(values_original)
-
-    (
-        data_quality_cleaned,
-        has_loss_years_cleaned,
-        loss_year_count_cleaned,
-        has_near_zero_years_cleaned,
-        near_zero_count_cleaned,
-    ) = _classify_quality(values_array)
-
-    # 选择作为有效数据质量的更差者，避免清洗掩盖风险
-    quality_rank = {"good": 0, "has_near_zero": 1, "has_loss": 2, "poor": 3}
-    data_quality_effective = data_quality_cleaned
-    if quality_rank[data_quality_original] > quality_rank[data_quality_effective]:
-        data_quality_effective = data_quality_original
-
-    # v2025.10: 使用asinh双曲变换平滑穿零区域
-    crosses_zero = bool(np.any(values_array < 0) and np.any(values_array > 0))
-
-    transformed_values = np.arcsinh(values_array)
-
-    log_slope, log_intercept, r_value, p_value, std_err = stats.linregress(
-        years, transformed_values
-    )
-
-    # 原始线性回归(保留作为对照)
-    linear_slope, linear_intercept, _, _, _ = stats.linregress(years, values_array)
-
-    # 鲁棒Theil–Sen斜率（防范极端值干扰）
-    robust_slope = float("nan")
-    robust_intercept = float("nan")
-    robust_ci_low = float("nan")
-    robust_ci_high = float("nan")
-    robust_ci_width = float("nan")
-    robust_gap = float("nan")
-    robust_status = "not_attempted"
-    robust_error: Optional[str] = None
-    robust_warnings: List[TrendWarning] = []
-
-    if len(values_array) >= 2:
-        robust_status = "attempted"
-        try:
-            robust_slope, robust_intercept, robust_ci_low, robust_ci_high = theilslopes(
-                transformed_values,
-                years,
-                alpha=ROBUST_ALPHA,
-            )
-            robust_ci_width = float(robust_ci_high - robust_ci_low)
-            robust_status = "ok"
-        except Exception as exc:  # theilslopes在数据重复或异常情况下可能失败
-            robust_status = "error"
-            robust_error = str(exc)
-            robust_warnings.append(
-                TrendWarning(
-                    code="ROBUST_SLOPE_FALLBACK",
-                    level="info",
-                    message="Theil–Sen 鲁棒斜率计算失败，已保留OLS结果",
-                    context={"error": str(exc)},
-                )
-            )
-    else:
-        robust_status = "insufficient_data"
-
-    if robust_status == "ok" and np.isfinite(log_slope) and np.isfinite(robust_slope):
-        robust_gap = abs(log_slope - robust_slope)
-        if robust_gap > 0.1 and (r_value**2) < 0.7:
-            robust_warnings.append(
-                TrendWarning(
-                    code="ROBUST_SLOPE_DISCREPANCY",
-                    level="info",
-                    message="鲁棒Theil–Sen斜率与OLS斜率差异较大，趋势可能受极端值影响",
-                    context={
-                        "ols_slope": float(log_slope),
-                        "robust_slope": float(robust_slope),
-                        "gap": float(robust_gap),
-                    },
-                )
-            )
-
-    # CAGR近似: exp(log_slope) - 1
-    if has_loss_years or crosses_zero or np.any(values_original <= 0):
-        cagr_approx = float("nan")
-    else:
-        period_years = len(values_array) - 1
-        if period_years > 0 and values_array[0] > 0:
-            cagr_approx = (values_array[-1] / values_array[0]) ** (
-                1.0 / period_years
-            ) - 1.0
-        else:
-            cagr_approx = float("nan")
-
-    quality_summary = DataQualitySummary(
-        original=data_quality_original,
-        cleaned=data_quality_cleaned,
-        effective=data_quality_effective,
-        has_loss_years=bool(has_loss_years),
-        loss_year_count=int(loss_year_count),
-        has_near_zero_years=bool(has_near_zero_years),
-        near_zero_count=int(near_zero_count),
-        has_loss_years_cleaned=bool(has_loss_years_cleaned),
-        loss_year_count_cleaned=int(loss_year_count_cleaned),
-        has_near_zero_years_cleaned=bool(has_near_zero_years_cleaned),
-        near_zero_count_cleaned=int(near_zero_count_cleaned),
-    )
-
-    metadata = {
-        "log_transform": "asinh",
-        "periods_used": int(len(values_array)),
-        "outlier_method": outlier_result.method
-        if outlier_result
-        else (outlier_method if check_outliers else None),
-        "outlier_threshold": outlier_result.threshold if outlier_result else None,
-        "robust_method": "theil_sen",
-        "robust_alpha": ROBUST_ALPHA,
-        "robust_status": robust_status,
-        "robust_ci_width": float(robust_ci_width)
-        if np.isfinite(robust_ci_width)
-        else None,
-        "robust_slope_gap": float(robust_gap) if np.isfinite(robust_gap) else None,
-    }
-    if robust_error:
-        metadata["robust_error"] = robust_error
-
-    warnings: List[TrendWarning] = []
-    if outlier_result:
-        warnings.extend(outlier_result.warnings)
-
-    if data_quality_effective == "poor":
-        warnings.append(
-            TrendWarning(
-                code="DATA_QUALITY_POOR",
-                level="warn",
-                message="数据质量被评估为差，趋势结果需谨慎解读",
-                context={
-                    "original": data_quality_original,
-                    "cleaned": data_quality_cleaned,
-                },
-            )
-        )
-    elif data_quality_effective in ("has_loss", "has_near_zero"):
-        warnings.append(
-            TrendWarning(
-                code="DATA_QUALITY_WEAK",
-                level="info",
-                message="存在亏损或低基数年份，趋势敏感度降低",
-                context={"effective": data_quality_effective},
-            )
-        )
-
-    if robust_warnings:
-        warnings.extend(robust_warnings)
-
-    return LogTrendResult(
-        log_slope=float(log_slope),
-        slope=float(linear_slope),
-        intercept=float(log_intercept),
-        r_squared=float(r_value**2),
-        p_value=float(p_value),
-        std_err=float(std_err),
-        cagr_approx=float(cagr_approx),
-        crosses_zero=bool(crosses_zero),
-        used_cleaned_data=bool(used_cleaned),
-        quality=quality_summary,
-        outliers=outlier_result,
-        robust_slope=float(robust_slope),
-        robust_intercept=float(robust_intercept),
-        robust_slope_ci_low=float(robust_ci_low),
-        robust_slope_ci_high=float(robust_ci_high),
-        metadata=metadata,
-        warnings=warnings,
+    return _new_calculate_log_trend_slope(
+        values=values,
+        check_outliers=check_outliers,
+        outlier_method=outlier_method,
+        config=_config,
     )
 
 
@@ -522,7 +158,7 @@ def calculate_volatility_metrics(values: List[float]) -> VolatilityResult:
     # 均值
     mean_val = np.mean(values_array)
     mean_abs = abs(mean_val)
-    mean_near_zero = mean_abs < MEAN_NEAR_ZERO_EPS
+    mean_near_zero = mean_abs < _config.mean_near_zero_eps
 
     # 变异系数(CV) = 标准差/均值 (相对波动)
     if mean_near_zero:
@@ -705,7 +341,7 @@ def detect_recent_deterioration(
     year3, year4, year5 = values_array[2], values_array[3], values_array[4]
 
     def pct_change(current: float, previous: float) -> float:
-        denominator = max(abs(previous), MEAN_NEAR_ZERO_EPS)
+        denominator = max(abs(previous), _config.mean_near_zero_eps)
         return ((current - previous) / denominator) * 100.0
 
     # 第3→4年变化
@@ -797,226 +433,19 @@ def detect_recent_deterioration(
 def detect_cyclical_pattern(
     values: List[float], industry: str = None
 ) -> CyclicalPatternResult:
-    """
-    检测周期性特征 (v2.2改进 - 行业差异化)
-
-    核心目的: 识别周期性行业企业，放宽周期底部的筛选标准
-
-    周期性判断标准（行业差异化）:
-    1. 行业属于周期性: 小金属、化工、建材等
-    2. 峰谷差异大 + 无明显趋势: max/min > threshold（行业差异）
-    3. 有"峰-谷-峰"波动模式
-    4. CV > 行业阈值
+    """检测周期性特征
 
     Args:
-        values: 5年数据列表 [年份1, 年份2, 年份3, 年份4, 年份5]
-        industry: 行业名称（可选，v2.2强化）
+        values: 5年数据列表
+        industry: 行业名称（可选）
 
     Returns:
-        `CyclicalPatternResult` 数据类，整合峰谷、波动模式与行业配置后的结论。
+        CyclicalPatternResult 数据类
     """
-    values_array = _ensure_window(values)
-
-    # 周期性行业列表
-    CYCLICAL_INDUSTRIES = [
-        "小金属",
-        "黄金",
-        "钢铁",
-        "煤炭",
-        "石油",
-        "化工",
-        "化纤",
-        "建材",
-        "水泥",
-        "玻璃",
-        "有色",
-        "铝",
-        "铜",
-        "稀土",
-        "锂",
-        "造纸",
-        "航运",
-        "港口",
-        "航空",
-        "房地产",
-    ]
-
-    # 1. 行业判断
-    industry_cyclical = False
-    if industry:
-        industry_cyclical = any(cyc_ind in industry for cyc_ind in CYCLICAL_INDUSTRIES)
-
-    # v2.2: 获取行业差异化阈值
-    if industry:
-        try:
-            thresholds = get_cyclical_thresholds(industry)
-            peak_to_trough_threshold = thresholds["peak_to_trough_ratio"]
-            trend_r_squared_max = thresholds["trend_r_squared_max"]
-            cv_threshold = thresholds["cv_min"]
-        except Exception as e:
-            logger.warning(f"获取行业周期性阈值失败（{industry}）: {e}，使用默认值")
-            peak_to_trough_threshold = 3.0
-            trend_r_squared_max = 0.7
-            cv_threshold = 0.25
-    else:
-        # 默认阈值
-        peak_to_trough_threshold = 3.0
-        trend_r_squared_max = 0.7
-        cv_threshold = 0.25
-
-    # 2. 峰谷比判断（使用绝对值确保负数同样适用）
-    abs_values = np.abs(values_array)
-    raw_max = np.max(values_array)
-    raw_min = np.min(values_array)
-
-    positive_abs = abs_values[abs_values > MEAN_NEAR_ZERO_EPS]
-    min_abs = np.min(positive_abs) if positive_abs.size else MEAN_NEAR_ZERO_EPS
-    max_abs = np.max(abs_values) if abs_values.size else 0.0
-    peak_to_trough_ratio = max_abs / min_abs if min_abs > 0 else float("inf")
-
-    # 3. 趋势性检查（v2.1新增）- 避免误判高成长
-    years = np.arange(values_array.size)
-    try:
-        _, _, r_value, _, _ = stats.linregress(years, values_array)
-        trend_r_squared = r_value**2
-    except:
-        trend_r_squared = 0.0
-
-    # 4. CV（变异系数）检查（v2.1新增）
-    mean_val = np.mean(values_array)
-    mean_abs = abs(mean_val)
-    std_val = np.std(values_array, ddof=1)
-    cv = std_val / mean_abs if mean_abs > MEAN_NEAR_ZERO_EPS else float("inf")
-
-    # 5. 波动模式检查（v2.1新增）- 检测"峰-谷-峰"或"谷-峰-谷"
-    # 计算一阶差分
-    diffs = np.diff(values_array)
-    # 检测方向变化
-    sign_changes = np.diff(np.sign(diffs))
-    direction_changes = np.sum(sign_changes != 0)
-
-    # 有2次以上方向变化 → 有波动模式
-    has_wave_pattern = direction_changes >= 2
-
-    # 6. 中间波峰判断
-    middle_values = values_array[1:4]  # 年份2,3,4
-    edge_values = [values_array[0], values_array[4]]  # 年份1,5
-    middle_max = np.max(middle_values)
-    edge_max = np.max(edge_values)
-    has_middle_peak = middle_max > edge_max * 1.2  # 中间峰值比边缘高20%以上
-
-    # 7. 当前阶段判断
-    latest_value = values_array[-1]
-    second_latest = values_array[-2]
-    latest_abs = abs(latest_value)
-    min_abs_value = np.min(abs_values) if abs_values.size else 0.0
-
-    # 判断是否在波峰/波谷（使用幅度而非符号）
-    is_at_peak = max_abs > 0 and latest_abs >= max_abs * 0.9
-    trough_baseline = max(min_abs_value, MEAN_NEAR_ZERO_EPS)
-    is_at_trough = latest_abs <= trough_baseline * 1.2
-
-    if is_at_peak:
-        current_phase = "peak"
-    elif is_at_trough:
-        current_phase = "trough"
-    elif latest_value > second_latest:
-        current_phase = "rising"
-    elif latest_value < second_latest:
-        current_phase = "falling"
-    else:
-        current_phase = "unknown"
-
-    # 8. 综合判断是否周期性（v2.2.1: 规范化置信度模型）
-    def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
-        return max(lower, min(upper, value))
-
-    # 将各因子标准化到0-1范围，避免权重相互压制
-    industry_score = 1.0 if industry_cyclical else 0.0
-
-    ratio_score_norm = 0.0
-    if peak_to_trough_threshold > 0 and peak_to_trough_ratio > peak_to_trough_threshold:
-        ratio_excess = peak_to_trough_ratio / peak_to_trough_threshold
-        saturation_base = max(PEAK_TO_TROUGH_SATURATION_MULTIPLIER, 1.0001)
-        ratio_score_norm = clamp(np.log(ratio_excess) / np.log(saturation_base))
-
-    trend_score_norm = 0.0
-    if trend_r_squared_max > 0:
-        trend_score_norm = clamp(1.0 - clamp(trend_r_squared / trend_r_squared_max))
-
-    wave_pattern_score = 1.0 if has_wave_pattern else 0.0
-
-    high_cv_score = 0.0
-    if cv_threshold > 0 and cv > cv_threshold:
-        cv_excess = cv / cv_threshold
-        cv_saturation_base = max(CV_SATURATION_MULTIPLIER, 1.0001)
-        high_cv_score = clamp(np.log(cv_excess) / np.log(cv_saturation_base))
-
-    middle_peak_score = 1.0 if has_middle_peak else 0.0
-
-    confidence_score = (
-        industry_score * FACTOR_WEIGHTS["industry"]
-        + ratio_score_norm * FACTOR_WEIGHTS["peak_to_trough"]
-        + trend_score_norm * FACTOR_WEIGHTS["low_r_squared"]
-        + wave_pattern_score * FACTOR_WEIGHTS["wave_pattern"]
-        + high_cv_score * FACTOR_WEIGHTS["high_cv"]
-        + middle_peak_score * FACTOR_WEIGHTS["middle_peak"]
-    )
-
-    cyclical_confidence = clamp(confidence_score)
-    is_cyclical = cyclical_confidence >= 0.5
-
-    confidence_factors = [
-        f"行业周期性={industry_score:.2f}×{FACTOR_WEIGHTS['industry']:.2f}",
-        f"峰谷比归一化={ratio_score_norm:.2f}×{FACTOR_WEIGHTS['peak_to_trough']:.2f}",
-        f"低R²归一化={trend_score_norm:.2f}×{FACTOR_WEIGHTS['low_r_squared']:.2f}",
-        f"波动模式={wave_pattern_score:.2f}×{FACTOR_WEIGHTS['wave_pattern']:.2f}",
-        f"高CV归一化={high_cv_score:.2f}×{FACTOR_WEIGHTS['high_cv']:.2f}",
-        f"中间波峰={middle_peak_score:.2f}×{FACTOR_WEIGHTS['middle_peak']:.2f}",
-    ]
-
-    # 排除高成长企业（v2.1关键改进）
-    # 如果R²>0.85且斜率>0，说明是稳定高成长，非周期
-    if trend_r_squared > 0.85:
-        try:
-            slope, _, _, _, _ = stats.linregress(years, values_array)
-            if slope > 0:  # 稳定上升趋势
-                is_cyclical = False
-                cyclical_confidence = 0.0
-                confidence_factors.append("高成长排除(-1.0)")
-        except:
-            pass
-
-    warnings: List[TrendWarning] = []
-    if is_cyclical:
-        warnings.append(
-            TrendWarning(
-                code="CYCICAL_PATTERN",
-                level="info",
-                message="识别到周期性特征，需结合行业阶段判断",
-                context={
-                    "phase": current_phase,
-                    "confidence": float(cyclical_confidence),
-                },
-            )
-        )
-
-    return CyclicalPatternResult(
-        is_cyclical=bool(is_cyclical),
-        peak_to_trough_ratio=float(peak_to_trough_ratio),
-        has_middle_peak=bool(has_middle_peak),
-        has_wave_pattern=bool(has_wave_pattern),
-        trend_r_squared=float(trend_r_squared),
-        cv=float(cv),
-        current_phase=current_phase,
-        industry_cyclical=bool(industry_cyclical),
-        cyclical_confidence=float(cyclical_confidence),
-        peak_to_trough_threshold=float(peak_to_trough_threshold),
-        trend_r_squared_max=float(trend_r_squared_max),
-        cv_threshold=float(cv_threshold),
-        industry=industry if industry else "default",
-        confidence_factors=confidence_factors,
-        warnings=warnings,
+    return _new_detect_cyclical_pattern(
+        values=values,
+        industry=industry,
+        config=_config,
     )
 
 

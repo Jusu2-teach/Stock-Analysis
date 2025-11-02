@@ -20,13 +20,13 @@ from typing import Union, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator import register_method
 from .duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
-from ..trend.trend_analysis import WEIGHTS
 from ..trend.config import (
     INDUSTRY_FILTER_CONFIGS,
     DEFAULT_FILTER_CONFIG,
     ROIIC_INDUSTRY_FILTER_CONFIGS,
     DEFAULT_ROIIC_FILTER_CONFIG,
-    get_industry_category
+    get_industry_category,
+    get_default_config,
 )
 from ..trend.trend_analyzer import TrendAnalyzer
 from ..trend.trend_settings import TrendAnalyzerConfig
@@ -155,7 +155,8 @@ def analyze_metric_trend(
 
     logger.info(f"分组列: {group_cols_list}")
     logger.info(f"分析指标: {metric_name}")
-    logger.info(f"加权方案: {WEIGHTS.tolist()}")
+    _trend_config = get_default_config()
+    logger.info(f"加权方案: {_trend_config.default_weights.tolist()}")
 
     metric_lower = metric_name.lower()
     default_config = DEFAULT_ROIIC_FILTER_CONFIG if metric_lower == "roiic" else DEFAULT_FILTER_CONFIG

@@ -10,15 +10,9 @@
 """
 import sys
 import os
-import re
-import yaml
-import hashlib
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
-from collections import defaultdict, deque
+from typing import Any, Dict, List, Optional
 import logging
-from datetime import datetime
 
 # 路径注入
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
@@ -48,8 +42,6 @@ class ExecuteManager:
     - 通过 PrefectEngine (内部封装 KedroEngine) 执行
     - 提供缓存/软失败/血缘/指标结果
     """
-
-    REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
 
     def __init__(self, config_path: Optional[str] = None, orchestrator: 'AStockOrchestrator' = None):
         self.logger = logging.getLogger("AStockExecuteManager")
@@ -156,10 +148,6 @@ class ExecuteManager:
         }
 
     # ------------------ 内部配置构建 ------------------
-    def _dataset_name(self, step: str, output: str) -> str:
-        """生成数据集名称（委托给 context）"""
-        return self.ctx.dataset_name(step, output)
-
     def _build_auto_kedro_config(self) -> Dict[str, Any]:
         """构建自动 Kedro 节点配置"""
         return self._config_service.build_auto_nodes()

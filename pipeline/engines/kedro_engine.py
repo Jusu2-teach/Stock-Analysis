@@ -113,7 +113,8 @@ class KedroEngine:
                 # --- 基于 KedroEngine 全局 catalog 的引用解析 ---
                 def _resolve_refs_via_catalog(obj):
                     em = self.execute_manager
-                    pattern = getattr(em, 'REF_PATTERN', None)
+                    # 使用 config_service 的 REF_PATTERN
+                    pattern = getattr(em._config_service, 'REF_PATTERN', None)
                     def walk(v):
                         if isinstance(v, dict) and '__ref__' in v:
                             ref = v['__ref__']
@@ -141,12 +142,12 @@ class KedroEngine:
                                         pass
                                     if not loaded and val is None:
                                         raise ValueError(f"catalog 中未找到数据集: {ds_name} (ref={ref})")
-                                # 注册到 ExecuteManager 引用表，保证后续通用解析可命中
+                                # 注册到 context 引用表，保证后续通用解析可命中
                                 try:
-                                    rhash = em._hash_reference(ref)
-                                    em.reference_to_hash.setdefault(ref, rhash)
-                                    em.reference_values[ref] = val
-                                    em.global_registry[rhash] = val
+                                    rhash = em._config_service._hash_reference(ref)
+                                    em.ctx.reference_to_hash.setdefault(ref, rhash)
+                                    em.ctx.reference_values[ref] = val
+                                    em.ctx.global_registry[rhash] = val
                                 except Exception:
                                     pass
                                 return val

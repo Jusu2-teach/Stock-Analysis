@@ -1,5 +1,10 @@
 """趋势配置子包：根据用途拆分行业阈值与特征定义。"""
 
+from .analysis_config import (  # noqa: F401
+    TrendAnalysisConfig,
+    get_default_config,
+    reset_default_config,
+)
 from .filters import (  # noqa: F401
     DEFAULT_FILTER_CONFIG,
     INDUSTRY_CATEGORIES,
@@ -24,6 +29,10 @@ from .characteristics import (  # noqa: F401
 )
 
 __all__ = [
+    # analysis config
+    'TrendAnalysisConfig',
+    'get_default_config',
+    'reset_default_config',
     # filters
     'INDUSTRY_FILTER_CONFIGS',
     'DEFAULT_FILTER_CONFIG',
