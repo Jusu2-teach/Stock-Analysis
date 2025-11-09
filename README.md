@@ -27,7 +27,7 @@ python pipeline/main.py engines
 
 ```bash
 # 获取2024年财务指标数据
-python pipeline/main.py run -c pipeline/configs/tushare_fina.yaml
+python pipeline/main.py run -c workflow/duckdb_screen.yaml
 ```
 
 **预期结果:**

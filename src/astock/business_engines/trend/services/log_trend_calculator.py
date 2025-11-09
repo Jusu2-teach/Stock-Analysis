@@ -403,27 +403,3 @@ class LogTrendCalculator:
             metadata=metadata,
             warnings=warnings,
         )
-
-
-# 保持向后兼容的函数接口
-def calculate_log_trend_slope(
-    values: List[float],
-    check_outliers: bool = True,
-    outlier_method: str = None,
-    config: TrendAnalysisConfig = None,
-) -> LogTrendResult:
-    """计算 Log 趋势斜率（向后兼容接口）
-
-    这是原函数的简化版本，内部使用 LogTrendCalculator 实现。
-
-    Args:
-        values: 数据列表
-        check_outliers: 是否检测异常值
-        outlier_method: 异常值检测方法
-        config: 配置对象（可选）
-
-    Returns:
-        Log 趋势结果
-    """
-    calculator = LogTrendCalculator(config)
-    return calculator.calculate(values, check_outliers, outlier_method)

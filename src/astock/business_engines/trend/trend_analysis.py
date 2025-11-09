@@ -4,13 +4,9 @@
 
 提供财务指标的趋势分析功能:
 1. Log斜率计算 (基于CAGR的专业标准)
-2. 线性回归斜率计算 (保留作为对照)
+2. 线性回归斜率计算
 3. 加权平均计算
 4. 趋势评估与淘汰规则
-
-注意：本模块正在重构中。
-- 新代码：使用 services/ 下的服务类
-- 旧代码：保留用于向后兼容，将逐步删除
 """
 
 import logging
@@ -37,18 +33,17 @@ from .config import (
     get_default_config,
 )
 
-# 导入新的服务（重构后的实现）
+# 导入服务层实现
 from .services import (
     DataQualityChecker,
     OutlierDetectorFactory,
-    calculate_log_trend_slope as _new_calculate_log_trend_slope,
-    detect_cyclical_pattern as _new_detect_cyclical_pattern,
+    LogTrendCalculator,
+    CyclicalPatternDetector,
 )
 
 logger = logging.getLogger(__name__)
 
 # ========== 配置管理 ==========
-# 使用统一的配置类管理所有参数
 _config = get_default_config()
 
 
@@ -124,12 +119,8 @@ def calculate_log_trend_slope(
     Returns:
         LogTrendResult 数据类
     """
-    return _new_calculate_log_trend_slope(
-        values=values,
-        check_outliers=check_outliers,
-        outlier_method=outlier_method,
-        config=_config,
-    )
+    calculator = LogTrendCalculator(_config)
+    return calculator.calculate(values, check_outliers, outlier_method)
 
 
 def calculate_volatility_metrics(values: List[float]) -> VolatilityResult:
@@ -442,11 +433,8 @@ def detect_cyclical_pattern(
     Returns:
         CyclicalPatternResult 数据类
     """
-    return _new_detect_cyclical_pattern(
-        values=values,
-        industry=industry,
-        config=_config,
-    )
+    detector = CyclicalPatternDetector(_config)
+    return detector.detect(values, industry)
 
 
 def calculate_rolling_trend(values: List[float]) -> RollingTrendResult:

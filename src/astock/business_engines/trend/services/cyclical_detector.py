@@ -496,23 +496,3 @@ class CyclicalPatternDetector:
             )
 
         return warnings
-
-
-# 向后兼容函数
-def detect_cyclical_pattern(
-    values: List[float],
-    industry: str = None,
-    config: TrendAnalysisConfig = None
-) -> CyclicalPatternResult:
-    """检测周期性模式（向后兼容接口）
-
-    Args:
-        values: 数据列表
-        industry: 行业名称
-        config: 配置对象（可选）
-
-    Returns:
-        周期性检测结果
-    """
-    detector = CyclicalPatternDetector(config)
-    return detector.detect(values, industry)
