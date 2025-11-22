@@ -1,6 +1,6 @@
 """
-DuckDB 通用趋势分析方法
-=======================
+DuckDB 通用趋势分析方法（重构版）
+=================================
 
 提供独立的、可复用的趋势分析方法,支持对任意指标(ROIC、ROE、ROA等)进行:
 1. 加权平均计算
@@ -19,7 +19,7 @@ from typing import Union, List, Optional
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator import register_method
-from .duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
+from .duckdb_core import _q, _get_duckdb_module, _init_duckdb_and_source  # 使用新的合并模块
 from ..trend.config import (
     INDUSTRY_FILTER_CONFIGS,
     DEFAULT_FILTER_CONFIG,

@@ -1,6 +1,6 @@
 """
-趋势分析模块
-===========
+趋势分析模块（重构版）
+=====================
 
 提供财务指标的趋势分析功能:
 1. Log斜率计算 (基于CAGR的专业标准)
@@ -8,15 +8,12 @@
 3. 加权平均计算
 4. 趋势评估与淘汰规则
 
-注意：本模块正在重构中。
-- 新代码：使用 services/ 下的服务类
-- 旧代码：保留用于向后兼容，将逐步删除
+注意：核心计算已迁移到 services.py，此文件保留向后兼容接口。
 """
 
 import logging
 import numpy as np
 from scipy import stats
-from scipy.stats import theilslopes
 from typing import List, Optional, Sequence, Tuple
 
 from .trend_models import (
@@ -30,48 +27,41 @@ from .trend_models import (
     TrendWarning,
     VolatilityResult,
 )
+
+# 使用新的合并模块
 from .config import (
     get_cyclical_thresholds,
     get_decline_thresholds,
     TrendAnalysisConfig,
     get_default_config,
 )
-
-# 导入新的服务（重构后的实现）
 from .services import (
     DataQualityChecker,
     OutlierDetectorFactory,
+    LogTrendCalculator,
+    CyclicalPatternDetector,
     calculate_log_trend_slope as _new_calculate_log_trend_slope,
     detect_cyclical_pattern as _new_detect_cyclical_pattern,
 )
 
 logger = logging.getLogger(__name__)
 
-# ========== 配置管理 ==========
-# 使用统一的配置类管理所有参数
+# 配置管理
 _config = get_default_config()
 
 
 # ========== 辅助函数 ==========
 
 def _ensure_window(values: List[float], window: int = 5) -> np.ndarray:
-    """确保数据窗口大小，内部使用"""
+    """确保数据窗口大小"""
     checker = DataQualityChecker(_config)
-    return checker.ensure_window(values, window)
+    return checker.ensure_window(values)
 
 
 def detect_outliers(
-    values: List[float], method: str = "mad"
+    values: List[float], method: str = "iqr"
 ) -> OutlierDetectionResult:
-    """检测异常值
-
-    Args:
-        values: 5年数据列表
-        method: 检测方法 ('mad', 'z_score' 或 'iqr')
-
-    Returns:
-        OutlierDetectionResult 数据类
-    """
+    """检测异常值"""
     detector = OutlierDetectorFactory.create(method, _config)
     return detector.detect(values)
 
@@ -79,15 +69,7 @@ def detect_outliers(
 def calculate_weighted_average(
     values: List[float], weights: Optional[Sequence[float]] = None
 ) -> float:
-    """
-    计算5年加权平均值
-
-    Args:
-        values: 5年数据列表 [最早, ..., 最新]
-
-    Returns:
-        加权平均值
-    """
+    """计算加权平均值"""
     if weights is None:
         weight_array = _config.default_weights
         window = weight_array.size
@@ -97,7 +79,7 @@ def calculate_weighted_average(
             raise ValueError("权重列表必须是一维且非空")
         window = int(weight_array.size)
 
-    values_array = _ensure_window(values, window=window)
+    values_array = _ensure_window(values)
 
     total_weight = float(np.sum(weight_array))
     if not np.isfinite(total_weight) or abs(total_weight) < 1e-12:

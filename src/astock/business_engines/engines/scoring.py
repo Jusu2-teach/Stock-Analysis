@@ -1,4 +1,4 @@
-"""业务引擎 - 质量评分实现"""
+"""业务引擎 - 质量评分实现（重构版）"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pandas as pd
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator import register_method
-from ..scoring.quality_score import calculate_quality_score, generate_quality_report
+from ..scoring.quality import calculate_quality_score, generate_quality_report
 
 
 def _ensure_dataframe(data: Union[str, Path, pd.DataFrame]) -> pd.DataFrame:

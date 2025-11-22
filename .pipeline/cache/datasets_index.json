@@ -5,17 +5,17 @@
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
   "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
-    "fingerprint": "df:0e38ea15987a1082eabb6d484509234a5b6ffc9bae6f0d8597bb45fc82c46d41",
+    "fingerprint": "df:482361ce78a069bfead212fc41fcc45023060bc6820311b205f8400ed536d702",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
   },
   "Analyze_ROIC_Trend__ROIC_Trend_Result": {
-    "fingerprint": "df:ca32d90e4c348a49e08670385d93644705eeac6fbf697e3bf7fdabcb80987430",
+    "fingerprint": "df:2565cf2e28b89ddccfe853ced2d4147336e61827f9178297c988fa71fcb80bb8",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
   },
   "Score_ROIC_Quality__ROIC_Quality_Result": {
-    "fingerprint": "df:2f7ea199f1eb80f4c6789727f3c500077d83812638cf1d6d72096d177d6c513d",
+    "fingerprint": "df:e5eef2666d6f0a031aeac9d2e0d194066dddb18440bed1e50285fc07e15f6ed9",
     "type": "DataFrame",
     "file": "datasets/Score_ROIC_Quality__ROIC_Quality_Result.pkl"
   }
