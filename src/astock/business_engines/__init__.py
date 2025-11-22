@@ -9,8 +9,32 @@
 - reporting: 报告生成
 """
 
-# 导入引擎以触发注册（使用新的 duckdb_core）
-from .engines import duckdb_core
+from orchestrator import Registry
+from .engines import duckdb_core, duckdb_trend, scoring
+
+# Scan DuckDB Core
+Registry.get().scan(
+    module=duckdb_core,
+    component_type="business_engine",
+    engine_type="duckdb",
+    tags=("duckdb", "analysis")
+)
+
+# Scan DuckDB Trend
+Registry.get().scan(
+    module=duckdb_trend,
+    component_type="business_engine",
+    engine_type="duckdb",
+    tags=("duckdb", "trend")
+)
+
+# Scan Scoring
+Registry.get().scan(
+    module=scoring,
+    component_type="business_engine",
+    engine_type="scoring",
+    tags=("scoring", "quality")
+)
 
 # 简单的注册表，供Orchestrator使用
 business_engine_registry = "business_engines"

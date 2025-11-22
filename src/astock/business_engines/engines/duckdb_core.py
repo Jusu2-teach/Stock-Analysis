@@ -148,20 +148,9 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, Union, List
 
-# orchestrator 已移至根目录
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from orchestrator import register_method
-
-
 logger = logging.getLogger(__name__)
 
 
-@register_method(
-    engine_name="load_file",
-    component_type="business_engine",
-    engine_type="duckdb",
-    description="读取 parquet/csv 为 DataFrame (DuckDB 引擎)"
-)
 def load_file(path: str) -> pd.DataFrame:
     """读取文件为 pandas DataFrame (通过 DuckDB)
 
@@ -185,13 +174,6 @@ def load_file(path: str) -> pd.DataFrame:
     return con.execute(sql).df()
 
 
-
-@register_method(
-    engine_name="calc_industry_avg",
-    component_type="business_engine",
-    engine_type="duckdb",
-    description="按分组列求平均 (纯SQL实现，高性能聚合)"
-)
 def calc_industry_avg(
     data: Union[str, Path, pd.DataFrame],
     group_cols: Union[str, List[str]],
@@ -297,12 +279,6 @@ def calc_industry_avg(
     return result
 
 
-@register_method(
-    engine_name="filter_outperform_industry",
-    component_type="business_engine",
-    engine_type="duckdb",
-    description="公司指标超越行业平均筛选器（纯SQL实现，高性能JOIN+过滤）"
-)
 def filter_outperform_industry(
     a_data: Union[str, Path, pd.DataFrame],
     industry_data: Union[str, Path, pd.DataFrame],

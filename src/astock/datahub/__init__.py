@@ -3,18 +3,23 @@
 提供数据获取功能
 """
 
-# 导入数据源以触发注册
-from . import akshare
-from . import tushare
+from orchestrator import Registry
+from . import akshare, tushare
 
-# 简单的注册表
-class DataHub:
-    pass
+# Scan Akshare
+Registry.get().scan(
+    module=akshare,
+    component_type="datahub",
+    engine_type="akshare",
+    tags=("akshare", "data-source")
+)
 
-class DataSourceRegistry:
-    pass
+# Scan Tushare
+Registry.get().scan(
+    module=tushare,
+    component_type="datahub",
+    engine_type="tushare",
+    tags=("tushare", "data-source")
+)
 
-__all__ = [
-    'DataHub',
-    'DataSourceRegistry'
-]
+__all__ = []

@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, Union
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,6 @@ def _get_akshare_module():
         logger.error("akshare模块未安装")
         return None
 
-@register_method(
-    engine_name="stock_financial_debt_ths",
-    component_type="datahub",
-    engine_type="akshare",
-    description="获取同花顺资产负债表数据"
-)
 def stock_financial_debt_ths(symbol: str = "",
                              indicator: str = "",
                              data: Optional[pd.DataFrame] = None,
@@ -91,12 +85,6 @@ def stock_financial_debt_ths(symbol: str = "",
         logger.error(f"获取股票{symbol}资产负债表失败: {e}")
         return pd.DataFrame()
 
-@register_method(
-    engine_name="store",
-    component_type="datahub",
-    engine_type="akshare",
-    description="Akshare数据存储 - 保存DataFrame到CSV"
-)
 def store(data: Optional[pd.DataFrame] = None,
          path: str = "",
          format: str = "csv",

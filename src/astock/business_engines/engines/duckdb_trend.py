@@ -18,7 +18,7 @@ from typing import Union, List, Optional
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 from .duckdb_core import _q, _get_duckdb_module, _init_duckdb_and_source  # 使用新的合并模块
 from ..trend.config import (
     INDUSTRY_FILTER_CONFIGS,
@@ -57,12 +57,6 @@ def _describe_roiic_spread(spread: float) -> str:
     return f"ROIIC Spread {spread:.1f}pp：扩张可能毁灭价值"
 
 
-@register_method(
-    engine_name="analyze_metric_trend",
-    component_type="business_engine",
-    engine_type="duckdb",
-    description="通用指标趋势分析(加权平均+线性回归+过滤)"
-)
 def analyze_metric_trend(
     data: Union[str, Path, pd.DataFrame],
     group_cols: Union[str, List[str]],

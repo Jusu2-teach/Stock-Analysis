@@ -1,0 +1,394 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AStock Pipeline - CLI Implementation
+===================================
+"""
+
+import argparse
+import sys
+import json
+import os
+from pathlib import Path
+from typing import Optional
+
+# Import ExecuteManager (assuming path is set up by caller)
+try:
+    from pipeline.core.execute_manager import ExecuteManager
+except ImportError:
+    # Fallback for relative imports if run as module
+    try:
+        from .core.execute_manager import ExecuteManager
+    except ImportError:
+        ExecuteManager = None
+
+class AStockCLI:
+    """[AI] AStock Pipeline CLI - Pure Intelligence System"""
+
+    def __init__(self):
+        self.manager = None
+
+    def _init_manager(self, config_path: Optional[str] = None) -> None:
+        """Initialize execution manager with consistent error handling"""
+        if ExecuteManager is None:
+             print("[ERROR] ExecuteManager not found. Please ensure python path is correct.")
+             sys.exit(1)
+
+        try:
+            self.manager = ExecuteManager(config_path)
+            if config_path:
+                self.manager.load_config(config_path)
+            print("[OK] SUCCESS: Pipeline manager initialized")
+        except Exception as e:
+            print(f"[ERROR] ERROR: Manager initialization failed: {e}")
+            sys.exit(1)
+
+    def _handle_error(self, operation: str, error: Exception, debug: bool = False) -> None:
+        """Unified error handling"""
+        print(f"[ERROR] ERROR: {operation} failed: {error}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+    def cmd_run(self, args) -> None:
+        """[LAUNCH] Execute pipeline (Hybrid Prefect+Kedro only)"""
+        print(f"[RUN] Running Hybrid Pipeline: {args.config}")
+
+        self._init_manager(args.config)
+
+        try:
+            # ===== Development Mode Enhancements =====
+            debug_on = os.getenv("ASTOCK_DEBUG") == "1" or args.debug
+            hot_reload_on = os.getenv("ASTOCK_HOT_RELOAD") == "1"
+
+            if debug_on:
+                import logging
+                logging.getLogger().setLevel(logging.DEBUG)
+                print("[DEV] ASTOCK_DEBUG=1 -> Root logger set to DEBUG")
+
+            if hot_reload_on:
+                try:
+                    if self.manager and self.manager.orchestrator:
+                        self.manager.orchestrator.registry.refresh(hot_reload=True)
+                        print("[DEV] ASTOCK_HOT_RELOAD=1 -> Components hot reloaded")
+                except Exception as hr_err:
+                    print(f"[DEV] Hot reload failed: {hr_err}")
+
+            # Step filtering
+            steps_list = self.manager.ctx.config.get('pipeline', {}).get('steps', [])
+            if getattr(args, 'only', None):
+                only_set = {s.strip() for s in args.only.split(',') if s.strip()}
+                steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') in only_set]
+                self.manager.ctx.config['pipeline']['steps'] = steps_list
+                print(f"[CFG] Applied --only -> {len(steps_list)} steps")
+
+            if getattr(args, 'exclude', None):
+                exclude_set = {s.strip() for s in args.exclude.split(',') if s.strip()}
+                steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') not in exclude_set]
+                self.manager.ctx.config['pipeline']['steps'] = steps_list
+                print(f"[CFG] Applied --exclude -> {len(steps_list)} steps")
+
+            if getattr(args, 'resume', None):
+                self._handle_resume(steps_list)
+
+            # Rebuild topology after filtering
+            self.manager.rebuild_after_filter()
+
+            # Override granularity
+            if getattr(args, 'granularity', None):
+                try:
+                    pipe_block = self.manager.ctx.config.setdefault('pipeline', {})
+                    orch_block = pipe_block.setdefault('orchestration', {})
+                    orch_block['granularity'] = args.granularity
+                    print(f"[CFG] Override orchestration.granularity={args.granularity}")
+                except Exception as _e:
+                    print(f"[WARN] Unable to apply granularity override: {_e}")
+
+            # Execute
+            result = self.manager.execute_pipeline()
+
+            print("🎉 SUCCESS: Pipeline execution completed!")
+            print(f"[DATA] Status: {result['status']} (mode={result.get('mode','hybrid')})")
+            step_count = len(result.get('executed_steps', []))
+            print(f"📈 Steps: {step_count}")
+
+            if 'outputs' in result and isinstance(result['outputs'], dict):
+                reg_size = result['outputs'].get('registry_size')
+                if reg_size is not None:
+                    print(f"🧬 Registered Outputs: {reg_size}")
+
+            # Save results
+            if args.output:
+                output_path = Path(args.output)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+                print(f"💾 Results saved: {output_path}")
+
+        except Exception as e:
+            self._handle_error("Pipeline execution", e, args.debug)
+
+    def _handle_resume(self, steps_list):
+        fail_dir = Path('.pipeline') / 'failures'
+        failed = []
+        if fail_dir.is_dir():
+            for f in fail_dir.glob('*.json'):
+                try:
+                    data = json.loads(f.read_text(encoding='utf-8'))
+                    step_name = data.get('step')
+                    if step_name:
+                        failed.append(step_name)
+                except Exception:
+                    pass
+        if failed:
+            original_steps = {s['name']: s for s in steps_list if isinstance(s, dict) and s.get('name')}
+            dep_map = {n: set(s.get('depends_on', []) or []) for n, s in original_steps.items()}
+            include = set(failed)
+            changed = True
+            while changed:
+                changed = False
+                for node, pres in dep_map.items():
+                    if node in include:
+                        for p in pres:
+                            if p not in include and p in original_steps:
+                                include.add(p)
+                                changed = True
+            steps_list = [s for s in steps_list if isinstance(s, dict) and s.get('name') in include]
+            self.manager.ctx.config['pipeline']['steps'] = steps_list
+            print(f"[CFG] Resume(dep-aware) -> failed={failed} total_included={len(steps_list)}")
+        else:
+            print('[CFG] Resume: no failure snapshots found – running all steps.')
+
+    def cmd_cache(self, args) -> None:
+        if args.action == 'clear':
+            if self.manager:
+                self.manager.clear_cache()
+            else:
+                # Static method call if manager not init
+                ExecuteManager.clear_cache()
+            print('[CACHE] 已清理缓存目录')
+        elif args.action == 'warm':
+            if not getattr(args, 'config', None):
+                print('[CACHE] warm 需要 -c 配置文件')
+                sys.exit(1)
+            ExecuteManager.clear_cache()
+            self._init_manager(args.config)
+            self.manager.execute_pipeline()
+            print('[CACHE] 预热完成')
+        elif args.action == 'plan':
+            if not getattr(args, 'config', None):
+                print('[CACHE] plan 需要 -c 配置文件')
+                sys.exit(1)
+            self._init_manager(args.config)
+            auto_nodes_info = self.manager._build_auto_kedro_config()
+            from pipeline.engines.kedro_engine import KedroEngine
+            ke = KedroEngine(self.manager)
+            plan = []
+            for node_cfg in auto_nodes_info['nodes']:
+                step_name = node_cfg['name']
+                outputs = node_cfg.get('outputs', []) or []
+                sig = ke.node_signatures.get(step_name)
+                all_outputs_cached = bool(outputs) and all(o in ke.global_catalog for o in outputs)
+                predicted_hit = all_outputs_cached and sig is not None
+                plan.append({
+                    'step': step_name,
+                    'outputs': outputs,
+                    'signature_cached': bool(sig),
+                    'all_outputs_cached': all_outputs_cached,
+                    'predicted_action': 'skip (cache hit)' if predicted_hit else 'execute'
+                })
+            print('[CACHE PLAN] 预测执行计划:')
+            for item in plan:
+                print(f" - {item['step']}: {item['predicted_action']} (outputs={len(item['outputs'])} cached={item['all_outputs_cached']} sig={item['signature_cached']})")
+            print(f"[CACHE PLAN] total steps={len(plan)} to_execute={sum(1 for x in plan if x['predicted_action']=='execute')} cache_hits={sum(1 for x in plan if x['predicted_action'].startswith('skip'))}")
+            sys.exit(0)
+        else:
+            print(f'[CACHE] 未知操作: {args.action}')
+            sys.exit(1)
+        sys.exit(0)
+
+    def cmd_metrics(self, args) -> None:
+        self._init_manager(args.config)
+        result = self.manager.execute_pipeline()
+        cache_metrics = result.get('metrics', {}).get('cache', {})
+        lineage = result.get('lineage', {}) or {}
+        durations = {k: v.get('duration_sec', 0.0) for k, v in lineage.items()}
+
+        # Critical path analysis
+        graph = {k: set(lineage[k].get('inputs', [])) for k in lineage}
+        memo = {}
+        def longest(n):
+            if n in memo: return memo[n]
+            if not graph.get(n):
+                memo[n] = (durations.get(n,0.0), [n])
+                return memo[n]
+            best = (durations.get(n,0.0), [n])
+            for pre in graph[n]:
+                if pre in durations:
+                    acc_path = longest(pre)
+                    cand = (acc_path[0] + durations.get(n,0.0), acc_path[1] + [n])
+                    if cand[0] > best[0]: best = cand
+            memo[n] = best
+            return best
+
+        critical_path = None
+        if durations:
+            critical_path = max((longest(n) for n in durations), key=lambda x: x[0])
+
+        total_time = round(sum(durations.values()),4)
+        avg_time = round(total_time/len(durations),4) if durations else 0.0
+        top_n = args.top if getattr(args, 'top', None) else 5
+        top_nodes = sorted(durations.items(), key=lambda x: x[1], reverse=True)[:top_n]
+
+        if args.format == 'text':
+            print('[METRICS] Cache:', cache_metrics)
+            if critical_path:
+                print(f"[METRICS] CriticalPathDuration={round(critical_path[0],4)} path={' -> '.join(critical_path[1])}")
+            print(f"[METRICS] Nodes={len(durations)} Steps={len(result.get('executed_steps', []))} TotalTime={total_time}s AvgNode={avg_time}s")
+            print(f"[METRICS] Top{top_n} Nodes:")
+            for name, dur in top_nodes:
+                pct = f"{(dur/total_time*100):.1f}%" if total_time else '0%'
+                cached_flag = lineage.get(name, {}).get('cached')
+                print(f"  - {name}: {round(dur,4)}s ({pct}) cached={cached_flag}")
+        elif args.format == 'json':
+            payload = {
+                'cache': cache_metrics,
+                'critical_path': {
+                    'duration_sec': round(critical_path[0],4) if critical_path else None,
+                    'nodes': critical_path[1] if critical_path else []
+                },
+                'summary': {
+                    'node_count': len(durations),
+                    'step_count': len(result.get('executed_steps', [])),
+                    'total_time_sec': total_time,
+                    'avg_node_time_sec': avg_time
+                },
+                'top_nodes': [
+                    {
+                        'name': name,
+                        'duration_sec': round(dur,4),
+                        'percent': (dur/total_time) if total_time else 0,
+                        'cached': lineage.get(name, {}).get('cached')
+                    } for name, dur in top_nodes
+                ]
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        elif args.format == 'markdown':
+            lines = []
+            lines.append(f"## Pipeline Metrics\n")
+            lines.append(f"**Cache**: hits={cache_metrics.get('hits')} miss={cache_metrics.get('miss')} hit_rate={cache_metrics.get('hit_rate')}\n")
+            if critical_path:
+                lines.append(f"**Critical Path** ({round(critical_path[0],4)}s): {' → '.join(critical_path[1])}\n")
+            lines.append(f"**Summary**: nodes={len(durations)} steps={len(result.get('executed_steps', []))} total={total_time}s avg={avg_time}s\n")
+            lines.append(f"### Top {top_n} Slow Nodes\n")
+            lines.append("| Node | Duration(s) | % | Cached |\n|------|-------------|----|--------|")
+            for name, dur in top_nodes:
+                pct = f"{(dur/total_time*100):.1f}%" if total_time else '0%'
+                cached_flag = lineage.get(name, {}).get('cached')
+                lines.append(f"| {name} | {round(dur,4)} | {pct} | {cached_flag} |")
+            print("\n".join(lines))
+        if args.export:
+            out = Path(args.export)
+            out.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+            print(f"[METRICS] Full result exported -> {out}")
+        sys.exit(0)
+
+    def cmd_status(self, args) -> None:
+        try:
+            self._init_manager()
+            engines = self.manager.get_available_engines()
+            comp_cnt = len(engines.get('components', []))
+            method_cnt = len(engines.get('methods', {}))
+            print(f"[STATUS] components={comp_cnt} methods={method_cnt} mode=hybrid-only")
+        except Exception as e:
+            print(f"[STATUS] error: {e}")
+            sys.exit(1)
+
+    def cmd_engines(self, args) -> None:
+        try:
+            self._init_manager()
+            engines = self.manager.get_available_engines()
+            for k,v in engines.get('methods', {}).items():
+                print(f"• {k} -> {v.get('engine_type')}")
+        except Exception as e:
+            print(f"[ENGINES] error: {e}")
+            sys.exit(1)
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Create enhanced argument parser"""
+    parser = argparse.ArgumentParser(
+        description='[AI] AStock Pipeline - Pure Intelligence System',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s run -c config.yaml              # Execute pipeline
+  %(prog)s cache warm -c config.yaml       # Warm cache
+  %(prog)s cache clear                     # Clear cache
+        """
+    )
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+
+    # run command
+    run_parser = subparsers.add_parser('run', help='[LAUNCH] Execute intelligent pipeline')
+    run_parser.add_argument('--config', '-c', required=True, help='Configuration file path')
+    run_parser.add_argument('--output', '-o', help='Save results to file')
+    run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    run_parser.add_argument('--granularity', choices=['pipeline', 'node'], help='Override orchestration granularity (pipeline|node)')
+    run_parser.add_argument('--resume', action='store_true', help='Resume from failed steps only')
+    run_parser.add_argument('--only', help='Comma separated step names to include')
+    run_parser.add_argument('--exclude', help='Comma separated step names to exclude')
+
+    # status command
+    status_parser = subparsers.add_parser('status', help='[DATA] System status')
+
+    # engines command
+    engines_parser = subparsers.add_parser('engines', help='[TOOL] Available engines')
+    engines_parser.add_argument('--verbose', '-v', action='store_true', help='Detailed information')
+
+    # cache command
+    cache_parser = subparsers.add_parser('cache', help='cache ops: clear | warm | plan')
+    cache_parser.add_argument('action', choices=['clear','warm','plan'])
+    cache_parser.add_argument('-c','--config')
+
+    # metrics command
+    metrics_parser = subparsers.add_parser('metrics', help='Show execution & cache metrics')
+    metrics_parser.add_argument('-c','--config', required=True)
+    metrics_parser.add_argument('--export', help='Export full result JSON')
+    metrics_parser.add_argument('--top', type=int, help='Show top N slow nodes (default 5)')
+    metrics_parser.add_argument('--format', choices=['text','json','markdown'], default='text', help='Output format (text|json|markdown)')
+
+    return parser
+
+def main():
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    cli = AStockCLI()
+
+    try:
+        command_map = {
+            'run': cli.cmd_run,
+            'status': cli.cmd_status,
+            'engines': cli.cmd_engines,
+            'cache': cli.cmd_cache,
+            'metrics': cli.cmd_metrics,
+        }
+
+        if args.command in command_map:
+            command_map[args.command](args)
+        else:
+            print(f"[ERROR] ERROR: Unknown command: {args.command}")
+            parser.print_help()
+            sys.exit(1)
+
+    except KeyboardInterrupt:
+        print("\n⏹️  Operation interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"[ERROR] FATAL ERROR: {e}")
+        sys.exit(1)

@@ -77,5 +77,10 @@ class ModuleLoader:
             mod = importlib.import_module(module_path)
             if hot_reload:
                 importlib.reload(mod)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the error instead of swallowing it
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to import module {module_path}: {e}")
+            # Optionally re-raise if critical, but for auto-discovery, logging is usually better
+            # raise e

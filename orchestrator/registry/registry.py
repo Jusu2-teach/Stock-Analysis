@@ -13,6 +13,7 @@ from .metrics import MetricsService
 from .executor import MethodExecutor
 from .hooks import HookBus
 from .loader import ModuleLoader
+from .scanner import Scanner
 
 
 class Registry:
@@ -35,6 +36,7 @@ class Registry:
         self.executor = MethodExecutor(self.metrics)
         self.hooks = HookBus()
         self.loader = ModuleLoader(self.index, self.config)
+        self.scanner = Scanner(self)
 
     # ---------------- Singleton (Thread-Safe) -----------------
     @classmethod
@@ -67,6 +69,10 @@ class Registry:
         self.hooks.emit('after_method_registered', full_key=full_key, component=reg.component_type,
                         engine_type=reg.engine_type, engine_name=reg.engine_name, version=reg.version)
         return True
+
+    def scan(self, module: Any, component_type: str, engine_type: str, **kwargs) -> int:
+        """扫描模块并自动注册方法"""
+        return self.scanner.scan(module, component_type, engine_type, **kwargs)
 
     # ---------------- Discover / Load -----------
     def auto_load(self, hot_reload: bool = False) -> int:

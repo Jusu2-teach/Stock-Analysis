@@ -15,17 +15,11 @@ from typing import Dict, Any, List, Union, Optional
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 from .schema_utils import ensure_columns
 
 logger = logging.getLogger(__name__)
 
-@register_method(
-    engine_name="store",
-    component_type="data_engine",
-    engine_type="pandas",
-    description="Pandas数据存储 - 保存DataFrame到CSV"
-)
 def store(data: Optional[pd.DataFrame] = None,
          path: str = "",
          format: str = "csv",
@@ -73,12 +67,6 @@ def store(data: Optional[pd.DataFrame] = None,
         return data  # 即使保存失败也返回原数据
 
 
-@register_method(
-    engine_name="clean_financial_data",
-    component_type="data_engine",
-    engine_type="pandas",
-    description="财务数据标准化清洗 - 转换单位、处理缺失值、标准化格式"
-)
 def clean_financial_data(data: Optional[Union[pd.DataFrame, str]] = None,
                         file_path: Optional[str] = None,
                         output_path: Optional[str] = None,
@@ -387,12 +375,6 @@ def _detect_and_handle_outliers(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@register_method(
-    engine_name="financial_data_summary",
-    component_type="data_engine",
-    engine_type="pandas",
-    description="生成财务数据清洗报告"
-)
 def financial_data_summary(data: pd.DataFrame, output_path: Optional[str] = None) -> Dict[str, Any]:
     """生成财务数据清洗报告"""
     logger.info("📊 生成数据清洗报告")
@@ -451,12 +433,6 @@ def financial_data_summary(data: pd.DataFrame, output_path: Optional[str] = None
         raise
 
 
-@register_method(
-    engine_name="join_and_summarize",
-    component_type="data_engine",
-    engine_type="pandas",
-    description="多输入示例：合并两个 DataFrame 并输出双结果(dict 触发多输出拆解)"
-)
 @ensure_columns(required_columns=["total_assets"], output_keys=["merged", "stats"], strict=False)
 def join_and_summarize(inputs: List[pd.DataFrame] = None,
                        how: str = 'inner',
@@ -497,12 +473,6 @@ def join_and_summarize(inputs: List[pd.DataFrame] = None,
     return {"merged": merged, "stats": stats}
 
 
-@register_method(
-    engine_name="double_split_demo",
-    component_type="data_engine",
-    engine_type="pandas",
-    description="示例：返回两个 DataFrame (tuple 多输出)"
-)
 def double_split_demo(data: pd.DataFrame, top: int = 5, sample: int = 5):
     """演示无需 dict，直接返回 (head_df, tail_df) 也可通过 outputs 映射。
 

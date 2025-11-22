@@ -10,7 +10,7 @@ import pandas as pd
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 from ..scoring.quality import calculate_quality_score, generate_quality_report
 
 
@@ -23,12 +23,6 @@ def _ensure_dataframe(data: Union[str, Path, pd.DataFrame]) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-@register_method(
-    engine_name="score_quality",
-    component_type="business_engine",
-    engine_type="scoring",
-    description="对趋势分析结果进行质量评分 (0-100)"
-)
 def score_quality(
     data: Union[str, Path, pd.DataFrame],
     output_path: Optional[Union[str, Path]] = None,

@@ -13,7 +13,7 @@ import fnmatch
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 
 logger = logging.getLogger(__name__)
 
@@ -220,12 +220,6 @@ def _apply_sort(merged: Union[pl.DataFrame, pl.LazyFrame],
         logger.debug(f"失败上下文 sort_cols={kept_cols} desc={kept_desc}")
     return merged, kept_cols
 
-@register_method(
-    engine_name="load_data",
-    component_type="data_engine",
-    engine_type="polars",
-    description="Polars数据加载 (单文件或目录多文件合并)"
-)
 def load_data(data: Optional[pl.DataFrame] = None,
               file_path: str = None,
               pattern: str | None = None,
@@ -327,12 +321,6 @@ def load_data(data: Optional[pl.DataFrame] = None,
         logger.info(f"合并完成: 文件数={len(dfs)} 总行数={merged.height} 列数={merged.width} (排序列={used_sort_cols if used_sort_cols else 'N/A'}) lazy={lazy}")
         return merged
 
-@register_method(
-    engine_name="store",
-    component_type="data_engine",
-    engine_type="polars",
-    description="Polars数据存储 - 高性能存储到文件"
-)
 def store(data: Optional[pl.DataFrame] = None,
           file_path: str = None,
           format: str = "parquet",
@@ -392,12 +380,6 @@ def store(data: Optional[pl.DataFrame] = None,
         logger.error(f"保存数据失败: {e}")
         return None
 
-@register_method(
-    engine_name="filter_mapped_columns",
-    component_type="data_engine",
-    engine_type="polars",
-    description="筛选配置映射中的核心财务指标字段"
-)
 def filter_mapped_columns(data: Optional[pl.DataFrame] = None,
                           include_all_mapped: bool = True,  # 预留参数，当前仅筛选存在列
                           show_schema: bool = True,
@@ -576,12 +558,6 @@ def _read_table_auto(path_str: str,
         return None
 
 
-@register_method(
-    engine_name="filter_industry",
-    component_type="data_engine",
-    engine_type="polars",
-    description="依据 config.yaml 的 filter_industry + stock_basic 映射过滤行业并附加中文名称"
-)
 def filter_industry(data: Optional[pl.DataFrame] = None,
                     financial_path: str = "data/polars/final_concat.parquet",
                     basic_info_path: str = "data/stack_basic.csv",
@@ -689,12 +665,6 @@ def filter_industry(data: Optional[pl.DataFrame] = None,
     return merged
 
 
-@register_method(
-    engine_name="compute_hand_metrics",
-    component_type="data_engine",
-    engine_type="polars",
-    description="在现有财务明细上追加手工指标列 (ROE/ROA/ROIC/FCF Margin/税后ROIC)"
-)
 def compute_hand_metrics(data: Optional[pl.DataFrame] = None,
                          tax_rate: float = 0.25,
                          cast_double: bool = True,

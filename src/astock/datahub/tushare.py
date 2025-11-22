@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, Union
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from orchestrator import register_method
+# from orchestrator import register_method  <-- Removed
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +33,6 @@ def _get_tushare_pro():
         logger.error(f"初始化tushare pro失败: {e}")
         return None
 
-@register_method(
-    engine_name="stock_basic",
-    component_type="datahub",
-    engine_type="tushare",
-    description="获取当前正常上市交易股票基本信息 (stock_basic)"
-)
 def stock_basic(exchange: str = "",
                 list_status: str = "L",
                 fields: str = "ts_code,symbol,name,area,industry,list_date",
@@ -71,12 +65,6 @@ def stock_basic(exchange: str = "",
         logger.error(f"调用 stock_basic 失败: {e}")
         return pd.DataFrame()
 
-@register_method(
-    engine_name="income",
-    component_type="datahub",
-    engine_type="tushare",
-    description="获取利润表数据"
-)
 def income(ts_code: str = "",
            ann_date: str = "",
            start_date: str = "",
@@ -122,12 +110,6 @@ def income(ts_code: str = "",
         logger.error(f"获取利润表数据失败: {e}")
         return pd.DataFrame()
 
-@register_method(
-    engine_name="balancesheet",
-    component_type="datahub",
-    engine_type="tushare",
-    description="获取资产负债表数据"
-)
 def balancesheet(ts_code: str = "",
                  ann_date: str = "",
                  start_date: str = "",
@@ -173,12 +155,6 @@ def balancesheet(ts_code: str = "",
         logger.error(f"获取资产负债表数据失败: {e}")
         return pd.DataFrame()
 
-@register_method(
-    engine_name="fina_indicator_vip",
-    component_type="datahub",
-    engine_type="tushare",
-    description="获取财务指标数据 - VIP接口，支持季度全量数据"
-)
 def fina_indicator_vip(ts_code: str = "",
                        ann_date: str = "",
                        start_date: str = "",
@@ -226,12 +202,6 @@ def fina_indicator_vip(ts_code: str = "",
         logger.error(f"获取财务指标数据失败: {e}")
         return pd.DataFrame()
 
-@register_method(
-    engine_name="store",
-    component_type="datahub",
-    engine_type="tushare",
-    description="Tushare数据存储 - 保存DataFrame到CSV"
-)
 def store(data: Optional[pd.DataFrame] = None,
          path: str = "",
          format: str = "csv",

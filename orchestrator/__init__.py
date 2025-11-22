@@ -5,6 +5,8 @@
 """
 
 from .orchestrator import AStockOrchestrator  # 新版精简 facade
-from .decorators.register import register_method
+# from .decorators.register import register_method  <-- Removed
+from .registry.registry import Registry
+from .models import MethodRegistration
 
-__all__ = ['AStockOrchestrator', 'register_method']
+__all__ = ['AStockOrchestrator', 'Registry', 'MethodRegistration']
