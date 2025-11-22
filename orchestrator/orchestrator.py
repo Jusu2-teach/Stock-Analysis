@@ -1,8 +1,11 @@
 from __future__ import annotations
-from typing import Any, List
+from typing import Any, List, Callable, Dict
 import logging
 from .registry.registry import Registry
 
+# Middleware type definition
+# func(component, method, args, kwargs, next_call) -> result
+Middleware = Callable[[str, str, tuple, dict, Callable], Any]
 
 class ComponentProxy:
     def __init__(self, orchestrator: 'AStockOrchestrator', component_type: str):
@@ -22,10 +25,20 @@ class AStockOrchestrator:
     def __init__(self, *, auto_discover: bool = True):
         self.logger = logging.getLogger(__name__)
         self.registry = Registry.get()
+        self._middlewares: List[Middleware] = []
+
         if auto_discover:
             count = self.registry.auto_load(hot_reload=False)
             self.logger.info(f"[orchestrator] auto_discover loaded modules={count} registered_methods={len(self.registry.index.by_full_key)} legacy_methods={len(getattr(self.registry,'methods',{}))}")
         self._build_interfaces()
+
+    def add_middleware(self, middleware: Middleware):
+        """注册中间件 (Middleware)
+
+        中间件可以在方法执行前后添加逻辑（如日志、计时、错误处理）。
+        执行顺序：先注册的先执行（洋葱模型外层）。
+        """
+        self._middlewares.append(middleware)
 
     # --------- dynamic interface ---------
     def _build_interfaces(self):
@@ -39,7 +52,7 @@ class AStockOrchestrator:
 
     # --------- execution facades ---------
     def execute(self, component_type: str, method_name: str, *args, **kwargs) -> Any:
-        """执行方法（支持策略选择和引擎偏好）
+        """执行方法（支持策略选择、引擎偏好和中间件）
 
         特殊参数（从 kwargs 中提取）：
             _strategy: 选择策略 ('default' | 'prefer_latest' | 'prefer_stable' | 'highest_priority')
@@ -47,7 +60,32 @@ class AStockOrchestrator:
         """
         strategy = kwargs.pop('_strategy', 'default')
         preferred_engine = kwargs.pop('_preferred_engine', None)
-        return self.registry.execute(component_type, method_name, *args, strategy=strategy, preferred_engine=preferred_engine, **kwargs)
+
+        # 定义核心执行函数
+        def core_execution(*a, **kw):
+            return self.registry.execute(
+                component_type,
+                method_name,
+                *a,
+                strategy=strategy,
+                preferred_engine=preferred_engine,
+                **kw
+            )
+
+        # 构建中间件链
+        # 链式调用：middleware1(..., next=middleware2(..., next=core))
+        chain = core_execution
+
+        # 反向遍历，从最内层（最后注册的）开始包装
+        for mw in reversed(self._middlewares):
+            # 闭包捕获当前的 next_call (chain) 和当前中间件 (mw)
+            def next_step(c=chain, m=mw):
+                def wrapper(*a, **kw):
+                    return m(component_type, method_name, a, kw, c)
+                return wrapper
+            chain = next_step()
+
+        return chain(*args, **kwargs)
 
     def execute_with_engine(self, component_type: str, engine_type: str, method_name: str, *args, **kwargs) -> Any:
         return self.registry.execute_with_engine(component_type, engine_type, method_name, *args, **kwargs)

@@ -45,6 +45,9 @@ class PipelineContext:
     reference_to_hash: Dict[str, str] = field(default_factory=dict)
     global_registry: Dict[str, Any] = field(default_factory=dict)
 
+    # 运行时状态 (新增)
+    _runtime_state: Dict[str, Any] = field(default_factory=dict)
+
     def dataset_name(self, step: str, output: str) -> str:
         """生成数据集名称"""
         return f"{step}__{output}".replace('-', '_')
@@ -53,6 +56,14 @@ class PipelineContext:
         """清空步骤相关数据"""
         self.steps.clear()
         self.execution_order.clear()
+
+    def set_runtime_value(self, key: str, value: Any):
+        """设置运行时状态值"""
+        self._runtime_state[key] = value
+
+    def get_runtime_value(self, key: str, default: Any = None) -> Any:
+        """获取运行时状态值"""
+        return self._runtime_state.get(key, default)
 
 
 __all__ = ['PipelineContext', 'StepSpec', 'StepOutput']

@@ -65,6 +65,8 @@ def analyze_metric_trend(
     suffix: str = "_trend",
     min_periods: int = 5,
     analyzer_config: Optional[TrendAnalyzerConfig] = None,
+    filter_config: Optional[dict] = None,  # 新增：支持外部注入配置
+    industry_configs: Optional[dict] = None, # 新增：支持外部注入行业配置
 ) -> pd.DataFrame:
     """
     对指定指标进行通用趋势分析
@@ -83,6 +85,8 @@ def analyze_metric_trend(
         suffix: 输出列名后缀(默认 '_trend')
         min_periods: 最少需要的期数(默认5)
         analyzer_config: 趋势分析器配置(窗口、权重、探针、参考指标等)
+        filter_config: 过滤配置字典 (IoC注入)
+        industry_configs: 行业差异化配置字典 (IoC注入)
 
     Returns:
         DataFrame,包含:
@@ -92,14 +96,6 @@ def analyze_metric_trend(
         - {prefix}{metric_name}_r_squared{suffix}: R²
         - {prefix}{metric_name}_latest{suffix}: 最新期值
         - {prefix}{metric_name}_penalty{suffix}: 扣分(如果启用过滤)
-
-    Example:
-    >>> # 分析ROIC趋势(使用配置中心参数)
-    >>> df_roic = analyze_metric_trend(
-    ...     data='data/polars/5yd_final_industry.csv',
-    ...     group_cols='ts_code',
-    ...     metric_name='roic'
-    ... )
     """
 
     logger.info("=" * 80)
@@ -153,12 +149,17 @@ def analyze_metric_trend(
     logger.info(f"加权方案: {_trend_config.default_weights.tolist()}")
 
     metric_lower = metric_name.lower()
-    default_config = DEFAULT_ROIIC_FILTER_CONFIG if metric_lower == "roiic" else DEFAULT_FILTER_CONFIG
-    industry_configs = ROIIC_INDUSTRY_FILTER_CONFIGS if metric_lower == "roiic" else INDUSTRY_FILTER_CONFIGS
+
+    # IoC: 优先使用注入的配置，否则回退到默认配置
+    if filter_config is None:
+        filter_config = DEFAULT_ROIIC_FILTER_CONFIG if metric_lower == "roiic" else DEFAULT_FILTER_CONFIG
+
+    if industry_configs is None:
+        industry_configs = ROIIC_INDUSTRY_FILTER_CONFIGS if metric_lower == "roiic" else INDUSTRY_FILTER_CONFIGS
 
     # ========== 2. 解析过滤配置 ==========
     base_config = {"enable_filter": True}
-    base_config.update(default_config)
+    base_config.update(filter_config)
     logger.info(f"过滤基线配置(默认阈值): {base_config}")
 
     # ========== 3. 读取数据并排序 ==========
@@ -258,9 +259,9 @@ def analyze_metric_trend(
         if usage_stats:
             logger.info(f"\n🏭 行业差异化参数应用:")
             for industry, count in sorted(usage_stats.items(), key=lambda x: -x[1])[:10]:
-                ind_config = industry_configs.get(industry, default_config)
-                slope_param = ind_config.get('log_severe_decline_slope', ind_config.get('severe_decline_slope', default_config.get('log_severe_decline_slope', -0.30)))
-                min_value = ind_config.get('min_latest_value', default_config.get('min_latest_value'))
+                ind_config = industry_configs.get(industry, filter_config)
+                slope_param = ind_config.get('log_severe_decline_slope', ind_config.get('severe_decline_slope', filter_config.get('log_severe_decline_slope', -0.30)))
+                min_value = ind_config.get('min_latest_value', filter_config.get('min_latest_value'))
                 logger.info(f"  {industry}: {count}家 (min={min_value}, log_slope={slope_param:.2f})")
 
     if len(df_result) > 0:
