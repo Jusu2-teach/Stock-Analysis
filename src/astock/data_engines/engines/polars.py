@@ -321,7 +321,7 @@ def load_data(data: Optional[pl.DataFrame] = None,
         logger.info(f"合并完成: 文件数={len(dfs)} 总行数={merged.height} 列数={merged.width} (排序列={used_sort_cols if used_sort_cols else 'N/A'}) lazy={lazy}")
         return merged
 
-def store(data: Optional[pl.DataFrame] = None,
+def store(data: Optional[Union[pl.DataFrame, Any]] = None,
           file_path: str = None,
           format: str = "parquet",
           **kwargs) -> Optional[pl.DataFrame]:
@@ -340,6 +340,12 @@ def store(data: Optional[pl.DataFrame] = None,
     if data is None:
         logger.warning("没有数据需要存储")
         return None
+
+    # Support for AnalysisResult/ScoreResult objects from business engines
+    if hasattr(data, 'data') and (hasattr(data, 'metric_name') or hasattr(data, 'score_col')):
+        logger.info(f"store: Detected Result object ({type(data).__name__}), extracting .data")
+        data = data.data
+
     # 兼容 pandas.DataFrame 自动转换
     if not isinstance(data, pl.DataFrame):
         try:

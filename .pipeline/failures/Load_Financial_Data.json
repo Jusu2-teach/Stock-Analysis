@@ -1,7 +1,7 @@
 {
   "step": "Load_Financial_Data",
   "error": "未注册的方法: business_engine::duckdb::load_file",
-  "traceback": "Traceback (most recent call last):\n  File \"C:\\Users\\jusu2\\OneDrive - Cisco\\桌面\\AStock-Analysis\\pipeline\\engines\\kedro_engine.py\", line 338, in execute_node\n    raise ValueError(f\"未注册的方法: {component}::{effective_engine}::{method_name}\")\nValueError: 未注册的方法: business_engine::duckdb::load_file\n",
+  "traceback": "Traceback (most recent call last):\n  File \"C:\\Users\\jusu2\\OneDrive - Cisco\\桌面\\AStock-Analysis\\pipeline\\engines\\kedro_engine.py\", line 339, in execute_node\n    raise ValueError(f\"未注册的方法: {component}::{effective_engine}::{method_name}\")\nValueError: 未注册的方法: business_engine::duckdb::load_file\n",
   "methods": [
     "load_file"
   ],

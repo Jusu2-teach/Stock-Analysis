@@ -5,18 +5,38 @@
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
   "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
-    "fingerprint": "df:482361ce78a069bfead212fc41fcc45023060bc6820311b205f8400ed536d702",
+    "fingerprint": "df:6de837e6c85e0ced026a284bd333eed5ff27826a5cfc30357a403a756fda2171",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
   },
   "Analyze_ROIC_Trend__ROIC_Trend_Result": {
-    "fingerprint": "df:2565cf2e28b89ddccfe853ced2d4147336e61827f9178297c988fa71fcb80bb8",
+    "fingerprint": "df:969bb61d21d34ea7e87fb4139f399946f1a2b401fca783678d3499db9446468f",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
   },
   "Score_ROIC_Quality__ROIC_Quality_Result": {
-    "fingerprint": "df:e5eef2666d6f0a031aeac9d2e0d194066dddb18440bed1e50285fc07e15f6ed9",
-    "type": "DataFrame",
+    "fingerprint": "obj:9bfcef5ebb48639e3e3db37936f98de1f929dde3eb9d3134674143c94b8d4d78",
+    "type": "ScoreResult",
     "file": "datasets/Score_ROIC_Quality__ROIC_Quality_Result.pkl"
+  },
+  "Load_Data__Raw_Data": {
+    "fingerprint": "df:66580ac0cca3755a636df8e44026b117ede882edfb7772d6eb5a7ffd6086b726",
+    "type": "DataFrame",
+    "file": "datasets/Load_Data__Raw_Data.pkl"
+  },
+  "Analyze_ROIC_Generic__ROIC_Analysis_Result": {
+    "fingerprint": "obj:b040d6e25429e7b1fdfe6d1c71680aa79bdf14fea9602e6aa26dbcc578cb84c1",
+    "type": "AnalysisResult",
+    "file": "datasets/Analyze_ROIC_Generic__ROIC_Analysis_Result.pkl"
+  },
+  "Score_ROIC_Generic__ROIC_Score_Result": {
+    "fingerprint": "obj:6db06bc8c5f7ed6da174f8cc1dc4a4c0778b9f660c3e2d163bce02e3ae44cf63",
+    "type": "ScoreResult",
+    "file": "datasets/Score_ROIC_Generic__ROIC_Score_Result.pkl"
+  },
+  "Report_ROIC_Generic__ROIC_Report_Text": {
+    "fingerprint": "obj:4ff502cde889fd9ac19166d53a9f679ff55ed08c8c4f72243e07c0de0dd76ba2",
+    "type": "str",
+    "file": "datasets/Report_ROIC_Generic__ROIC_Report_Text.pkl"
   }
 }
