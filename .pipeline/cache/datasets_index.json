@@ -5,7 +5,7 @@
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
   "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
-    "fingerprint": "df:6de837e6c85e0ced026a284bd333eed5ff27826a5cfc30357a403a756fda2171",
+    "fingerprint": "df:3f30027e365e43ac9aa6011d8d3540b36386817e4bb4b8cdf5857284cfeea385",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
   },

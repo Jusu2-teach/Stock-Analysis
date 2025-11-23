@@ -63,19 +63,32 @@ class BaseStrategy:
 
         return default
 
+    def _get_robust_growth_rate(self, context: TrendContext) -> float:
+        """
+        获取稳健的增长率指标 (针对 A 股高波动特性优化)
+
+        逻辑：
+        1. 如果波动率低 (CV < 0.15)，直接用普通斜率 (OLS)，反应更灵敏。
+        2. 如果波动率高 (CV >= 0.15)，优先使用稳健斜率 (Theil-Sen)，
+           因为它能忽略异常值 (Outliers) 的干扰，避免被单年暴涨误导。
+        """
+        if context.cv < 0.15:
+            return context.log_slope
+        else:
+            # 如果 robust_slope 为 0 (计算失败或无趋势)，回退到 log_slope
+            return context.robust_slope if context.robust_slope != 0 else context.log_slope
+
 class HighGrowthStrategy(BaseStrategy):
     """
     高增长/优质护城河策略 (High Growth & Quality Moat)
 
-    根据指标类型自动切换逻辑：
-
-    [模式 A: 效率指标 (ROIC, ROE, Margin)] -> 寻找"护城河"
-    - 核心：高位企稳 (High & Stable)
-    - 标准：最新值极高 (>20%) + 趋势稳健 (R²高) + 未恶化 (斜率>=0)
-
-    [模式 B: 规模指标 (Revenue, Profit)] -> 寻找"瞪羚"
-    - 核心：高速奔跑 (Fast Growth)
-    - 标准：CAGR 极高 (>20%) + 加速状态
+    针对 A 股高波动特性的优化：
+    1. 引入 'Robust Slope' (Theil-Sen 估算)：
+       A 股常有单年暴雷或暴涨，普通线性回归会被拉偏。
+       本策略在高波动时自动切换到稳健斜率，只看"中位数趋势"。
+    2. 动态 R² 门槛：
+       A 股很难有 R² > 0.8 的完美曲线。
+       如果 Mann-Kendall 趋势显著 (p_value < 0.1)，允许 R² 稍低。
     """
     name = "high_growth"
     description = "高增长/优质护城河"
@@ -86,26 +99,33 @@ class HighGrowthStrategy(BaseStrategy):
 
         metric_type = "efficiency" if self._is_efficiency_metric(context.metric_name) else "scale"
 
+        # 使用稳健增长率
+        growth_rate = self._get_robust_growth_rate(context)
+
         # === 模式 A: 效率指标 (寻找护城河) ===
         if metric_type == "efficiency":
-            # 门槛要求更高：ROIC至少要15%，甚至20%
             min_value = self._get_adaptive_threshold(context.metric_name, "min_value", 15.0)
 
-            # 1. 绝对值必须足够高 (这是核心)
+            # 1. 绝对值必须足够高
             if context.latest_value < min_value:
                 return StrategyResult(self.name, False)
 
-            # 2. 趋势不能恶化 (斜率 >= -0.02，允许微幅波动，但不能明显下降)
-            if context.log_slope < -0.02:
+            # 2. 趋势不能恶化 (使用稳健斜率判断)
+            if growth_rate < -0.02:
                 return StrategyResult(self.name, False)
 
-            # 3. 必须稳健 (忽上忽下的不算护城河)
-            if context.r_squared < 0.4 and context.cv > 0.2:
+            # 3. 稳健性检查 (A股特供版)
+            # 如果 Mann-Kendall 检验显示趋势显著向上 (tau > 0.4)，则放宽 R² 要求
+            min_r2 = 0.4
+            if context.mann_kendall_tau > 0.4:
+                min_r2 = 0.2  # 趋势很强但波动大，允许 R² 低一点
+
+            if context.r_squared < min_r2 and context.cv > 0.2:
                 return StrategyResult(self.name, False)
 
             return StrategyResult(
                 self.name, True,
-                f"优质护城河(高位企稳: {context.latest_value:.1f} > {min_value}, 波动率CV={context.cv:.2f})",
+                f"优质护城河(高位企稳: {context.latest_value:.1f} > {min_value}, 稳健斜率={growth_rate:.2f})",
                 score_boost=15.0
             )
 
@@ -113,23 +133,23 @@ class HighGrowthStrategy(BaseStrategy):
         else:
             min_growth = self._get_adaptive_threshold(context.metric_name, "min_growth", 0.20)
 
-            # 1. 增速必须快
-            if context.log_slope < min_growth:
+            # 1. 增速必须快 (使用稳健斜率)
+            if growth_rate < min_growth:
                 return StrategyResult(self.name, False)
 
-            # 2. 必须是真实增长 (R²不能太低)
-            if context.r_squared < 0.5:
-                return StrategyResult(self.name, False)
+            # 2. 真实性验证
+            # 如果是高波动 (CV > 0.3)，必须要求 Mann-Kendall 确认趋势存在
+            if context.cv > 0.3 and context.mann_kendall_tau <= 0:
+                return StrategyResult(self.name, False) # 波动大且无显著趋势，可能是假增长
 
             # 3. 最好在加速
-            if not context.is_accelerating and context.recent_3y_slope < context.log_slope:
-                # 如果没加速，但增速极高 (>30%)，也放行
-                if context.log_slope < 0.30:
+            if not context.is_accelerating and context.recent_3y_slope < growth_rate:
+                if growth_rate < 0.30:
                     return StrategyResult(self.name, False)
 
             return StrategyResult(
                 self.name, True,
-                f"高速成长(CAGR={context.log_slope:.1%}, 加速={context.is_accelerating})",
+                f"高速成长(稳健CAGR={growth_rate:.1%}, MK趋势={context.mann_kendall_tau:.2f})",
                 score_boost=15.0
             )
 
@@ -137,10 +157,10 @@ class TurnaroundStrategy(BaseStrategy):
     """
     困境反转策略 (Turnaround)
 
-    专业级判断：
-    1. 拒绝"死猫跳"：要求近3年趋势强劲 (recent_slope > 0.2)
-    2. 拒绝"假反转"：要求最新值必须回到安全线以上 (recovery_threshold)
-    3. 区分"V型反转"与"底部磨底"
+    A 股实战优化：
+    1. 过滤"消息面炒作"：要求必须有业绩兑现 (latest_value > recovery_threshold)。
+    2. 过滤"单年脉冲"：要求 Robust Slope (稳健斜率) 必须转正，
+       或者近期斜率 (recent_3y_slope) 极强。
     """
     name = "turnaround"
     description = "困境反转/由亏转盈"
@@ -149,29 +169,32 @@ class TurnaroundStrategy(BaseStrategy):
         if math.isnan(context.latest_value):
             return StrategyResult(self.name, False)
 
-        # 设定安全线：反转必须是有效的
-        # 对于净利率，回到 2% 以上才算活过来；对于 ROIC，回到 5% 以上
+        # 设定安全线
         recovery_threshold = 5.0
         if "net_margin" in context.metric_name.lower(): recovery_threshold = 2.0
         if "gross_margin" in context.metric_name.lower(): recovery_threshold = 15.0
 
-        # 1. 必须已经"活过来"了 (最新值 > 安全线)
+        # 1. 必须已经"活过来"了
         if context.latest_value < recovery_threshold:
             return StrategyResult(self.name, False)
 
-        # 2. 必须确认复苏趋势 (最新值 > 5年均值 OR 均值为负)
-        # 如果均值是正的，最新值必须超过均值，证明走出了低谷
+        # 2. 必须确认复苏趋势
         if context.weighted_avg > 0 and context.latest_value < context.weighted_avg * 0.9:
             return StrategyResult(self.name, False)
 
-        # 3. 动能必须强劲 (近3年斜率 > 0.15)
+        # 3. 动能必须强劲
         if context.recent_3y_slope < 0.15:
+            return StrategyResult(self.name, False)
+
+        # 4. A股特供：防骗线逻辑
+        # 如果波动率极大 (CV > 0.5)，要求 Mann-Kendall 必须不能是显著负相关
+        if context.cv > 0.5 and context.mann_kendall_tau < -0.2:
             return StrategyResult(self.name, False)
 
         reason = ""
         is_turnaround = False
 
-        # 场景 A: 扭亏为盈 (最强信号)
+        # 场景 A: 扭亏为盈
         if context.has_loss_years and context.latest_value > recovery_threshold:
             is_turnaround = True
             reason = f"扭亏为盈(曾亏损{context.loss_year_count}年 -> 最新{context.latest_value:.1f})"
@@ -181,8 +204,7 @@ class TurnaroundStrategy(BaseStrategy):
             is_turnaround = True
             reason = f"V型反转(形态确认, 斜率改善{context.slope_change:.2f})"
 
-        # 场景 C: 底部困境反转 (虽然没亏，但之前跌得很惨，现在猛拉)
-        # 条件：总跌幅曾很大，但近期斜率极高
+        # 场景 C: 底部困境反转
         elif context.total_decline_pct > 30 and context.recent_3y_slope > 0.3:
             is_turnaround = True
             reason = f"底部强力反转(曾跌{context.total_decline_pct:.0f}%, 近期斜率{context.recent_3y_slope:.2f})"
