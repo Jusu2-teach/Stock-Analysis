@@ -189,6 +189,59 @@ def rule_structural_decline_veto(context: TrendContext, params: TrendRuleParamet
     return RuleResult("structural_decline_veto", "veto", message, log_level=logging.INFO, log_prefix="【一票否决】")
 
 # ============================================================================
+# 交叉验证规则 (Cross-Validation Rules)
+# ============================================================================
+
+def rule_earnings_quality_divergence(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【含金量检验】净利润与经营现金流背离校验
+    逻辑：如果净利润高速增长，但经营现金流（OCF）持续恶化或显著低于利润，提示"纸面富贵"风险。
+    """
+    # 只在分析利润类指标时触发
+    if "profit" not in context.metric_name.lower(): return None
+
+    # 获取参考指标 OCF (需要在 pipeline 中配置 reference)
+    ocf_stats = _get_reference_metric(context, "ocfps")
+    if not ocf_stats: return None
+
+    profit_slope = context.log_slope
+    ocf_slope = ocf_stats.get("log_slope", 0.0)
+
+    # 1. 剪刀差风险：利润向上(>10%)，现金流向下(<-5%)
+    if profit_slope > 0.10 and ocf_slope < -0.05:
+        message = f"盈利质量预警-利润高增({profit_slope:.1%})但现金流恶化({ocf_slope:.1%})"
+        return RuleResult("earnings_quality_divergence", "penalty", message, 15.0) # 重罚
+
+    # 2. 长期造假嫌疑：利润长期增长，但 OCF 长期几乎为 0 或负
+    # (这里假设数据已经归一化或单位一致，或者比较趋势)
+    # 更稳健的做法是比较斜率的差距
+    if profit_slope - ocf_slope > 0.20: # 利润增速比现金流增速快 20个百分点
+        message = f"现金流跟不上利润-增速差{profit_slope - ocf_slope:.1%}"
+        return RuleResult("profit_cash_gap", "penalty", message, 10.0)
+
+    return None
+
+def rule_sustainable_growth_check(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【内生增长检验】营收增速 vs ROE
+    逻辑：长期来看，营收增速不应大幅超过 ROE。如果 营收增长 30% 但 ROE 只有 5%，说明增长靠吸血（融资）。
+    """
+    if "revenue" not in context.metric_name.lower(): return None
+
+    roe_stats = _get_reference_metric(context, "roe")
+    if not roe_stats: return None
+
+    revenue_growth = context.cagr_approx
+    roe_latest = roe_stats.get("latest", 0.0) / 100.0 # 假设 ROE 是百分比 15.0
+
+    # 如果是高增长 (>20%) 但 ROE 很低 (<8%)
+    if revenue_growth > 0.20 and roe_latest < 0.08:
+        message = f"低效扩张风险-营收增速{revenue_growth:.1%}远超ROE{roe_latest:.1%}"
+        return RuleResult("unsustainable_growth", "penalty", message, 12.0)
+
+    return None
+
+# ============================================================================
 # 扣分规则 (Penalty Rules)
 # ============================================================================
 

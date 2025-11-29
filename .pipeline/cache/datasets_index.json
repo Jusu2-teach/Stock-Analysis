@@ -5,7 +5,7 @@
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
   "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
-    "fingerprint": "df:3f30027e365e43ac9aa6011d8d3540b36386817e4bb4b8cdf5857284cfeea385",
+    "fingerprint": "df:293efe99c5260501d5083ce62537545a3da01c0cbaeeea921fcecb9a46e0349f",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
   },
@@ -38,5 +38,40 @@
     "fingerprint": "obj:4ff502cde889fd9ac19166d53a9f679ff55ed08c8c4f72243e07c0de0dd76ba2",
     "type": "str",
     "file": "datasets/Report_ROIC_Generic__ROIC_Report_Text.pkl"
+  },
+  "Analyze_Revenue_Trend__Revenue_Trend_Result": {
+    "fingerprint": "df:7b60c6abb131dfe28b54e82be47e36494c5c9dfc407e7dd050e9e0613061e2e5",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_Revenue_Trend__Revenue_Trend_Result.pkl"
+  },
+  "Analyze_OCF_Trend__OCF_Trend_Result": {
+    "fingerprint": "df:40ec8909123429143277501026241723402766e6e212a98a241ff67f93d6a5b8",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_OCF_Trend__OCF_Trend_Result.pkl"
+  },
+  "Analyze_ROE_Trend__ROE_Trend_Result": {
+    "fingerprint": "df:0dbd188b650257572e730f7ae171539902cddabd2eddeef98b18156e31df0924",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_ROE_Trend__ROE_Trend_Result.pkl"
+  },
+  "Analyze_NetMargin_Trend__NetMargin_Trend_Result": {
+    "fingerprint": "df:9cf23da10c843b931ac749649ffed1ec2783d9d9a6d6618368832ca3697d9c8b",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_NetMargin_Trend__NetMargin_Trend_Result.pkl"
+  },
+  "Analyze_GrossMargin_Trend__GrossMargin_Trend_Result": {
+    "fingerprint": "df:e981e5f8ec4417d3d150735c9f7dcd509045fcc9fc2ec7ab3d6c408df4a7d5f3",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_GrossMargin_Trend__GrossMargin_Trend_Result.pkl"
+  },
+  "Analyze_Profit_Trend__Profit_Trend_Result": {
+    "fingerprint": "df:30b13622b65ec7f991a6c0bc771c0bf874a12d65945b87c6609e1ad237eb4ff7",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_Profit_Trend__Profit_Trend_Result.pkl"
+  },
+  "Generate_Comprehensive_Report__Comprehensive_Report_Path": {
+    "fingerprint": "obj:2db7754798bfd206ee2b6ba02c4b9022a6f0fb751c05a7b8f5d78b3819932264",
+    "type": "str",
+    "file": "datasets/Generate_Comprehensive_Report__Comprehensive_Report_Path.pkl"
   }
 }

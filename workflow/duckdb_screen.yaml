@@ -93,3 +93,173 @@ pipeline:
         file_path: "data/filter_middle/roiic_trend_analysis.csv"
         format: "csv"
         data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+
+    # ========== 营收趋势分析 (规模增长) ==========
+    - name: "Analyze_Revenue_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'total_revenue_ps'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+        reference_metrics: ["roe"]
+      outputs:
+        parameters:
+          - name: Revenue_Trend_Result
+
+    - name: "store_Revenue_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/revenue_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+
+    # ========== 净利润趋势分析 (盈利增长) ==========
+    - name: "Analyze_Profit_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'eps'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+        reference_metrics: ["ocfps"]
+      outputs:
+        parameters:
+          - name: Profit_Trend_Result
+
+    - name: "store_Profit_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/profit_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+
+    # ========== 毛利率趋势分析 (护城河) ==========
+    - name: "Analyze_GrossMargin_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'grossprofit_margin'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: GrossMargin_Trend_Result
+
+    - name: "store_GrossMargin_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/gross_margin_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+
+    # ========== 净利率趋势分析 (盈利能力) ==========
+    - name: "Analyze_NetMargin_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'netprofit_margin'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: NetMargin_Trend_Result
+
+    - name: "store_NetMargin_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/net_margin_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+
+    # ========== ROE 趋势分析 (股东回报) ==========
+    - name: "Analyze_ROE_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'roe'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: ROE_Trend_Result
+
+    - name: "store_ROE_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/roe_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+
+    # ========== 经营现金流趋势分析 (含金量) ==========
+    - name: "Analyze_OCF_Trend"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["analyze_metric_trend"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        metric_name: 'ocfps'
+        prefix: ""
+        suffix: ""
+        min_periods: 5
+      outputs:
+        parameters:
+          - name: OCF_Trend_Result
+
+    - name: "store_OCF_Trend"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "store"
+      parameters:
+        file_path: "data/filter_middle/ocf_trend_analysis.csv"
+        format: "csv"
+        data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+
+    # ========== 综合报告生成 (Cross-Analysis Report) ==========
+    - name: "Generate_Comprehensive_Report"
+      component: "business_engine"
+      engine: "reporting"
+      method: ["report_comprehensive"]
+      parameters:
+        data_dir: "data/filter_middle"
+        output_path: "data/comprehensive_analysis_report.md"
+      outputs:
+        parameters:
+          - name: Comprehensive_Report_Path

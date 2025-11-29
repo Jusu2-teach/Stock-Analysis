@@ -86,6 +86,8 @@ from .rules import (
     rule_acceleration_adjustment,
     rule_roiic_positive_bonus,
     rule_growth_momentum_bonus,
+    rule_earnings_quality_divergence,
+    rule_sustainable_growth_check,
 )
 from .strategies import get_default_strategies, TrendStrategy
 
@@ -438,6 +440,8 @@ DEFAULT_TREND_RULES: List[TrendRule] = [
     TrendRule("acceleration_adjustment", rule_acceleration_adjustment),
     TrendRule("roiic_positive_bonus", rule_roiic_positive_bonus),
     TrendRule("growth_momentum_bonus", rule_growth_momentum_bonus),
+    TrendRule("earnings_quality_divergence", rule_earnings_quality_divergence),
+    TrendRule("sustainable_growth_check", rule_sustainable_growth_check),
 ]
 
 trend_rule_engine = TrendRuleEngine(DEFAULT_TREND_RULES)

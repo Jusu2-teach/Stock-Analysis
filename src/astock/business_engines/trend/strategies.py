@@ -102,6 +102,21 @@ class HighGrowthStrategy(BaseStrategy):
         # 使用稳健增长率
         growth_rate = self._get_robust_growth_rate(context)
 
+        # === 新增：专业级质量过滤 ===
+
+        # 1. 拒绝"有毒增长" (Toxic Growth)
+        # 如果是营收/利润指标，必须检查 ROIC/ROE 是否及格
+        if metric_type == "scale":
+            roe_stats = context.reference_metrics.get("roe")
+            if roe_stats and roe_stats.get("latest", 0) < 5.0:
+                return StrategyResult(self.name, False, "增长无效(ROE<5%)")
+
+        # 2. 拒绝"高波动伪增长"
+        # A股很多公司是周期性的，某一年暴涨 100% 会拉高斜率
+        # 强制要求 Mann-Kendall 必须显著 (p_value < 0.1) 才能算"真成长"
+        if context.log_slope > 0.3 and context.mann_kendall_p_value > 0.1:
+             return StrategyResult(self.name, False, "增长不显著(可能是单年脉冲)")
+
         # === 模式 A: 效率指标 (寻找护城河) ===
         if metric_type == "efficiency":
             min_value = self._get_adaptive_threshold(context.metric_name, "min_value", 15.0)

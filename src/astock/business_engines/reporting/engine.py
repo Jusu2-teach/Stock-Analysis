@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
 from ..core.interfaces import ScoreResult
 from .generic_reporter import GenericReporter
+from .comprehensive_generator import ComprehensiveReportGenerator
 
 @register_method(
     engine_name="report_generic",
@@ -31,3 +32,17 @@ def report_generic(result: ScoreResult, config: Dict[str, Any] = None, output_pa
         Path(output_path).write_text(report_text, encoding='utf-8')
 
     return report_text
+
+@register_method(
+    engine_name="report_comprehensive",
+    component_type="business_engine",
+    engine_type="reporting",
+    description="Generate comprehensive trend analysis report from multiple metrics"
+)
+def report_comprehensive(data_dir: str = "data/filter_middle", output_path: str = "data/comprehensive_analysis_report.md") -> str:
+    """
+    生成综合趋势分析报告
+    """
+    generator = ComprehensiveReportGenerator(data_dir=data_dir)
+    return generator.generate_report(output_path=output_path)
+
