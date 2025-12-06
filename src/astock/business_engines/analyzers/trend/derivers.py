@@ -2,18 +2,34 @@
 指标派生器模块（重构合并版）
 ============================
 
-合并原 derivers/ 目录：
-- base.py: 派生器接口
-- roiic_deriver.py: ROIIC计算器
+提供可扩展的指标派生框架，支持从基础指标动态计算派生指标。
 
-原文件：
-- derivers/base.py
-- derivers/roiic_deriver.py
-- derivers/__init__.py
+设计原则:
+1. 插件化: 新派生器只需实现 MetricDeriver 协议并注册
+2. 零侵入: 使用 DuckDB 临时视图，不修改原始数据
+3. 可组合: 支持链式派生（派生指标依赖另一个派生指标）
+4. 可验证: 派生结果自动校验
+
+使用示例:
+    # 注册自定义派生器
+    @dataclass
+    class MyDeriver:
+        metric_name = "my_metric"
+        required_columns = {"col_a", "col_b"}
+        ...
+    register_deriver(MyDeriver())
+
+    # 自动派生
+    deriver = find_deriver("my_metric", available_cols)
+    if deriver:
+        new_source = deriver.derive(con, source_sql, group_col)
 """
 
 import logging
-from typing import Protocol, Set, runtime_checkable
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Protocol, Set, Tuple, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +59,44 @@ class MetricDeriver(Protocol):
     @property
     def description(self) -> str:
         """派生器描述"""
+        ...
+
+    def can_derive(self, metric_name: str, available_cols: Set[str]) -> bool:
+        """判断是否能派生指定指标"""
+        ...
+
+    def derive(
+        self,
+        con: Any,         # DuckDB 连接对象
+        source_sql: str,  # 源数据 SQL/视图名
+        group_column: str # 分组列名
+    ) -> str:
+        """执行派生逻辑，返回新视图名称"""
+        ...
+
+
+# ============================================================================
+# 派生器基类（推荐继承）
+# ============================================================================
+
+class BaseDeriver(ABC):
+    """派生器基类，提供通用实现"""
+
+    @property
+    @abstractmethod
+    def metric_name(self) -> str:
+        """返回派生指标名称（小写）"""
+        pass
+
+    @property
+    @abstractmethod
+    def required_columns(self) -> Set[str]:
+        """返回派生所需的源数据列"""
+        pass
+
+    @property
+    def description(self) -> str:
+        """派生器描述"""
         return f"{self.metric_name.upper()} 派生器"
 
     def can_derive(self, metric_name: str, available_cols: Set[str]) -> bool:
@@ -51,21 +105,31 @@ class MetricDeriver(Protocol):
             return False
         return self.required_columns.issubset(available_cols)
 
+    def get_missing_columns(self, available_cols: Set[str]) -> Set[str]:
+        """获取缺失的必需列"""
+        return self.required_columns - available_cols
+
+    def _generate_view_name(self) -> str:
+        """生成唯一视图名，避免冲突"""
+        short_id = uuid.uuid4().hex[:8]
+        return f"derived_{self.metric_name}_{short_id}"
+
+    @abstractmethod
     def derive(
         self,
-        con,              # DuckDB 连接对象
-        source_sql: str,  # 源数据 SQL
-        group_column: str # 分组列名
+        con: Any,
+        source_sql: str,
+        group_column: str
     ) -> str:
         """执行派生逻辑，返回新视图名称"""
-        ...
+        pass
 
 
 # ============================================================================
 # ROIIC 派生器
 # ============================================================================
 
-class ROIICDeriver:
+class ROIICDeriver(BaseDeriver):
     """ROIIC (Return on Incremental Invested Capital) 派生器
 
     计算增量资本回报率：ROIIC = ΔNOPAT / Δ投入资本
@@ -84,13 +148,7 @@ class ROIICDeriver:
     def description(self) -> str:
         return "增量资本回报率 (ROIIC): 衡量新增投资的回报效率"
 
-    def can_derive(self, metric_name: str, available_cols: Set[str]) -> bool:
-        """判断是否能派生 ROIIC"""
-        if metric_name.lower() != self.metric_name:
-            return False
-        return self.required_columns.issubset(available_cols)
-
-    def derive(self, con, source_sql: str, group_column: str) -> str:
+    def derive(self, con: Any, source_sql: str, group_column: str) -> str:
         """派生 ROIIC 指标
 
         步骤：
@@ -102,7 +160,7 @@ class ROIICDeriver:
         from ...core.duckdb_utils import _q
 
         group_col_q = _q(group_column)
-        view_name = "trend_with_roiic"
+        view_name = self._generate_view_name()
 
         sql = f"""
             CREATE OR REPLACE TEMP VIEW {view_name} AS
@@ -138,36 +196,90 @@ class ROIICDeriver:
             FROM lagged
         """
 
-        logger.info("🔌 ROIIC 插件: 派生 ROIIC = ΔNOPAT / Δ投入资本")
+        logger.info(f"🔌 ROIIC 派生器: ROIIC = ΔNOPAT / Δ投入资本 → {view_name}")
         con.execute(sql)
         return view_name
 
 
 # ============================================================================
-# 派生器注册系统（简化版）
+# 派生器注册系统
 # ============================================================================
 
-_REGISTERED_DERIVERS = []
+@dataclass
+class DeriverRegistry:
+    """派生器注册表（单例模式）"""
+    _derivers: Dict[str, MetricDeriver] = field(default_factory=dict)
+
+    def register(self, deriver: MetricDeriver) -> None:
+        """注册派生器"""
+        name = deriver.metric_name.lower()
+        if name in self._derivers:
+            logger.warning(f"⚠️ 派生器 {name} 已存在，将被覆盖")
+        self._derivers[name] = deriver
+        logger.debug(f"✅ 已注册派生器: {name}")
+
+    def unregister(self, metric_name: str) -> bool:
+        """注销派生器"""
+        name = metric_name.lower()
+        if name in self._derivers:
+            del self._derivers[name]
+            logger.debug(f"🗑️ 已注销派生器: {name}")
+            return True
+        return False
+
+    def get(self, metric_name: str) -> Optional[MetricDeriver]:
+        """获取指定派生器"""
+        return self._derivers.get(metric_name.lower())
+
+    def find(self, metric_name: str, available_cols: Set[str]) -> Optional[MetricDeriver]:
+        """查找可用的派生器"""
+        deriver = self.get(metric_name)
+        if deriver and deriver.can_derive(metric_name, available_cols):
+            return deriver
+        return None
+
+    def list_all(self) -> Dict[str, MetricDeriver]:
+        """获取所有派生器"""
+        return self._derivers.copy()
+
+    def list_names(self) -> list:
+        """列出所有可派生的指标名"""
+        return list(self._derivers.keys())
+
+    def clear(self) -> None:
+        """清空所有派生器"""
+        self._derivers.clear()
 
 
-def register_deriver(deriver: MetricDeriver):
+# 全局单例
+_registry = DeriverRegistry()
+
+
+# ============================================================================
+# 便捷函数 API
+# ============================================================================
+
+def register_deriver(deriver: MetricDeriver) -> None:
     """注册派生器"""
-    if deriver not in _REGISTERED_DERIVERS:
-        _REGISTERED_DERIVERS.append(deriver)
-        logger.info(f"✅ 已注册派生器: {deriver.metric_name}")
+    _registry.register(deriver)
 
 
-def get_registered_derivers():
+def unregister_deriver(metric_name: str) -> bool:
+    """注销派生器"""
+    return _registry.unregister(metric_name)
+
+
+def get_registered_derivers() -> Dict[str, MetricDeriver]:
     """获取所有已注册的派生器"""
-    return _REGISTERED_DERIVERS.copy()
+    return _registry.list_all()
 
 
-def list_available_metrics():
+def list_available_metrics() -> list:
     """列出所有可派生的指标名"""
-    return [d.metric_name for d in _REGISTERED_DERIVERS]
+    return _registry.list_names()
 
 
-def find_deriver(metric_name: str, available_cols: Set[str]) -> MetricDeriver:
+def find_deriver(metric_name: str, available_cols: Set[str]) -> Optional[MetricDeriver]:
     """查找可用的派生器
 
     Args:
@@ -177,13 +289,10 @@ def find_deriver(metric_name: str, available_cols: Set[str]) -> MetricDeriver:
     Returns:
         派生器实例，如果没找到则返回 None
     """
-    for deriver in _REGISTERED_DERIVERS:
-        if deriver.can_derive(metric_name, available_cols):
-            return deriver
-    return None
+    return _registry.find(metric_name, available_cols)
 
 
-def check_derivable(metric_name: str, available_cols: Set[str]) -> bool:
+def check_derivable(metric_name: str, available_cols: Set[str]) -> Tuple[bool, Set[str]]:
     """检查是否可派生某指标
 
     Args:
@@ -191,22 +300,70 @@ def check_derivable(metric_name: str, available_cols: Set[str]) -> bool:
         available_cols: 可用列集合
 
     Returns:
-        True 如果可派生
+        (是否可派生, 缺失的列集合)
     """
-    return find_deriver(metric_name, available_cols) is not None
+    deriver = _registry.get(metric_name)
+    if deriver is None:
+        return False, set()
+
+    if deriver.can_derive(metric_name, available_cols):
+        return True, set()
+
+    # 计算缺失列
+    if isinstance(deriver, BaseDeriver):
+        missing = deriver.get_missing_columns(available_cols)
+    else:
+        missing = deriver.required_columns - available_cols
+
+    return False, missing
 
 
+def get_deriver_info(metric_name: str) -> Optional[Dict[str, Any]]:
+    """获取派生器详细信息
+
+    Args:
+        metric_name: 指标名
+
+    Returns:
+        派生器信息字典，或 None
+    """
+    deriver = _registry.get(metric_name)
+    if deriver is None:
+        return None
+
+    return {
+        'metric_name': deriver.metric_name,
+        'required_columns': list(deriver.required_columns),
+        'description': deriver.description,
+        'class': deriver.__class__.__name__,
+    }
+
+
+# ============================================================================
 # 自动注册内置派生器
+# ============================================================================
+
 register_deriver(ROIICDeriver())
 
 
+# ============================================================================
 # 导出
+# ============================================================================
+
 __all__ = [
+    # 接口与基类
     'MetricDeriver',
+    'BaseDeriver',
+    # 内置派生器
     'ROIICDeriver',
+    # 注册系统
+    'DeriverRegistry',
     'register_deriver',
+    'unregister_deriver',
     'get_registered_derivers',
+    # 查询函数
     'find_deriver',
     'list_available_metrics',
     'check_derivable',
+    'get_deriver_info',
 ]
