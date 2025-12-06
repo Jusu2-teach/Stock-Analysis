@@ -1,9 +1,20 @@
 # AStock Pipeline 架构指南
 
-> **版本**: 4.0 (2025-12)
+> **版本**: 4.1 (2025-12) | **Python Package**: `v2.0.0`
 > **状态**: Production Ready
 > **架构核心**: 依赖图驱动调度 + Prefect-Kedro 混合执行 + MethodHandle 延迟绑定
 > **关键词**: 显式依赖、拓扑排序、层次并行、可观测、可扩展
+
+---
+
+## 🆕 v2.0.0 新特性
+
+| 特性 | 描述 |
+|------|------|
+| **依赖图可视化** | 支持 Mermaid、GraphViz、文本格式导出，CLI `graph` 命令 |
+| **Context 状态管理** | `reset()`, `clone()`, `get_stats()` 方法，支持上下文复用与统计 |
+| **HookManager 增强** | 事件统计、调试模式、动态注销，完整生命周期管理 |
+| **模块导出优化** | `pipeline.core` 统一 API 入口，类型安全导入 |
 
 ---
 
@@ -214,6 +225,33 @@ class PipelineContext:
     lineage: Dict[str, Any]          # 数据血缘信息
 ```
 
+#### 🆕 v2.0.0 Context 新方法
+
+```python
+# 获取步骤数量
+count = ctx.get_step_count()  # 15
+
+# 获取统计信息
+stats = ctx.get_stats()
+# {
+#   'step_count': 15,
+#   'metric_count': 10,
+#   'lineage_count': 10,
+#   'catalog_size': 8,
+#   'has_dependency_graph': True
+# }
+
+# 重置上下文 (保留结构)
+ctx.reset()
+
+# 克隆上下文 (深拷贝)
+ctx_copy = ctx.clone()
+
+# 存储/获取依赖图
+ctx.set_dependency_graph(graph)
+graph = ctx.get_dependency_graph()
+```
+
 ---
 
 ## 4. 依赖图系统 (DependencyGraph)
@@ -269,6 +307,55 @@ class DependencyType(Enum):
     EXPLICIT = auto()   # 显式依赖：通过 depends_on 声明
     RESOURCE = auto()   # 资源依赖：共享资源（如数据库连接）
     TEMPORAL = auto()   # 时序依赖：时间窗口约束
+```
+
+### 🆕 依赖图可视化导出
+
+v2.0.0 新增依赖图可视化能力，支持多种格式导出：
+
+```python
+from pipeline.core import DependencyGraph
+
+# 构建依赖图
+graph = DependencyGraph.from_step_configs(steps)
+
+# Mermaid 格式 (适合 Markdown 文档)
+mermaid_code = graph.to_mermaid()
+# 输出:
+# graph TD
+#     Load_Data --> Process_Data
+#     Process_Data --> Store_Result
+
+# GraphViz DOT 格式 (适合高质量图片)
+dot_code = graph.to_graphviz()
+
+# 保存为文件
+graph.save_visualization("deps.md", format="mermaid")
+graph.save_visualization("deps.dot", format="graphviz")
+graph.save_visualization("deps.txt", format="text")
+
+# 获取摘要信息
+summary = graph.get_summary()
+# {
+#   'total_nodes': 20,
+#   'total_edges': 25,
+#   'total_layers': 5,
+#   'max_parallelism': 8,
+#   'critical_path': ['Load_Data', 'Process', 'Store', 'Report'],
+#   'critical_path_length': 4
+# }
+```
+
+**CLI 命令**:
+```bash
+# 查看依赖图摘要
+python -m pipeline.main graph -c config.yaml --summary
+
+# 导出 Mermaid 格式
+python -m pipeline.main graph -c config.yaml -f mermaid -o deps.md
+
+# 导出 GraphViz 格式
+python -m pipeline.main graph -c config.yaml -f graphviz -o deps.dot
 ```
 
 ### 层次执行示例
@@ -633,6 +720,40 @@ Pipeline 执行
        on_failure (如果有错误)
 ```
 
+### 🆕 v2.0.0 HookManager 增强
+
+```python
+from pipeline.core.services.hook_manager import HookManager
+
+# 支持的事件常量
+HookManager.SUPPORTED_EVENTS
+# {'before_flow', 'after_flow', 'before_node', 'after_node',
+#  'on_cache_hit', 'on_cache_miss', 'on_failure', 'on_method_execute'}
+
+# 开启调试模式 (详细日志)
+hooks.set_debug(True)
+
+# 注销特定处理器
+hooks.unregister('after_node', handler_func)
+
+# 获取某事件的所有处理器
+handlers = hooks.get_handlers('before_flow')
+
+# 获取统计信息
+stats = hooks.get_stats()
+# {
+#   'total_handlers': 8,
+#   'total_calls': 42,
+#   'calls_by_event': {'before_flow': 1, 'after_node': 20, ...}
+# }
+
+# 清空所有处理器
+hooks.clear()
+
+# 重置统计 (类方法)
+HookManager.reset()
+```
+
 ### 插件开发
 
 ```python
@@ -870,6 +991,25 @@ python pipeline/main.py run -c config.yaml --resume
 python pipeline/main.py run -c config.yaml --force
 ```
 
+### 🆕 依赖图可视化 (v2.0.0)
+
+```bash
+# 查看依赖图摘要
+python pipeline/main.py graph -c config.yaml --summary
+
+# 导出 Mermaid 格式 (适合 Markdown)
+python pipeline/main.py graph -c config.yaml -f mermaid -o deps.md
+
+# 导出 GraphViz 格式 (适合高质量图片)
+python pipeline/main.py graph -c config.yaml -f graphviz -o deps.dot
+
+# 导出文本格式 (适合终端查看)
+python pipeline/main.py graph -c config.yaml -f text
+
+# 生成 GraphViz 图片 (需安装 graphviz)
+dot -Tpng deps.dot -o deps.png
+```
+
 ### 状态与诊断
 
 ```bash
@@ -956,10 +1096,13 @@ MIT License
 ---
 
 **维护者**: AStock Team
-**最后更新**: 2025-12-06
+**最后更新**: 2025-12-07
+**Python Package Version**: 2.0.0
 
 ---
+
 ## 3. 演进关键点
+
 | 方向 | 旧状态 | 新状态 |
 |------|--------|--------|
 | 自动输入聚合 | InputInferenceService 自动推断 | 已删除 (完全显式 inputs 参数) |

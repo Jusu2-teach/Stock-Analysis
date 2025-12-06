@@ -34,12 +34,13 @@ class FlowExecutor:
         self.logger = logger or logging.getLogger(__name__)
 
     def _emit_hook(self, event: str, data: Any = None):
-        """安全触发 Hook 事件（忽略错误）"""
+        """安全触发 Hook 事件（非关键功能，忽略错误但记录日志）"""
         try:
             from pipeline.core.services.hook_manager import HookManager
             HookManager.get().emit(event, data)
-        except Exception:
-            pass
+        except Exception as e:
+            # Hook 失败不应影响主流程，仅记录 debug 日志
+            self.logger.debug(f"Hook '{event}' 触发失败（已忽略）: {e}")
 
     def run(self, auto_info: Dict[str, Any], manager: Any) -> Dict[str, Any]:
         """运行 Hybrid Flow（Prefect + Kedro）
@@ -77,8 +78,9 @@ class FlowExecutor:
             if self.cache_stats_service:
                 try:
                     cache_stats = self.cache_stats_service.summary(kedro_engine)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # 缓存统计是可选功能，失败不影响主流程
+                    self.logger.debug(f"缓存统计获取失败（已忽略）: {e}")
 
             # 组装结果
             assembled = self.result_assembler.assemble(

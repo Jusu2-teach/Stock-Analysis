@@ -314,6 +314,72 @@ class AStockCLI:
             print(f"[ENGINES] error: {e}")
             sys.exit(1)
 
+    def cmd_graph(self, args) -> None:
+        """[VIZ] 可视化依赖图"""
+        try:
+            self._init_manager(args.config)
+
+            # 获取依赖图
+            graph = self.manager.ctx.get_dependency_graph()
+            if graph is None:
+                print("[ERROR] 依赖图未构建")
+                sys.exit(1)
+
+            # 仅显示摘要
+            if args.summary:
+                summary = graph.get_summary()
+                print(f"📊 依赖图摘要:")
+                print(f"   节点数: {summary['node_count']}")
+                print(f"   边数: {summary['edge_count']}")
+                print(f"   执行层数: {summary['layers']}")
+                print(f"   最大并行度: {summary['max_parallelism']}")
+                print(f"   关键路径长度: {summary['critical_path_length']}")
+                if summary.get('critical_path'):
+                    print(f"   关键路径: {' → '.join(summary['critical_path'])}")
+                if summary.get('has_cycle'):
+                    print(f"   ⚠️ 检测到循环依赖: {' → '.join(summary.get('cycle', []))}")
+                return
+
+            # 生成可视化
+            if args.format == 'mermaid':
+                content = graph.to_mermaid()
+                if args.output:
+                    # 保存为 Markdown 文件
+                    output_path = Path(args.output)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(f"# Pipeline Dependency Graph\n\n```mermaid\n{content}\n```\n")
+                    print(f"✅ Mermaid 图已保存: {output_path}")
+                else:
+                    print("```mermaid")
+                    print(content)
+                    print("```")
+
+            elif args.format == 'graphviz':
+                content = graph.to_graphviz()
+                if args.output:
+                    output_path = Path(args.output)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    print(f"✅ GraphViz DOT 已保存: {output_path}")
+                else:
+                    print(content)
+
+            elif args.format == 'text':
+                # 简单文本格式
+                plan = graph.build_execution_plan()
+                print(f"📊 Pipeline 依赖图 ({len(graph)} 节点, {plan.depth} 层)")
+                print("=" * 50)
+                for layer in plan.layers:
+                    nodes_str = ', '.join(layer.nodes)
+                    print(f"  Layer {layer.index}: [{nodes_str}]")
+                print("=" * 50)
+                if plan.critical_path:
+                    print(f"🔥 关键路径: {' → '.join(plan.critical_path)}")
+
+        except Exception as e:
+            print(f"[ERROR] Graph visualization failed: {e}")
+            sys.exit(1)
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create enhanced argument parser"""
@@ -325,6 +391,7 @@ Examples:
   %(prog)s run -c config.yaml              # Execute pipeline
   %(prog)s cache warm -c config.yaml       # Warm cache
   %(prog)s cache clear                     # Clear cache
+  %(prog)s graph -c config.yaml            # Show dependency graph
         """
     )
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -358,6 +425,13 @@ Examples:
     metrics_parser.add_argument('--top', type=int, help='Show top N slow nodes (default 5)')
     metrics_parser.add_argument('--format', choices=['text','json','markdown'], default='text', help='Output format (text|json|markdown)')
 
+    # graph command - 新增依赖图可视化
+    graph_parser = subparsers.add_parser('graph', help='[VIZ] Visualize dependency graph')
+    graph_parser.add_argument('--config', '-c', required=True, help='Configuration file path')
+    graph_parser.add_argument('--format', '-f', choices=['mermaid', 'graphviz', 'text'], default='mermaid', help='Output format')
+    graph_parser.add_argument('--output', '-o', help='Save to file (optional)')
+    graph_parser.add_argument('--summary', '-s', action='store_true', help='Show graph summary only')
+
     return parser
 
 def main():
@@ -377,6 +451,7 @@ def main():
             'engines': cli.cmd_engines,
             'cache': cli.cmd_cache,
             'metrics': cli.cmd_metrics,
+            'graph': cli.cmd_graph,
         }
 
         if args.command in command_map:

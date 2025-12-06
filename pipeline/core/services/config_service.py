@@ -29,63 +29,19 @@ from ..dependency_graph import (
     DependencyEdge,
     ExecutionPlan,
     CyclicDependencyError,
+    # ✅ 使用统一的依赖源实现（不再重复定义）
+    DataDependencySource,
+    ExplicitDependencySource,
 )
 
 
-class StepDataDependencySource(DependencySource):
-    """Step 级数据依赖源
-
-    从 StepSpec 的 inputs 字段（数据集名）推导依赖。
-    """
-
-    def extract_dependencies(self, node_name: str, node_config: Dict[str, Any],
-                            all_nodes: Dict[str, Any]) -> List[DependencyEdge]:
-        edges = []
-        inputs = node_config.get('inputs', [])
-        if isinstance(inputs, str):
-            inputs = [inputs]
-
-        # 构建输出到节点的映射
-        output_to_node = {}
-        for name, cfg in all_nodes.items():
-            for out in cfg.get('outputs', []):
-                output_to_node[out] = name
-
-        for inp in inputs:
-            if inp in output_to_node:
-                producer = output_to_node[inp]
-                if producer != node_name:
-                    edges.append(DependencyEdge(
-                        from_node=producer,
-                        to_node=node_name,
-                        dep_type=DependencyType.DATA,
-                        metadata={'dataset': inp}
-                    ))
-        return edges
-
-
-class StepExplicitDependencySource(DependencySource):
-    """Step 级显式依赖源
-
-    从 depends_on 字段解析显式声明的依赖。
-    """
-
-    def extract_dependencies(self, node_name: str, node_config: Dict[str, Any],
-                            all_nodes: Dict[str, Any]) -> List[DependencyEdge]:
-        edges = []
-        depends_on = node_config.get('depends_on', [])
-        if isinstance(depends_on, str):
-            depends_on = [depends_on]
-
-        for dep in depends_on:
-            if dep in all_nodes:
-                edges.append(DependencyEdge(
-                    from_node=dep,
-                    to_node=node_name,
-                    dep_type=DependencyType.EXPLICIT,
-                    metadata={'source': 'depends_on'}
-                ))
-        return edges
+# ============================================================================
+# 🔄 重构说明：
+# StepDataDependencySource 和 StepExplicitDependencySource 已移除。
+# 现在直接使用 dependency_graph.py 中的 DataDependencySource 和
+# ExplicitDependencySource，它们的实现是完全等价的。
+# 这消除了代码重复，遵循 DRY 原则。
+# ============================================================================
 
 
 class ConfigService:
@@ -284,15 +240,18 @@ class ConfigService:
                 'depends_on': spec.depends_on,
             }
 
-        # 使用依赖源策略创建依赖图
+        # 使用依赖源策略创建依赖图（使用统一的 DependencySource 实现）
         self._dependency_graph = DependencyGraph.from_node_configs(
             node_configs,
             sources=[
-                StepDataDependencySource(),
-                StepExplicitDependencySource(),
+                DataDependencySource(),      # ✅ 使用统一实现
+                ExplicitDependencySource(),  # ✅ 使用统一实现
             ],
             logger=self.logger
         )
+
+        # ✅ 将依赖图存储到上下文中（供其他组件复用，避免重复构建）
+        self.ctx.set_dependency_graph(self._dependency_graph)
 
         # 记录显式依赖（便于调试）
         for name, spec in self.ctx.steps.items():
@@ -314,8 +273,8 @@ class ConfigService:
             plan = self._dependency_graph.build_execution_plan()
             self.ctx.execution_order = plan.flatten()
 
-            # 将执行计划存储到上下文中（供 Prefect Engine 使用）
-            self.ctx.set_runtime_value('execution_plan', plan)
+            # ✅ 使用专用方法存储执行计划（供 Prefect Engine 使用）
+            self.ctx.set_execution_plan(plan)
 
             self.logger.info(f"🧭 执行顺序: {self.ctx.execution_order}")
             self.logger.info(f"📊 执行计划: {plan.depth} 层, 最大并行度 {plan.max_parallelism}")

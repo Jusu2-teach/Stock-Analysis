@@ -70,7 +70,7 @@
     "file": "datasets/Analyze_Profit_Trend__Profit_Trend_Result.pkl"
   },
   "Generate_Comprehensive_Report__Comprehensive_Report_Path": {
-    "fingerprint": "obj:1bb17934b376b82dbe3a0bc3345233d9b87de98ec4516d4b3b885055438cadb5",
+    "fingerprint": "obj:31da94f50836d04f024cd534c17af3c704c1e6700075a4f56b68072490f74eb2",
     "type": "str",
     "file": "datasets/Generate_Comprehensive_Report__Comprehensive_Report_Path.pkl"
   }

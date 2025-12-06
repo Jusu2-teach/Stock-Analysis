@@ -272,10 +272,8 @@ class PrefectEngine:
         # 判断是否启用节点级粒度
         orchestration = config.get('pipeline', {}).get('orchestration', {}) or {}
         granularity = orchestration.get('granularity', 'pipeline').lower()
-        try:
-            self.logger.info(f"🔍 Prefect granularity 检测: raw_orchestration_keys={list(orchestration.keys())} granularity={granularity}")
-        except Exception:
-            pass
+        # 日志记录粒度配置（非关键操作）
+        self.logger.info(f"🔍 Prefect granularity 检测: raw_orchestration_keys={list(orchestration.keys())} granularity={granularity}")
         if granularity == 'node':
             return self._build_node_level_flow(config, orchestration)
 
@@ -562,8 +560,9 @@ class PrefectEngine:
                                 self.kedro_engine.global_catalog[in_name] = val
                                 args.append(val)
                                 loaded = True
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                # 加载失败，尝试其他数据源
+                                logger.debug(f"从 data_catalog 加载 {in_name} 失败: {e}")
                         if not loaded:
                             if in_name in up_inputs:
                                 args.append(up_inputs[in_name])
@@ -610,8 +609,9 @@ class PrefectEngine:
                             if ds_name not in self.kedro_engine.data_catalog._data_sets:  # type: ignore
                                 self.kedro_engine.data_catalog.add(ds_name, MemoryDataset())  # type: ignore
                             self.kedro_engine.data_catalog.save(ds_name, val)  # type: ignore
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # data_catalog 保存失败不应阻塞流程，数据已在 global_catalog 中
+                            logger.debug(f"data_catalog 保存 {ds_name} 失败（已在 global_catalog 中）: {e}")
                         produced[ds_name] = val
                 logger.info(f"✅ 节点完成: {node_name} -> {list(produced.keys())} {'(cached)' if cached else ''}")
                 return { 'status': 'completed', 'node': node_name, 'outputs': produced, 'cached': cached }

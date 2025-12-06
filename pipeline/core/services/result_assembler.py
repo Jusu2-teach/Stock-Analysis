@@ -81,7 +81,8 @@ class ResultAssembler:
             try:
                 raw.setdefault('lineage', kedro_engine.lineage)
                 raw.setdefault('node_metrics', kedro_engine.node_metrics)
-            except Exception:
+            except AttributeError:
+                # kedro_engine 可能没有这些属性，静默忽略
                 pass
 
         return raw

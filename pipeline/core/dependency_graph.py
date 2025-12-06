@@ -513,6 +513,130 @@ class DependencyGraph:
             ]
         }
 
+    # ================== 可视化导出 ==================
+
+    def to_mermaid(self, direction: str = 'TB') -> str:
+        """导出为 Mermaid 图表格式
+
+        Args:
+            direction: 图方向 ('TB'=上到下, 'LR'=左到右)
+
+        Returns:
+            Mermaid 格式的字符串
+
+        Example:
+            ```mermaid
+            graph TB
+                A --> B
+                A --> C
+                B --> D
+            ```
+        """
+        lines = [f"graph {direction}"]
+
+        # 添加节点（按层次分组）
+        try:
+            plan = self.build_execution_plan()
+            for layer in plan.layers:
+                for node in layer.nodes:
+                    # 清理节点名称中的特殊字符
+                    safe_name = node.replace('-', '_').replace(' ', '_')
+                    lines.append(f"    {safe_name}[\"{node}\"]")
+        except CyclicDependencyError:
+            # 有循环时直接列出所有节点
+            for node in sorted(self._nodes):
+                safe_name = node.replace('-', '_').replace(' ', '_')
+                lines.append(f"    {safe_name}[\"{node}\"]")
+
+        # 添加边
+        for edge in self._edges.values():
+            from_safe = edge.from_node.replace('-', '_').replace(' ', '_')
+            to_safe = edge.to_node.replace('-', '_').replace(' ', '_')
+            # 不同依赖类型用不同箭头
+            arrow = '-->' if edge.dep_type == DependencyType.DATA else '-..->'
+            lines.append(f"    {from_safe} {arrow} {to_safe}")
+
+        return '\n'.join(lines)
+
+    def to_graphviz(self, name: str = 'pipeline') -> str:
+        """导出为 Graphviz DOT 格式
+
+        Args:
+            name: 图名称
+
+        Returns:
+            DOT 格式字符串
+        """
+        lines = [
+            f'digraph {name} {{',
+            '    rankdir=TB;',
+            '    node [shape=box, style=rounded];',
+            ''
+        ]
+
+        # 按层次分组节点
+        try:
+            plan = self.build_execution_plan()
+            for layer in plan.layers:
+                lines.append(f'    // Layer {layer.index}')
+                lines.append('    { rank=same; ' + '; '.join(f'"{n}"' for n in layer.nodes) + ' }')
+        except CyclicDependencyError:
+            pass
+
+        lines.append('')
+
+        # 添加边
+        for edge in self._edges.values():
+            style = 'solid' if edge.dep_type == DependencyType.DATA else 'dashed'
+            color = 'black' if edge.dep_type == DependencyType.DATA else 'gray'
+            lines.append(f'    "{edge.from_node}" -> "{edge.to_node}" [style={style}, color={color}];')
+
+        lines.append('}')
+        return '\n'.join(lines)
+
+    def save_visualization(self, path: str, format: str = 'mermaid') -> None:
+        """保存可视化到文件
+
+        Args:
+            path: 输出文件路径
+            format: 'mermaid' 或 'graphviz'
+        """
+        content = self.to_mermaid() if format == 'mermaid' else self.to_graphviz()
+
+        if format == 'mermaid' and not path.endswith('.md'):
+            # 包装为 Markdown
+            content = f"```mermaid\n{content}\n```"
+
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """获取依赖图摘要信息
+
+        Returns:
+            包含节点数、边数、层次等信息的字典
+        """
+        summary = {
+            'node_count': len(self._nodes),
+            'edge_count': len(self._edges),
+            'has_cycle': False,
+            'layers': 0,
+            'max_parallelism': 0,
+            'critical_path_length': 0,
+        }
+
+        try:
+            plan = self.build_execution_plan()
+            summary['layers'] = plan.depth
+            summary['max_parallelism'] = plan.max_parallelism
+            summary['critical_path_length'] = len(plan.critical_path)
+            summary['critical_path'] = plan.critical_path
+        except CyclicDependencyError as e:
+            summary['has_cycle'] = True
+            summary['cycle'] = e.cycle
+
+        return summary
+
     def __len__(self) -> int:
         return len(self._nodes)
 
