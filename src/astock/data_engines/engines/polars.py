@@ -779,3 +779,82 @@ def compute_hand_metrics(data: Optional[pl.DataFrame] = None,
     else:
         logger.info(f"追加手工指标列: {produced}")
     return df
+
+
+def add_size_classification(
+    data: Optional[pl.DataFrame] = None,
+    capital_col: str = "invest_capital",
+    size_col: str = "size_class",
+    unit_scale: float = 1e8,
+    thresholds: Optional[Dict[str, tuple]] = None,
+    **kwargs
+) -> Optional[pl.DataFrame]:
+    """
+    根据投入资本计算公司规模分类
+
+    规模分类标准 (按投入资本，单位：亿元):
+    - micro: < 10亿 (微型) - 流动性差，风险极高
+    - small: 10-50亿 (小型) - 成长空间大，但波动剧烈
+    - mid: 50-200亿 (中型) - 相对稳健，机构关注度提升
+    - large: 200-1000亿 (大型) - 行业龙头，流动性好
+    - mega: > 1000亿 (超大型) - 蓝筹白马，稳定性最高
+
+    Args:
+        data: 输入的Polars DataFrame
+        capital_col: 投入资本列名，默认 "invest_capital"
+        size_col: 输出的规模分类列名，默认 "size_class"
+        unit_scale: 单位换算因子，默认 1e8 (转换为亿元)
+        thresholds: 自定义阈值，格式 {"micro": (0, 10), "small": (10, 50), ...}
+        **kwargs: 其他参数
+
+    Returns:
+        添加了 size_class 列的 DataFrame
+    """
+    if data is None:
+        logger.warning("add_size_classification: 没有输入数据")
+        return None
+
+    if capital_col not in data.columns:
+        logger.error(f"add_size_classification: 列 '{capital_col}' 不存在")
+        return data
+
+    # 默认阈值 (单位：亿元)
+    if thresholds is None:
+        thresholds = {
+            "micro": (0, 10),       # 微型: < 10亿
+            "small": (10, 50),      # 小型: 10-50亿
+            "mid": (50, 200),       # 中型: 50-200亿
+            "large": (200, 1000),   # 大型: 200-1000亿
+            "mega": (1000, float('inf'))  # 超大型: > 1000亿
+        }
+
+    try:
+        # 先转换为亿元
+        capital_yi = pl.col(capital_col) / unit_scale
+
+        # 使用 when-then-otherwise 链式判断
+        size_expr = (
+            pl.when(capital_yi < thresholds["micro"][1])
+            .then(pl.lit("micro"))
+            .when(capital_yi < thresholds["small"][1])
+            .then(pl.lit("small"))
+            .when(capital_yi < thresholds["mid"][1])
+            .then(pl.lit("mid"))
+            .when(capital_yi < thresholds["large"][1])
+            .then(pl.lit("large"))
+            .otherwise(pl.lit("mega"))
+        )
+
+        df = data.with_columns(size_expr.alias(size_col))
+
+        # 统计各规模分布
+        size_dist = df.group_by(size_col).agg(pl.len().alias("count")).sort("count", descending=True)
+        dist_str = ", ".join([f"{row[size_col]}={row['count']}" for row in size_dist.iter_rows(named=True)])
+        logger.info(f"✅ 规模分类完成: {dist_str}")
+
+        return df
+
+    except Exception as e:
+        logger.error(f"add_size_classification 失败: {e}")
+        return data
+

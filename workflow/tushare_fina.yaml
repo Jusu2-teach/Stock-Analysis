@@ -58,6 +58,19 @@ pipeline:
         parameters:
           - name: Filter_Industry
 
+    - name: "Add_Size_Class"
+      component: "data_engine"
+      engine: "polars"
+      method:
+        - "add_size_classification"
+      parameters:
+        data: "steps.Filter_Industry.outputs.parameters.Filter_Industry"
+        capital_col: "invest_capital"
+        size_col: "size_class"
+      outputs:
+        parameters:
+          - name: Add_Size_Class
+
     - name: "store_data"
       component: "data_engine"
       engine: "polars"
@@ -66,4 +79,5 @@ pipeline:
       parameters:
         file_path: "data/polars/5yd_final_industry.csv"
         format: "csv"
-        data: "steps.Filter_Industry.outputs.parameters.Filter_Industry"
+        data: "steps.Add_Size_Class.outputs.parameters.Add_Size_Class"
+

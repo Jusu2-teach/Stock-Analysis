@@ -1,6 +1,6 @@
 {
   "Load_Financial_Data__Raw_Data": {
-    "fingerprint": "df:66580ac0cca3755a636df8e44026b117ede882edfb7772d6eb5a7ffd6086b726",
+    "fingerprint": "df:fc40ff313d4faa947b106d7de5bb2a0afb4b2c76b19c24930941119891e9d870",
     "type": "DataFrame",
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
@@ -70,7 +70,7 @@
     "file": "datasets/Analyze_Profit_Trend__Profit_Trend_Result.pkl"
   },
   "Generate_Comprehensive_Report__Comprehensive_Report_Path": {
-    "fingerprint": "obj:1b80454e1ce0859fc07e91de0bb61dcaa4f0dae9d27ddcdf96a9fa47a5392698",
+    "fingerprint": "obj:d84635f06b6c1442eeccf7c7edc7d3fbaede76ee72c0315f7798030c0da87f2e",
     "type": "str",
     "file": "datasets/Generate_Comprehensive_Report__Comprehensive_Report_Path.pkl"
   }

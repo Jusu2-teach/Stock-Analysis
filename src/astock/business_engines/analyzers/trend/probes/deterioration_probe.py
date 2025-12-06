@@ -41,8 +41,12 @@ class DeteriorationDetector:
         values_array = checker.ensure_window(values)
         n = len(values_array)
 
-        # 取最近3年数据
-        year3, year4, year5 = values_array[2], values_array[3], values_array[4]
+        # 取最近3年数据 (使用负索引，支持任意年份数据)
+        # year_n_2 = 倒数第3年, year_n_1 = 倒数第2年, year_n = 最新年
+        year_n_2, year_n_1, year_n = values_array[-3], values_array[-2], values_array[-1]
+
+        # 保持向后兼容的变量名
+        year3, year4, year5 = year_n_2, year_n_1, year_n
 
         def pct_change(current: float, previous: float) -> float:
             denominator = max(abs(previous), config.mean_near_zero_eps)

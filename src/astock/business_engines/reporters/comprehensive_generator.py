@@ -16,8 +16,15 @@
 -   **质量因子 (Quality Factor)**: ROE排名 + ROIC排名 + 毛利率排名 + 利润稳定性
 -   **安全因子 (Safety Factor)**: 经营现金流覆盖率 + 现金流趋势
 
+规模分类标准 (按投入资本):
+-   **微型 (Micro)**: < 10亿 - 流动性差，风险极高
+-   **小型 (Small)**: 10-50亿 - 成长空间大，但波动剧烈
+-   **中型 (Mid)**: 50-200亿 - 相对稳健，机构关注度提升
+-   **大型 (Large)**: 200-1000亿 - 行业龙头，流动性好
+-   **超大型 (Mega)**: > 1000亿 - 蓝筹白马，稳定性最高
+
 作者: AStock Analysis System
-日期: 2025-11-29
+日期: 2025-12-06
 """
 
 import pandas as pd
@@ -25,6 +32,25 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+
+
+# 规模分类标签 (用于展示，规模分类已在数据层完成)
+SIZE_LABELS = {
+    'micro': '🔹微型',
+    'small': '🔸小型',
+    'mid': '🔶中型',
+    'large': '🔷大型',
+    'mega': '💎超大'
+}
+
+SIZE_RISKS = {
+    'micro': '⚠️高风险',
+    'small': '⚡中高风险',
+    'mid': '✅稳健',
+    'large': '✅低风险',
+    'mega': '✅最稳健'
+}
+
 
 class ComprehensiveReportGenerator:
     def __init__(self, data_dir: str = "data/filter_middle"):
@@ -149,8 +175,45 @@ class ComprehensiveReportGenerator:
             except Exception as e:
                 print(f"❌ 加载 {key} 失败: {e}")
 
+        # === 加载原始数据获取规模分类(已在数据层预计算) ===
+        self._load_size_data(merged)
+
         self.df_merged = merged
         return merged
+
+    def _load_size_data(self, df: pd.DataFrame) -> None:
+        """
+        加载规模分类数据
+        规模分类已在数据层(polars引擎)预计算并存储在CSV中
+        """
+        raw_data_path = self.data_dir.parent / "polars" / "5yd_final_industry.csv"
+        if raw_data_path.exists():
+            try:
+                df_raw = pd.read_csv(raw_data_path)
+                # 取每个公司最新一期的数据
+                latest = df_raw.sort_values('end_date').groupby('ts_code').last().reset_index()
+
+                # 加载 size_class 列(数据层预计算)
+                if 'size_class' in latest.columns:
+                    df['size_class'] = df['ts_code'].map(
+                        latest.set_index('ts_code')['size_class']
+                    )
+                    # 添加标签和风险等级
+                    df['size_label'] = df['size_class'].map(SIZE_LABELS)
+                    df['size_risk'] = df['size_class'].map(SIZE_RISKS)
+                    print(f"✅ 已加载规模数据，规模分布: {df['size_class'].value_counts().to_dict()}")
+                else:
+                    print("⚠️ 数据中缺少 size_class 列，请先运行 workflow/tushare_fina.yaml 更新数据")
+
+                # 同时加载投入资本用于展示
+                if 'invest_capital' in latest.columns and 'invest_capital' not in df.columns:
+                    df['invest_capital'] = df['ts_code'].map(
+                        latest.set_index('ts_code')['invest_capital']
+                    )
+                    df['invest_capital_yi'] = df['invest_capital'] / 1e8
+
+            except Exception as e:
+                print(f"⚠️ 加载规模数据失败: {e}")
 
     def _get_col(self, metric_key: str, field: str) -> str:
         """获取特定指标的列名"""
@@ -172,15 +235,24 @@ class ComprehensiveReportGenerator:
         lines.append(f"# AStock 深度基本面量化分析报告")
         lines.append(f"> 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append(f"> 覆盖公司: {len(df)} 家")
+
+        # 显示规模分布概况
+        if 'size_class' in df.columns:
+            size_counts = df['size_class'].value_counts()
+            lines.append(f"> 规模分布: 超大型 {size_counts.get('mega', 0)} | 大型 {size_counts.get('large', 0)} | 中型 {size_counts.get('mid', 0)} | 小型 {size_counts.get('small', 0)} | 微型 {size_counts.get('micro', 0)}")
         lines.append("")
 
-        # === 1. 皇冠上的明珠 (Top Picks) ===
-        lines.extend(self._section_top_picks(df))
+        lines.append("> ⚠️ **投资提示**: 本报告仅展示**中型(50-200亿)**、**大型(200-1000亿)**、**超大型(>1000亿)**公司。")
+        lines.append("> 小型和微型公司因流动性差、波动剧烈、信息不对称等风险，已从推荐列表中剔除。")
+        lines.append("")
 
-        # === 2. 优质白马与护城河 (Quality Moat) ===
+        # === 1. 按规模分类展示优质公司 ===
+        lines.extend(self._section_quality_by_size(df))
+
+        # === 2. 优质白马与护城河 (仅中大型) ===
         lines.extend(self._section_quality_moat(df))
 
-        # === 3. 困境反转机会 (Turnaround) ===
+        # === 3. 困境反转机会 (仅中大型) ===
         lines.extend(self._section_turnaround(df))
 
         # === 4. 交叉验证风险警示 (Risk Warnings) ===
@@ -196,49 +268,59 @@ class ComprehensiveReportGenerator:
         print(f"✅ 报告已生成: {output_path}")
         return report_content
 
-    def _section_top_picks(self, df: pd.DataFrame) -> List[str]:
+    def _section_quality_by_size(self, df: pd.DataFrame) -> List[str]:
         """
-        筛选各维度都优秀的'六边形战士' (GARP策略)
-        基于多因子评分模型: 成长分 + 质量分 + 安全分
+        按规模分类展示优质公司
+        只展示中型、大型、超大型，忽略小型和微型
         """
-        lines = ["## 🏆 皇冠上的明珠 (Top Picks - GARP Strategy)", ""]
-        lines.append("筛选标准：基于**多因子评分模型 (Multi-Factor Model)**，综合考量成长性、盈利质量与安全边际。")
-        lines.append("- **成长因子 (30%)**: 营收/利润CAGR (行业排名 + 全市场排名)")
-        lines.append("- **质量因子 (40%)**: ROE/ROIC/毛利率 (行业排名 + 全市场排名)")
-        lines.append("- **安全因子 (30%)**: 现金流健康度与趋势")
+        lines = ["## 🏆 优质公司精选 (按规模分类)", ""]
+        lines.append("基于**多因子评分模型**，按公司规模分别展示优质标的。")
+        lines.append("- **成长因子 (30%)**: 营收/利润CAGR")
+        lines.append("- **质量因子 (40%)**: ROE/ROIC/毛利率")
+        lines.append("- **安全因子 (30%)**: 现金流健康度")
         lines.append("")
 
         # 1. 计算因子得分
         df_scored = self._calculate_factor_scores(df)
 
-        # 2. 综合评分 (Composite Score)
-        # 权重: 质量(40%) + 成长(30%) + 安全(30%)
-        # 这种权重分配更偏向于"稳健成长"，而非"爆发式投机"
+        # 2. 综合评分
         df_scored['composite_score'] = (
             0.4 * df_scored['score_quality'] +
             0.3 * df_scored['score_growth'] +
             0.3 * df_scored['score_safety']
         )
 
-        # 3. 筛选逻辑
-        # 硬门槛:
-        # - 综合评分 > 60 (及格线)
-        # - 质量分 > 50 (不能是垃圾股)
-        # - 安全分 > 50 (现金流不能恶化)
+        # 筛选门槛
         candidates = df_scored[
             (df_scored['composite_score'] > 60) &
             (df_scored['score_quality'] > 50) &
             (df_scored['score_safety'] > 50)
         ].copy()
 
-        if candidates.empty:
-            lines.append("*(暂无完全符合严苛标准的公司)*")
-        else:
-            # 按综合评分降序排列，取前30
-            top_picks = candidates.sort_values('composite_score', ascending=False).head(30)
+        # 按规模分别展示 (超大型 -> 大型 -> 中型)
+        size_order = [
+            ('mega', '💎 超大型公司 (投入资本 > 1000亿)', '蓝筹白马，流动性极佳，适合稳健配置'),
+            ('large', '🔷 大型公司 (投入资本 200-1000亿)', '行业龙头，机构重仓，风险可控'),
+            ('mid', '🔶 中型公司 (投入资本 50-200亿)', '成长潜力大，机构关注度提升')
+        ]
 
-            lines.append("| 代码 | 名称 | 行业 | 综合评分 | 成长分 | 质量分 | 安全分 | 核心亮点 |")
-            lines.append("|---|---|---|---|---|---|---|---|")
+        for size_key, title, desc in size_order:
+            if 'size_class' not in candidates.columns:
+                lines.append(f"*(规模数据缺失，无法分类展示)*")
+                break
+
+            size_df = candidates[candidates['size_class'] == size_key].copy()
+            if size_df.empty:
+                continue
+
+            # 按综合评分排序，取前15
+            top_picks = size_df.sort_values('composite_score', ascending=False).head(15)
+
+            lines.append(f"### {title}")
+            lines.append(f"> {desc}")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 行业 | 投入资本(亿) | 综合评分 | 成长分 | 质量分 | 安全分 | 核心亮点 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
 
             for _, row in top_picks.iterrows():
                 code = row['ts_code']
@@ -248,25 +330,28 @@ class ComprehensiveReportGenerator:
                 s_growth = row['score_growth']
                 s_quality = row['score_quality']
                 s_safety = row['score_safety']
+                ic_yi = row.get('invest_capital_yi', 0)
 
                 # 生成简短评语
                 highlights = []
-                if row['rank_roe_ind'] > 0.8: highlights.append("行业盈利龙头")
-                if row['rank_rev_ind'] > 0.8: highlights.append("行业高成长")
-                if row['rank_roic_ind'] > 0.8: highlights.append("资本效率高")
+                if row.get('rank_roe_ind', 0) > 0.8: highlights.append("行业盈利龙头")
+                if row.get('rank_rev_ind', 0) > 0.8: highlights.append("行业高成长")
+                if row.get('rank_roic_ind', 0) > 0.8: highlights.append("资本效率高")
+                if not highlights: highlights.append("综合优质")
 
-                lines.append(f"| {code} | {name} | {ind} | **{score:.1f}** | {s_growth:.1f} | {s_quality:.1f} | {s_safety:.1f} | {', '.join(highlights)} |")
+                lines.append(f"| {code} | {name} | {ind} | {ic_yi:.1f} | **{score:.1f}** | {s_growth:.1f} | {s_quality:.1f} | {s_safety:.1f} | {', '.join(highlights)} |")
 
-        lines.append("")
+            lines.append("")
+
         return lines
 
     def _section_quality_moat(self, df: pd.DataFrame) -> List[str]:
         """
         筛选优质白马/护城河企业 (Quality Strategy)
-        侧重于高ROE、高ROIC和行业地位
+        侧重于高ROE、高ROIC和行业地位，按规模分类展示
         """
         lines = ["## 🏰 优质白马与护城河 (Quality Moat)", ""]
-        lines.append("筛选标准：**质量因子优先**。寻找那些具有深厚护城河、极高资本回报率的行业龙头。")
+        lines.append("筛选标准：**质量因子优先**，寻找具有深厚护城河、极高资本回报率的行业龙头。")
         lines.append("- **核心指标**: 质量分 (权重 70%) + 安全分 (权重 30%)")
         lines.append("- **忽略指标**: 短期成长速度 (允许成熟期企业增速放缓)")
         lines.append("")
@@ -275,46 +360,65 @@ class ComprehensiveReportGenerator:
         if 'score_quality' not in df.columns:
             df_scored = self._calculate_factor_scores(df)
         else:
-            df_scored = df
+            df_scored = df.copy()
 
         # 2. 护城河评分 (Moat Score)
-        # 极端强调质量 (ROE/ROIC/毛利) 和 安全 (现金流)
-        # 这种评分模型有利于茅台、长江电力等成熟期巨头
         df_scored['moat_score'] = 0.7 * df_scored['score_quality'] + 0.3 * df_scored['score_safety']
 
-        # 3. 筛选逻辑
-        # 质量分必须极高 (>70)
-        moat_companies = df_scored[df_scored['score_quality'] > 70].copy()
+        # 3. 筛选逻辑: 质量分必须极高 (>70)
+        moat_base = df_scored[df_scored['score_quality'] > 70].copy()
 
-        if moat_companies.empty:
+        if moat_base.empty:
             lines.append("*(暂无符合严苛质量标准的公司)*")
-        else:
-            # 按护城河评分排序
-            moat_companies = moat_companies.sort_values('moat_score', ascending=False).head(30)
+            return lines
 
-            lines.append("| 代码 | 名称 | 行业 | 护城河分 | 质量分 | 安全分 | 最新ROE | 最新ROIC |")
-            lines.append("|---|---|---|---|---|---|---|---|")
+        # 按规模分别展示 (超大型 -> 大型 -> 中型)
+        size_order = [
+            ('mega', '💎 超大型白马 (投入资本 > 1000亿)', '蓝筹白马，护城河深厚，长期持有首选'),
+            ('large', '🔷 大型白马 (投入资本 200-1000亿)', '行业龙头，盈利稳定，机构重仓'),
+            ('mid', '🔶 中型白马 (投入资本 50-200亿)', '细分龙头，高ROE高ROIC，成长空间大')
+        ]
 
-            for _, row in moat_companies.iterrows():
+        for size_key, title, desc in size_order:
+            if 'size_class' not in moat_base.columns:
+                lines.append(f"*(规模数据缺失，无法分类展示)*")
+                break
+
+            size_df = moat_base[moat_base['size_class'] == size_key].copy()
+            if size_df.empty:
+                continue
+
+            # 按护城河评分排序，取前20
+            top_moat = size_df.sort_values('moat_score', ascending=False).head(20)
+
+            lines.append(f"### {title}")
+            lines.append(f"> {desc}")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 行业 | 投入资本(亿) | 护城河分 | 质量分 | 安全分 | 最新ROE | 最新ROIC |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
+
+            for _, row in top_moat.iterrows():
                 code = row['ts_code']
                 name = row['name']
                 ind = row['industry']
                 m_score = row['moat_score']
                 q_score = row['score_quality']
                 s_score = row['score_safety']
+                ic_yi = row.get('invest_capital_yi', 0)
 
                 roe = row.get(self._get_col('roe', 'latest'), 0)
                 roic = row.get(self._get_col('roic', 'latest'), 0)
 
-                lines.append(f"| {code} | {name} | {ind} | **{m_score:.1f}** | {q_score:.1f} | {s_score:.1f} | {roe:.1f}% | {roic:.1f}% |")
+                lines.append(f"| {code} | {name} | {ind} | {ic_yi:.1f} | **{m_score:.1f}** | {q_score:.1f} | {s_score:.1f} | {roe:.1f}% | {roic:.1f}% |")
 
-        lines.append("")
+            lines.append("")
+
         return lines
 
     def _section_turnaround(self, df: pd.DataFrame) -> List[str]:
-        """筛选困境反转公司"""
+        """筛选困境反转公司 (仅中大型)"""
         lines = ["## 🚀 困境反转机会 (Turnaround)", ""]
-        lines.append("筛选标准：**基本面触底回升** + **毛利率改善** + **现金流转正**")
+        lines.append("筛选标准：**基本面触底回升** + **毛利率改善** + **现金流转正** + **仅中大型公司**")
         lines.append("")
 
         # 1. 利润或营收出现反转信号
@@ -325,18 +429,24 @@ class ComprehensiveReportGenerator:
         gm_slope = df[self._get_col('gross_margin', 'log_slope')]
         quality_check = gm_slope > -0.02
 
-        candidates = df[(prof_turnaround | rev_turnaround) & quality_check].copy()
+        # 3. 只筛选中型及以上公司
+        if 'size_class' in df.columns:
+            size_filter = df['size_class'].isin(['mid', 'large', 'mega'])
+        else:
+            size_filter = pd.Series([True] * len(df), index=df.index)
+
+        candidates = df[(prof_turnaround | rev_turnaround) & quality_check & size_filter].copy()
 
         if candidates.empty:
-            lines.append("*(暂无符合标准的反转公司)*")
+            lines.append("*(暂无符合标准的中大型反转公司)*")
         else:
             # 按近期斜率排序
             sort_col = self._get_col('profit', 'recent_3y_slope')
             if sort_col in candidates.columns:
                 candidates = candidates.sort_values(sort_col, ascending=False).head(15)
 
-            lines.append("| 代码 | 名称 | 行业 | 反转类型 | 近3年利润斜率 | 最新毛利率 | 评语 |")
-            lines.append("|---|---|---|---|---|---|---|")
+            lines.append("| 代码 | 名称 | 行业 | 规模 | 投入资本(亿) | 反转类型 | 近3年利润斜率 | 最新毛利率 | 评语 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
 
             for _, row in candidates.iterrows():
                 code = row['ts_code']
@@ -345,10 +455,14 @@ class ComprehensiveReportGenerator:
                 prof_slope = row.get(self._get_col('profit', 'recent_3y_slope'), 0)
                 gm = row.get(self._get_col('gross_margin', 'latest'), 0)
 
+                # 规模信息
+                size_label = row.get('size_label', '未知')
+                ic_yi = row.get('invest_capital_yi', 0)
+
                 reasons = []
                 if row.get(self._get_col('profit', 'is_turnaround')): reasons.append(row.get(self._get_col('profit', 'strategy_reasons'), '利润反转'))
 
-                lines.append(f"| {code} | {name} | {ind} | {'利润/营收反转'} | {prof_slope:.2f} | {gm:.1f}% | {'; '.join(reasons)[:30]}... |")
+                lines.append(f"| {code} | {name} | {ind} | {size_label} | {ic_yi:.1f} | {'利润/营收反转'} | {prof_slope:.2f} | {gm:.1f}% | {'; '.join(reasons)[:30]}... |")
 
         lines.append("")
         return lines
@@ -428,3 +542,4 @@ class ComprehensiveReportGenerator:
 
         lines.append("")
         return lines
+
