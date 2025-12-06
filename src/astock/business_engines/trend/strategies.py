@@ -1,9 +1,17 @@
 """
-趋势分析策略模块
-================
+趋势分析策略模块 (Trend Analysis Strategies)
+=============================================
 
-定义基于趋势分析结果的高级选股策略，如"高增长优质"、"困境反转"等。
-这些策略独立于基础评分规则，用于生成特定的选股标签。
+定义基于趋势分析结果的高级选股策略：
+- HighGrowthStrategy: 高增长/优质护城河
+- TurnaroundStrategy: 困境反转/由亏转盈
+- StableDividendStrategy: 稳定分红型（新增）
+- CyclicalBottomStrategy: 周期底部抄底（新增）
+
+与 metric_adapter 整合，自动获取指标特性。
+
+作者: AStock Analysis System
+日期: 2025-12-06
 """
 
 from dataclasses import dataclass, field
@@ -11,15 +19,27 @@ from typing import List, Protocol, Optional, Dict, Any
 import math
 from .models import TrendContext
 
+# 导入指标适配器（可选，用于获取指标特性）
+try:
+    from .metric_adapter import AdapterFactory
+    HAS_METRIC_ADAPTER = True
+except ImportError:
+    HAS_METRIC_ADAPTER = False
+
+
 @dataclass
 class StrategyResult:
+    """策略评估结果"""
     name: str
     matched: bool
     reason: str = ""
-    score_boost: float = 0.0  # 策略匹配后的额外加分（可选）
-    metadata: Dict[str, Any] = field(default_factory=dict) # 存储计算中间值，便于调试
+    score_boost: float = 0.0  # 策略匹配后的额外加分
+    confidence: float = 0.0   # 置信度 (0-1)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
 
 class TrendStrategy(Protocol):
+    """策略协议定义"""
     name: str
     description: str
 
@@ -225,12 +245,213 @@ class TurnaroundStrategy(BaseStrategy):
             reason = f"底部强力反转(曾跌{context.total_decline_pct:.0f}%, 近期斜率{context.recent_3y_slope:.2f})"
 
         if is_turnaround:
-            return StrategyResult(self.name, True, reason, score_boost=10.0)
+            return StrategyResult(self.name, True, reason, score_boost=10.0, confidence=0.7)
 
         return StrategyResult(self.name, False)
 
+
+class StableDividendStrategy(BaseStrategy):
+    """
+    稳定分红型策略 (Stable Dividend / Cash Cow)
+
+    特征：
+    - 高且稳定的盈利能力 (ROE/ROIC)
+    - 极低的波动性 (CV < 0.15)
+    - 无明显衰退趋势
+    - 现金流健康
+
+    适用于：消费、公用事业、部分金融股
+    """
+    name = "stable_dividend"
+    description = "稳定分红/现金奶牛"
+
+    def evaluate(self, context: TrendContext) -> StrategyResult:
+        if math.isnan(context.latest_value):
+            return StrategyResult(self.name, False)
+
+        metric_type = "efficiency" if self._is_efficiency_metric(context.metric_name) else "scale"
+
+        # 此策略主要针对效率指标
+        if metric_type != "efficiency":
+            return StrategyResult(self.name, False, "仅适用于效率指标")
+
+        # 1. 绝对值必须高
+        min_value = self._get_adaptive_threshold(context.metric_name, "min_value", 12.0)
+        if context.latest_value < min_value:
+            return StrategyResult(self.name, False, f"绝对值不足({context.latest_value:.1f}<{min_value})")
+
+        # 2. 波动性必须低
+        if context.cv > 0.20:
+            return StrategyResult(self.name, False, f"波动过大(CV={context.cv:.2%})")
+
+        # 3. 趋势不能明显恶化
+        if context.log_slope < -0.05:
+            return StrategyResult(self.name, False, f"趋势下行({context.log_slope:.1%})")
+
+        # 4. 最新值不能大幅低于加权均值
+        if context.latest_vs_weighted_ratio < 0.85:
+            return StrategyResult(self.name, False, "近期表现不佳")
+
+        # 5. 检查现金流（如果有参考指标）
+        ocf_stats = context.reference_metrics.get("ocfps")
+        if ocf_stats:
+            ocf_slope = ocf_stats.get("log_slope", 0)
+            if ocf_slope < -0.15:
+                return StrategyResult(self.name, False, "现金流恶化")
+
+        # 计算置信度
+        confidence = min(
+            (1.0 - context.cv / 0.2) * 0.4 +  # 波动越低置信度越高
+            (context.latest_value / min_value - 1.0) * 0.3 +  # 绝对值越高置信度越高
+            (context.latest_vs_weighted_ratio - 0.85) * 0.3,
+            1.0
+        )
+
+        return StrategyResult(
+            self.name, True,
+            f"稳定分红型(值={context.latest_value:.1f},CV={context.cv:.1%},稳定)",
+            score_boost=8.0,
+            confidence=confidence
+        )
+
+
+class CyclicalBottomStrategy(BaseStrategy):
+    """
+    周期底部抄底策略 (Cyclical Bottom Fishing)
+
+    特征：
+    - 确认的周期性行业
+    - 当前处于周期底部区域
+    - 有复苏迹象（current_phase = rising）
+    - FFT检测到周期模式（可选加分）
+
+    风险提示：此策略需要额外的行业研究确认
+    """
+    name = "cyclical_bottom"
+    description = "周期底部抄底"
+
+    def evaluate(self, context: TrendContext) -> StrategyResult:
+        # 1. 必须是周期股
+        if not context.is_cyclical:
+            return StrategyResult(self.name, False, "非周期行业")
+
+        # 2. 直接从 context 获取周期位置（更专业的方式）
+        cycle_position = context.cycle_position
+        fft_period = context.fft_dominant_period
+
+        if cycle_position not in ("bottom", "mid_up"):
+            return StrategyResult(self.name, False, f"非底部区域({cycle_position})")
+
+        # 3. 必须有复苏迹象
+        if context.current_phase != "rising":
+            return StrategyResult(self.name, False, "尚未开始回升")
+
+        # 4. 近期趋势必须转正
+        if context.recent_3y_slope < 0:
+            return StrategyResult(self.name, False, "近期仍在下跌")
+
+        # 构建原因和置信度
+        reasons = [f"周期底部({cycle_position})"]
+        confidence = 0.5
+
+        if context.inflection_type == "deterioration_to_recovery":
+            reasons.append("V型反转确认")
+            confidence += 0.2
+
+        if fft_period and fft_period > 0:
+            reasons.append(f"FFT检测{fft_period:.1f}年周期")
+            confidence += 0.15
+
+        if context.recent_3y_slope > 0.1:
+            reasons.append(f"近期强势({context.recent_3y_slope:.1%})")
+            confidence += 0.15
+
+        return StrategyResult(
+            self.name, True,
+            ", ".join(reasons),
+            score_boost=12.0,  # 周期底部如果判断正确收益可观
+            confidence=min(confidence, 1.0)
+        )
+
+
+class MoatDefenseStrategy(BaseStrategy):
+    """
+    护城河防守策略 (Moat Defense)
+
+    特征：
+    - 毛利率/净利率长期高位稳定
+    - 即使行业波动，利润率也保持稳定
+    - 适合追求长期稳定回报的投资者
+
+    与 HighGrowthStrategy 的区别：
+    - HighGrowth 侧重增长
+    - MoatDefense 侧重稳定性和防御性
+    """
+    name = "moat_defense"
+    description = "护城河防守/稳定盈利"
+
+    def evaluate(self, context: TrendContext) -> StrategyResult:
+        if math.isnan(context.latest_value):
+            return StrategyResult(self.name, False)
+
+        metric = context.metric_name.lower()
+
+        # 此策略针对利润率指标
+        if "margin" not in metric and "roe" not in metric and "roic" not in metric:
+            return StrategyResult(self.name, False, "仅适用于利润率类指标")
+
+        # 1. 绝对值必须处于行业领先水平
+        moat_threshold = 40.0 if "gross" in metric else 15.0
+        if context.latest_value < moat_threshold:
+            return StrategyResult(self.name, False, f"未达护城河门槛({context.latest_value:.1f}<{moat_threshold})")
+
+        # 2. 稳定性要求
+        if context.cv > 0.15:
+            return StrategyResult(self.name, False, f"波动过大(CV={context.cv:.1%})")
+
+        # 3. 趋势要求：不允许明显下滑
+        if context.log_slope < -0.03:
+            return StrategyResult(self.name, False, "利润率侵蚀中")
+
+        # 4. R² 要求：趋势必须清晰
+        if context.r_squared < 0.5:
+            return StrategyResult(self.name, False, "趋势不清晰")
+
+        # 5. 交叉验证：如果有参考指标，检查一致性
+        if "gross" in metric:
+            nm_stats = context.reference_metrics.get("netprofit_margin")
+            if nm_stats and nm_stats.get("log_slope", 0) < -0.10:
+                return StrategyResult(self.name, False, "净利率下滑，毛利优势未转化")
+
+        # 计算护城河强度
+        moat_strength = (context.latest_value - moat_threshold) / moat_threshold
+        confidence = min(
+            moat_strength * 0.5 +
+            (1.0 - context.cv / 0.15) * 0.3 +
+            context.r_squared * 0.2,
+            1.0
+        )
+
+        return StrategyResult(
+            self.name, True,
+            f"强护城河({context.latest_value:.1f}>{moat_threshold},CV={context.cv:.1%})",
+            score_boost=10.0,
+            confidence=confidence
+        )
+
+
 def get_default_strategies() -> List[TrendStrategy]:
+    """获取默认策略列表"""
     return [
         HighGrowthStrategy(),
         TurnaroundStrategy(),
+        StableDividendStrategy(),
+        CyclicalBottomStrategy(),
+        MoatDefenseStrategy(),
     ]
+
+
+def get_strategy_by_name(name: str) -> Optional[TrendStrategy]:
+    """根据名称获取策略"""
+    strategies = {s.name: s for s in get_default_strategies()}
+    return strategies.get(name)

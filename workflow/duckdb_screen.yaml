@@ -1,4 +1,22 @@
-# DuckDB 财务筛选工作流
+# DuckDB 财务筛选工作流 (v2.0)
+# ========================================
+#
+# 更新日志 (2025-12-06):
+# - 新增 reference_metrics 交叉验证配置
+# - 支持 MetricAdapter 自动调整分析参数
+# - 29条规则引擎 (7 veto + 10 penalty + 6 cross-val + 3 cycle + 5 bonus)
+# - 5种策略评估 (high_growth, turnaround, stable_dividend, cyclical_bottom, moat_defense)
+#
+# 指标配置说明:
+# - roic: 效率指标，核心筛选指标，交叉验证 roe/roiic
+# - roiic: 增量指标，辅助指标（不做一票否决），交叉验证 roic
+# - total_revenue_ps: 规模指标，验证增长可持续性，交叉验证 roe
+# - eps: 规模指标，盈利增长，交叉验证 ocfps（现金含金量）
+# - grossprofit_margin: 效率指标，护城河指标，交叉验证 netprofit_margin
+# - netprofit_margin: 效率指标，盈利能力
+# - roe: 效率指标，股东回报，杜邦分解验证
+# - ocfps: 现金流指标，盈利质量验证
+#
 pipeline:
   name: "DuckDB财务基线筛选管道"
   orchestration:
@@ -22,6 +40,8 @@ pipeline:
           - name: Raw_Data
 
     # ========== ROIC 趋势分析(三位一体过滤) ==========
+    # 核心指标：投入资本回报率，衡量资本效率
+    # 交叉验证：ROE（股东视角）、ROIIC（增量效率）
     - name: "Analyze_ROIC_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -33,6 +53,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["roe", "roiic"]  # 新增交叉验证
       outputs:
         parameters:
           - name: ROIC_Trend_Result
@@ -69,6 +90,9 @@ pipeline:
         data: "steps.Score_ROIC_Quality.outputs.parameters.ROIC_Quality_Result"
 
     # ========== ROIIC 趋势分析 (增量资本回报) ==========
+    # 辅助指标：增量资本回报率，评估新投资效率
+    # 特殊处理：不做一票否决，降低扣分权重
+    # 交叉验证：ROIC（存量效率）
     - name: "Analyze_ROIIC_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -80,6 +104,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["roic"]  # 新增交叉验证
       outputs:
         parameters:
           - name: ROIIC_Trend_Result
@@ -149,6 +174,8 @@ pipeline:
         data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
 
     # ========== 毛利率趋势分析 (护城河) ==========
+    # 效率指标：毛利率，衡量产品竞争力和议价能力
+    # 交叉验证：净利率（费用控制）
     - name: "Analyze_GrossMargin_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -160,6 +187,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["netprofit_margin"]  # 新增交叉验证
       outputs:
         parameters:
           - name: GrossMargin_Trend_Result
@@ -175,6 +203,8 @@ pipeline:
         data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
 
     # ========== 净利率趋势分析 (盈利能力) ==========
+    # 效率指标：净利率，综合盈利能力
+    # 交叉验证：毛利率（成本结构）、现金流（盈利质量）
     - name: "Analyze_NetMargin_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -186,6 +216,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["grossprofit_margin", "ocfps"]  # 新增交叉验证
       outputs:
         parameters:
           - name: NetMargin_Trend_Result
@@ -201,6 +232,8 @@ pipeline:
         data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
 
     # ========== ROE 趋势分析 (股东回报) ==========
+    # 效率指标：ROE，股东权益回报率
+    # 杜邦分解验证：净利率、ROIC（排除杠杆驱动的虚假高ROE）
     - name: "Analyze_ROE_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -212,6 +245,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["netprofit_margin", "roic"]  # 杜邦分解验证
       outputs:
         parameters:
           - name: ROE_Trend_Result
@@ -227,6 +261,8 @@ pipeline:
         data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
 
     # ========== 经营现金流趋势分析 (含金量) ==========
+    # 现金流指标：OCF，验证盈利的现金含量
+    # 交叉验证：EPS（利润现金比）
     - name: "Analyze_OCF_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -238,6 +274,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
+        reference_metrics: ["eps"]  # 现金流与利润交叉验证
       outputs:
         parameters:
           - name: OCF_Trend_Result

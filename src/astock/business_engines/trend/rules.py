@@ -412,3 +412,292 @@ def rule_growth_momentum_bonus(context: TrendContext, params: TrendRuleParameter
     return RuleResult("growth_momentum_bonus", "bonus", message, bonus_value)
 
 import numpy as np
+
+# ============================================================================
+# 新增专业规则：杜邦分解一致性校验
+# ============================================================================
+
+def rule_dupont_consistency(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【杜邦分析一致性】ROE驱动因素校验
+
+    ROE = 净利率 × 资产周转率 × 权益乘数
+
+    逻辑：
+    1. 如果ROE上升但净利率下降，说明依赖杠杆/周转提速，不可持续
+    2. 如果ROE上升但毛利率下降，说明可能在打价格战换市场份额
+    """
+    if "roe" not in context.metric_name.lower():
+        return None
+
+    # 获取净利率参考数据
+    nm_stats = _get_reference_metric(context, "net_margin")
+    gm_stats = _get_reference_metric(context, "gross_margin")
+
+    roe_slope = context.log_slope
+
+    # 情景1: ROE向上(>5%) 但 净利率向下(<-3%) = 杠杆驱动
+    if nm_stats:
+        nm_slope = nm_stats.get("log_slope", 0.0)
+        if roe_slope > 0.05 and nm_slope < -0.03:
+            penalty = min(abs(nm_slope - roe_slope) * 10, 8.0)
+            message = f"杜邦分解预警-ROE增({roe_slope:.1%})靠杠杆/周转,净利率跌({nm_slope:.1%})"
+            return RuleResult("dupont_leverage_risk", "penalty", message, penalty)
+
+    # 情景2: ROE向上 但 毛利率显著下降 = 价格战风险
+    if gm_stats:
+        gm_slope = gm_stats.get("log_slope", 0.0)
+        if roe_slope > 0.05 and gm_slope < -0.05:
+            penalty = min(abs(gm_slope) * 8, 6.0)
+            message = f"毛利率侵蚀预警-ROE增长可能靠降价换量,毛利跌({gm_slope:.1%})"
+            return RuleResult("dupont_margin_erosion", "penalty", message, penalty)
+
+    return None
+
+def rule_mean_reversion_adjustment(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【均值回归调整】高基数正常回落豁免
+
+    逻辑：
+    如果最新值虽然下跌，但仍高于5年加权均值的80%，且绝对值仍达标，
+    则减轻处罚（高位正常回调 vs 真正恶化）。
+
+    适用场景：茅台从30%ROE跌到25%，虽然下跌但仍是顶级水平。
+    """
+    # 只对"看起来在恶化"的情况触发
+    if not context.has_deterioration:
+        return None
+    if context.deterioration_severity not in ("moderate", "mild"):
+        return None
+
+    # 关键条件：最新值仍高于加权均值的80%
+    if context.latest_vs_weighted_ratio < 0.8:
+        return None
+
+    # 关键条件：最新值仍达到绝对门槛（如有）
+    min_val = thresholds.min_latest_value
+    if min_val is not None and context.latest_value < min_val:
+        return None
+
+    # 通过所有条件 = 高位正常回调，给予加分（抵消部分deterioration扣分）
+    bonus = 3.0 if context.deterioration_severity == "mild" else 5.0
+    message = f"均值回归豁免+{bonus:.0f}分(最新={context.latest_value:.1f}仍为加权均值{context.latest_vs_weighted_ratio:.0%})"
+    return RuleResult("mean_reversion_adjustment", "bonus", message, bonus)
+
+
+# ============================================================================
+# 新增专业规则：周期位置规则
+# ============================================================================
+
+def rule_cycle_position_adjustment(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【周期位置调整】根据周期位置调整评分
+
+    周期位置来自 CyclicalPatternDetector 的 cycle_position 字段：
+    - "bottom": 周期底部 → 加分（逆向买入机会）
+    - "mid_up": 底部回升 → 小加分
+    - "top": 周期顶部 → 扣分（警惕均值回归）
+    - "mid_down": 顶部回落 → 小扣分
+
+    触发条件：必须是已识别的周期性股票
+    """
+    if not context.is_cyclical:
+        return None
+
+    # 直接从 context 获取 cycle_position（更专业的方式）
+    cycle_position = context.cycle_position
+
+    if not cycle_position or cycle_position == "unknown":
+        return None
+
+    if cycle_position == "bottom":
+        # 周期底部：即使基本面差，也可能是买入时机
+        bonus = 8.0
+        message = f"周期底部加分+{bonus:.0f}分(逆向机会,放宽否决条件)"
+        return RuleResult("cycle_bottom_bonus", "bonus", message, bonus)
+
+    elif cycle_position == "mid_up":
+        # 底部回升期：基本面改善确认
+        bonus = 4.0
+        message = f"周期回升期+{bonus:.0f}分(景气回升趋势确立)"
+        return RuleResult("cycle_recovery_bonus", "bonus", message, bonus)
+
+    elif cycle_position == "top":
+        # 周期顶部：警惕估值过高和均值回归
+        penalty = 5.0
+        message = f"周期顶部预警-{penalty:.0f}分(警惕景气回落)"
+        return RuleResult("cycle_top_penalty", "penalty", message, penalty)
+
+    elif cycle_position == "mid_down":
+        # 顶部回落期：下行趋势确认
+        penalty = 3.0
+        message = f"周期回落期-{penalty:.0f}分(景气下行趋势)"
+        return RuleResult("cycle_downturn_penalty", "penalty", message, penalty)
+
+    return None
+
+
+def rule_cycle_veto_override(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【周期底部否决豁免】周期底部放宽一票否决
+
+    逻辑：对于已确认的周期股，如果当前处于周期底部且正在回升，
+    则即使基本面数据触发了否决条件，也应该给予豁免机会。
+
+    这是一个"否决豁免"规则，通过返回 bonus 来抵消之前的 veto。
+    实际实现需要在规则引擎中特殊处理。
+
+    注意：此规则应该在所有否决规则之后运行。
+    """
+    if not context.is_cyclical:
+        return None
+
+    # 必须正在回升
+    if context.current_phase != "rising":
+        return None
+
+    # 直接从 context 获取 cycle_position（更专业的方式）
+    cycle_position = context.cycle_position
+
+    if cycle_position not in ("bottom", "mid_up"):
+        return None
+
+    # 周期底部回升：标记为"否决豁免候选"
+    # 注意：这不会直接取消否决，而是在引擎层面判断
+    bonus = 10.0  # 足够大的加分，可能抵消某些扣分
+    message = f"周期底部豁免候选+{bonus:.0f}分(周期股底部回升,建议人工复核)"
+    return RuleResult("cycle_veto_override_candidate", "bonus", message, bonus)
+
+
+# ============================================================================
+# 新增专业规则：自由现金流质量验证
+# ============================================================================
+
+def rule_fcf_quality_check(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【自由现金流质量】验证盈利的现金含量
+
+    自由现金流 ≈ 经营现金流 - 资本开支
+
+    逻辑：
+    1. 利润增长但OCF停滞 = 应收账款堆积风险
+    2. OCF连续多年为负 = 商业模式存疑
+    3. OCF/净利润 < 70% = 盈利质量较低
+
+    这是对 rule_earnings_quality_check 的补充，更严格的现金流检验。
+    """
+    # 获取现金流数据
+    ocf_stats = _get_reference_metric(context, "ocfps")
+    if not ocf_stats:
+        return None
+
+    ocf_latest = ocf_stats.get("latest", 0.0)
+    ocf_slope = ocf_stats.get("log_slope", 0.0)
+    ocf_weighted = ocf_stats.get("weighted_avg", 0.0)
+
+    # 情景1: 长期现金流为负（累计加权为负）
+    if ocf_weighted < 0:
+        penalty = 12.0
+        message = f"现金流长期为负-{penalty:.0f}分(OCF加权={ocf_weighted:.2f})"
+        return RuleResult("fcf_chronic_negative", "penalty", message, penalty)
+
+    # 情景2: 现金流恶化趋势（斜率 < -15%）
+    if ocf_slope < -0.15:
+        penalty = min(abs(ocf_slope) * 30, 10.0)
+        message = f"现金流恶化趋势-{penalty:.1f}分(OCF斜率={ocf_slope:.1%})"
+        return RuleResult("fcf_deteriorating", "penalty", message, penalty)
+
+    # 情景3: 最新现金流转负
+    if ocf_latest < 0 and ocf_weighted > 0:
+        penalty = 8.0
+        message = f"现金流转负预警-{penalty:.0f}分(最新OCF={ocf_latest:.2f})"
+        return RuleResult("fcf_turned_negative", "penalty", message, penalty)
+
+    # 情景4: 现金流与利润背离（如果分析的是利润相关指标）
+    if "profit" in context.metric_name.lower() or "eps" in context.metric_name.lower():
+        profit_slope = context.log_slope
+        if profit_slope > 0.10 and ocf_slope < 0:
+            gap = profit_slope - ocf_slope
+            penalty = min(gap * 20, 15.0)
+            message = f"利润现金流背离-{penalty:.1f}分(利润↑{profit_slope:.1%} vs OCF↓{ocf_slope:.1%})"
+            return RuleResult("fcf_profit_divergence", "penalty", message, penalty)
+
+    return None
+
+
+def rule_capex_intensity_check(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【资本开支强度】检测重资产扩张风险
+
+    逻辑：
+    如果ROIC在下降但公司仍在大幅扩张（OCF用于资本开支），
+    可能是"增长陷阱"——资本回报率下降但仍在烧钱扩张。
+
+    触发条件：分析 ROIC 且 ROIC 下降 且 有参考 OCF 数据
+    """
+    if "roic" not in context.metric_name.lower():
+        return None
+
+    if context.log_slope >= 0:
+        return None  # ROIC 没有下降
+
+    ocf_stats = _get_reference_metric(context, "ocfps")
+    if not ocf_stats:
+        return None
+
+    ocf_latest = ocf_stats.get("latest", 0.0)
+    ocf_slope = ocf_stats.get("log_slope", 0.0)
+
+    # 如果 ROIC 下降 且 OCF 也在下降 = 可能是扩张过度
+    if context.log_slope < -0.10 and ocf_slope < -0.10:
+        penalty = 6.0
+        message = f"扩张效率下降-{penalty:.0f}分(ROIC↓{context.log_slope:.1%}且OCF↓{ocf_slope:.1%})"
+        return RuleResult("capex_efficiency_decline", "penalty", message, penalty)
+
+    return None
+
+
+# ============================================================================
+# 新增专业规则：爆发增长验证
+# ============================================================================
+
+def rule_explosive_growth_validation(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【爆发增长验证】高增长的可持续性检验
+
+    逻辑：
+    如果某指标爆发增长(>30%)，需要交叉验证：
+    1. 营收增长要有利润跟随
+    2. 利润增长要有现金流支撑
+    3. ROE增长不能只靠杠杆
+
+    防止虚假繁荣。
+    """
+    # 只对高增长情况触发
+    if context.log_slope < 0.25:
+        return None
+
+    metric_lower = context.metric_name.lower()
+
+    # 营收爆发：检查利润是否跟上
+    if "revenue" in metric_lower:
+        profit_stats = _get_reference_metric(context, "eps")
+        if profit_stats:
+            profit_slope = profit_stats.get("log_slope", 0.0)
+            if profit_slope < context.log_slope * 0.5:  # 利润增速不到营收增速的一半
+                penalty = 5.0
+                message = f"增收不增利-{penalty:.0f}分(营收↑{context.log_slope:.1%}但利润仅↑{profit_slope:.1%})"
+                return RuleResult("revenue_profit_gap", "penalty", message, penalty)
+
+    # 利润爆发：检查现金流
+    if "profit" in metric_lower or "eps" in metric_lower:
+        ocf_stats = _get_reference_metric(context, "ocfps")
+        if ocf_stats:
+            ocf_slope = ocf_stats.get("log_slope", 0.0)
+            if ocf_slope < context.log_slope * 0.4:
+                penalty = 6.0
+                message = f"利润含金量不足-{penalty:.0f}分(利润↑{context.log_slope:.1%}但OCF仅↑{ocf_slope:.1%})"
+                return RuleResult("profit_cash_quality", "penalty", message, penalty)
+
+    return None
+

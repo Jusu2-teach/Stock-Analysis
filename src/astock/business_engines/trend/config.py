@@ -161,45 +161,46 @@ def reset_default_config():
 
 # 行业分类映射
 _INDUSTRY_CATEGORY_MAP = {
-    # 周期性行业
-    "小金属": "cyclical",
-    "黄金": "cyclical",
-    "钢铁": "cyclical",
-    "煤炭": "cyclical",
-    "有色金属": "cyclical",
-    "石油石化": "cyclical",
-    "化工": "cyclical",
-    "建材": "cyclical",
-    "房地产": "cyclical",
-    "航运": "cyclical",
-    # 成长性行业
-    "医药": "growth",
-    "生物制药": "growth",
-    "电子": "growth",
-    "计算机": "growth",
-    "软件": "growth",
-    # 防御性行业
-    "食品饮料": "defensive",
-    "公用事业": "defensive",
-    "医疗服务": "defensive",
+    # --- 强周期性行业 (Cyclical) ---
+    "小金属": "cyclical", "黄金": "cyclical", "钢铁": "cyclical", "煤炭": "cyclical",
+    "有色金属": "cyclical", "石油石化": "cyclical", "化工": "cyclical", "基础化工": "cyclical",
+    "化学纤维": "cyclical", "建材": "cyclical", "水泥": "cyclical", "玻璃": "cyclical",
+    "房地产": "cyclical", "航运": "cyclical", "港口": "cyclical", "远洋运输": "cyclical",
+    "建筑": "cyclical", "工程机械": "cyclical", "重型机械": "cyclical",
+    "证券": "cyclical", "保险": "cyclical", "多元金融": "cyclical", # 金融也是顺周期的
+
+    # --- 成长性行业 (Growth) ---
+    "医药": "growth", "生物制药": "growth", "医疗器械": "growth", "医疗服务": "growth",
+    "电子": "growth", "半导体": "growth", "元件": "growth", "光学光电子": "growth",
+    "计算机": "growth", "软件": "growth", "互联网": "growth", "通信设备": "growth",
+    "新能源": "growth", "光伏设备": "growth", "电池": "growth", "风电设备": "growth",
+    "航空航天": "growth", "军工": "growth", "自动化设备": "growth",
+
+    # --- 防御性/稳定行业 (Defensive) ---
+    "食品饮料": "defensive", "白酒": "defensive", "饮料制造": "defensive", "食品加工": "defensive",
+    "农林牧渔": "defensive", "饲料": "defensive",
+    "公用事业": "defensive", "电力": "defensive", "水务": "defensive", "燃气": "defensive",
+    "环保": "defensive", "交通运输": "defensive", "高速公路": "defensive", "机场": "defensive",
+    "银行": "defensive", # 银行相对稳健，虽有周期性但波动率低于券商
+    "家电": "defensive", "白色家电": "defensive",
 }
 
 # 周期性阈值
 _CYCLICAL_THRESHOLDS = {
     "cyclical": {
-        "cv_threshold": 0.3,
-        "peak_valley_ratio": 2.0,
-        "r_squared_low": 0.4,
+        "cv_threshold": 0.3,      # 周期股容忍较低的波动率阈值(即更容易被判定为高波动)
+        "peak_valley_ratio": 2.0, # 峰谷比 > 2 即视为显著周期
+        "r_squared_low": 0.4,     # 允许趋势拟合度较低
     },
     "growth": {
-        "cv_threshold": 0.5,
+        "cv_threshold": 0.5,      # 成长股波动率中等
         "peak_valley_ratio": 3.0,
         "r_squared_low": 0.5,
     },
     "defensive": {
-        "cv_threshold": 0.6,
+        "cv_threshold": 0.6,      # 防御股应该很稳，CV阈值高(即很难被判定为高波动)
         "peak_valley_ratio": 4.0,
-        "r_squared_low": 0.6,
+        "r_squared_low": 0.6,     # 要求较高的趋势平滑度
     },
     "default": {
         "cv_threshold": 0.5,
@@ -218,14 +219,14 @@ _DECLINE_THRESHOLDS = {
         "high_level_threshold": 20.0,
     },
     "growth": {
-        "severe_decline": -0.35,
+        "severe_decline": -0.35, # 成长股容忍更大的回撤(高波动)
         "mild_decline": -0.18,
         "decline_threshold_pct": -5.0,
         "decline_threshold_abs": -2.0,
         "high_level_threshold": 20.0,
     },
     "defensive": {
-        "severe_decline": -0.20,
+        "severe_decline": -0.20, # 防御股回撤20%就是大灾难
         "mild_decline": -0.10,
         "decline_threshold_pct": -5.0,
         "decline_threshold_abs": -2.0,
@@ -240,20 +241,39 @@ _DECLINE_THRESHOLDS = {
     },
 }
 
-# ROIC过滤配置
+# ROIC过滤配置 (基于WACC资本成本逻辑)
+# 一般中国企业的WACC在 8% 左右。长期ROIC < 8% 意味着毁灭价值。
+# 但考虑到行业特性，给予一定宽容度或溢价。
 _ROIC_FILTER_CONFIGS = {
-    "医药": {"min_roic": 0.08, "min_slope": -0.02},
-    "食品饮料": {"min_roic": 0.10, "min_slope": -0.02},
+    # 高壁垒/高周转行业: 要求 > 10% (显著创造价值)
+    "食品饮料": {"min_roic": 0.12, "min_slope": -0.02},
+    "白酒": {"min_roic": 0.15, "min_slope": -0.02},
+    "家电": {"min_roic": 0.10, "min_slope": -0.02},
+    "医药": {"min_roic": 0.08, "min_slope": -0.02}, # 研发投入大，净资产可能虚高
+
+    # 资本密集/重资产行业: 要求 > 6% (接近WACC即可，主要看现金流)
+    "公用事业": {"min_roic": 0.06, "min_slope": -0.01},
+    "电力": {"min_roic": 0.06, "min_slope": -0.01},
+    "交通运输": {"min_roic": 0.05, "min_slope": -0.01},
+    "钢铁": {"min_roic": 0.05, "min_slope": -0.05}, # 周期底部可能很低
+    "煤炭": {"min_roic": 0.08, "min_slope": -0.05}, # 资源属性，ROIC应较高
+
+    # 科技/成长行业: 要求 > 6% (看重增长，对当前回报宽容)
     "电子": {"min_roic": 0.06, "min_slope": -0.03},
-    "default": {"min_roic": 0.05, "min_slope": -0.05},
+    "半导体": {"min_roic": 0.05, "min_slope": -0.03},
+    "计算机": {"min_roic": 0.06, "min_slope": -0.03},
+
+    # 默认: 6% (底线思维，至少要覆盖大部分债务成本)
+    "default": {"min_roic": 0.06, "min_slope": -0.05},
 }
 
-# ROIIC过滤配置
+# ROIIC过滤配置 (增量资本回报率)
+# 反映新投入资本的效率，波动较大，阈值适当降低
 _ROIIC_FILTER_CONFIGS = {
     "医药": {"min_roiic": 0.06, "min_slope": -0.02},
-    "食品饮料": {"min_roiic": 0.08, "min_slope": -0.02},
-    "电子": {"min_roiic": 0.04, "min_slope": -0.03},
-    "default": {"min_roiic": 0.03, "min_slope": -0.05},
+    "食品饮料": {"min_roiic": 0.10, "min_slope": -0.02},
+    "电子": {"min_roiic": 0.05, "min_slope": -0.03},
+    "default": {"min_roiic": 0.04, "min_slope": -0.05},
 }
 
 

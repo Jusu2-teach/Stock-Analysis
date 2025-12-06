@@ -143,6 +143,8 @@ class CyclicalPatternResult(SerializableResult):
     trend_r_squared: float
     cv: float
     current_phase: str
+    cycle_position: str  # 周期位置: bottom, mid_up, top, mid_down, unknown
+    fft_dominant_period: float  # FFT检测的主导周期(年)，0表示无周期
     industry_cyclical: bool
     cyclical_confidence: float
     peak_to_trough_threshold: float
@@ -206,6 +208,8 @@ class TrendContext:
     latest_vs_weighted_ratio: float
     is_cyclical: bool
     current_phase: str
+    cycle_position: str  # 周期位置: bottom, mid_up, top, mid_down, unknown
+    fft_dominant_period: float  # FFT检测的主导周期(年)
     peak_to_trough_ratio: float
     has_deterioration: bool
     deterioration_severity: str
@@ -224,6 +228,7 @@ class TrendContext:
     mann_kendall_tau: float = 0.0
     mann_kendall_p_value: float = 1.0
     reference_metrics: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    warnings: List[TrendWarning] = field(default_factory=list)
 
     def deterioration_value(self, key: str, default: float = 0.0) -> float:
         value = self.deterioration_result.get(key, default)
@@ -253,6 +258,8 @@ class TrendContext:
             latest_vs_weighted_ratio=vector.latest_vs_weighted_ratio,
             is_cyclical=vector.is_cyclical,
             current_phase=vector.current_phase,
+            cycle_position=vector.cycle_position,
+            fft_dominant_period=vector.fft_dominant_period,
             peak_to_trough_ratio=vector.peak_to_trough_ratio,
             has_deterioration=vector.has_deterioration,
             deterioration_severity=vector.deterioration_severity,
@@ -271,6 +278,7 @@ class TrendContext:
             mann_kendall_tau=vector.mann_kendall_tau,
             mann_kendall_p_value=vector.mann_kendall_p_value,
             reference_metrics=vector.reference_metrics,
+            warnings=vector.warnings,
         )
 
 
@@ -417,6 +425,8 @@ class TrendVector:
     latest_vs_weighted_ratio: float
     is_cyclical: bool
     current_phase: str
+    cycle_position: str  # 周期位置: bottom, mid_up, top, mid_down, unknown
+    fft_dominant_period: float  # FFT检测的主导周期(年)
     peak_to_trough_ratio: float
     has_deterioration: bool
     deterioration_severity: str
@@ -433,6 +443,7 @@ class TrendVector:
     near_zero_count: int
     robust: RobustTrendResult
     reference_metrics: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    warnings: List[TrendWarning] = field(default_factory=list)
 
     @property
     def robust_slope(self) -> float:

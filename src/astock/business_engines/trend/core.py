@@ -88,6 +88,15 @@ from .rules import (
     rule_growth_momentum_bonus,
     rule_earnings_quality_divergence,
     rule_sustainable_growth_check,
+    # 新增专业规则：杜邦分解与均值回归
+    rule_dupont_consistency,
+    rule_mean_reversion_adjustment,
+    # 新增专业规则：周期位置与现金流验证
+    rule_cycle_position_adjustment,
+    rule_cycle_veto_override,
+    rule_fcf_quality_check,
+    rule_capex_intensity_check,
+    rule_explosive_growth_validation,
 )
 from .strategies import get_default_strategies, TrendStrategy
 
@@ -202,6 +211,8 @@ def empty_cyclical_result() -> CyclicalPatternResult:
         trend_r_squared=0.0,
         cv=0.0,
         current_phase="unknown",
+        cycle_position="unknown",
+        fft_dominant_period=0.0,
         industry_cyclical=False,
         cyclical_confidence=0.0,
         peak_to_trough_threshold=3.0,
@@ -420,6 +431,8 @@ class TrendRuleEngine:
 
 
 DEFAULT_TREND_RULES: List[TrendRule] = [
+    # === 一票否决规则 (Veto Rules) ===
+    # 最严格的过滤条件，触发即淘汰
     TrendRule("roiic_capital_destruction_veto", rule_roiic_capital_destruction),
     TrendRule("min_latest_value", rule_min_latest_value),
     TrendRule("low_significance_decline", rule_low_significance_decline),
@@ -427,6 +440,9 @@ DEFAULT_TREND_RULES: List[TrendRule] = [
     TrendRule("severe_decline", rule_severe_decline),
     TrendRule("severe_deterioration_veto", rule_severe_deterioration_veto),
     TrendRule("structural_decline_veto", rule_structural_decline_veto),
+
+    # === 扣分规则 (Penalty Rules) ===
+    # 根据严重程度扣除分数
     TrendRule("roiic_negative_penalty", rule_roiic_negative_penalty),
     TrendRule("compound_recent_deterioration", rule_compound_recent_deterioration),
     TrendRule("mild_decline_penalty", rule_mild_decline_penalty),
@@ -435,13 +451,29 @@ DEFAULT_TREND_RULES: List[TrendRule] = [
     TrendRule("single_year_decline", rule_single_year_decline),
     TrendRule("relative_decline", rule_relative_decline),
     TrendRule("roiic_roic_divergence_penalty", rule_roiic_roic_divergence),
-    TrendRule("inflection_penalty_or_bonus", rule_inflection_penalty_or_bonus),
+
+    # === 交叉验证规则 (Cross-Validation Rules) ===
+    # 多指标联动校验，防止单一指标误判
+    TrendRule("earnings_quality_divergence", rule_earnings_quality_divergence),
+    TrendRule("sustainable_growth_check", rule_sustainable_growth_check),
+    TrendRule("dupont_consistency", rule_dupont_consistency),
+    TrendRule("fcf_quality_check", rule_fcf_quality_check),               # 新增：现金流质量
+    TrendRule("capex_intensity_check", rule_capex_intensity_check),       # 新增：资本开支效率
+    TrendRule("explosive_growth_validation", rule_explosive_growth_validation),  # 新增：爆发增长验证
+
+    # === 周期调整规则 (Cyclical Rules) ===
+    # 针对周期股的特殊处理
     TrendRule("cyclical_adjustment", rule_cyclical_adjustment),
+    TrendRule("cycle_position_adjustment", rule_cycle_position_adjustment),  # 新增：周期位置
+    TrendRule("cycle_veto_override", rule_cycle_veto_override),              # 新增：周期底部豁免
+
+    # === 加分/调整规则 (Bonus/Adjustment Rules) ===
+    # 对优质特征给予加分
+    TrendRule("inflection_penalty_or_bonus", rule_inflection_penalty_or_bonus),
     TrendRule("acceleration_adjustment", rule_acceleration_adjustment),
     TrendRule("roiic_positive_bonus", rule_roiic_positive_bonus),
     TrendRule("growth_momentum_bonus", rule_growth_momentum_bonus),
-    TrendRule("earnings_quality_divergence", rule_earnings_quality_divergence),
-    TrendRule("sustainable_growth_check", rule_sustainable_growth_check),
+    TrendRule("mean_reversion_adjustment", rule_mean_reversion_adjustment),
 ]
 
 trend_rule_engine = TrendRuleEngine(DEFAULT_TREND_RULES)
@@ -756,6 +788,16 @@ class TrendAnalyzer:
         robust = self.robust_result
         quality = trend.quality
 
+        # 收集所有探针的 warnings
+        all_warnings = []
+        all_warnings.extend(trend.warnings or [])
+        all_warnings.extend(volatility.warnings or [])
+        all_warnings.extend(inflection.warnings or [])
+        all_warnings.extend(deterioration.warnings or [])
+        all_warnings.extend(cyclical.warnings or [])
+        all_warnings.extend(rolling.warnings or [])
+        all_warnings.extend(robust.warnings or [])
+
         return TrendVector(
             log_slope=trend.log_slope,
             r_squared=trend.r_squared,
@@ -768,6 +810,8 @@ class TrendAnalyzer:
             latest_vs_weighted_ratio=self.latest_vs_weighted_ratio,
             is_cyclical=cyclical.is_cyclical,
             current_phase=cyclical.current_phase,
+            cycle_position=cyclical.cycle_position,
+            fft_dominant_period=cyclical.fft_dominant_period,
             peak_to_trough_ratio=cyclical.peak_to_trough_ratio,
             has_deterioration=deterioration.has_deterioration,
             deterioration_severity=deterioration.severity,
@@ -784,6 +828,7 @@ class TrendAnalyzer:
             near_zero_count=quality.near_zero_count,
             robust=robust,
             reference_metrics=self.reference_stats,
+            warnings=all_warnings,
         )
 
     def build_snapshot(
