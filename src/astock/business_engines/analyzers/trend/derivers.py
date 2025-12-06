@@ -99,7 +99,7 @@ class ROIICDeriver:
         3. 计算 Δ投入资本
         4. ROIIC = ΔNOPAT / Δ投入资本
         """
-        from ..core.duckdb_utils import _q
+        from ...core.duckdb_utils import _q
 
         group_col_q = _q(group_column)
         view_name = "trend_with_roiic"

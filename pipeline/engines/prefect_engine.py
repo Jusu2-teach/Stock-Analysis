@@ -462,38 +462,75 @@ class PrefectEngine:
         return hybrid_workflow
 
     def _build_node_level_flow(self, config: Dict[str, Any], orchestration: Dict[str, Any]) -> Callable:
-        """构建节点级粒度的 Prefect Flow：每个 Kedro Node 一个 Prefect 任务"""
+        """构建节点级粒度的 Prefect Flow：每个 Kedro Node 一个 Prefect 任务
+
+        使用统一的 DependencyGraph 管理依赖关系，避免重复实现拓扑排序逻辑。
+        """
         from prefect import flow, task, get_run_logger
         from prefect.task_runners import ConcurrentTaskRunner
+        from pipeline.core.dependency_graph import (
+            DependencyGraph,
+            DependencyType,
+            DataDependencySource,
+            ExplicitDependencySource,
+        )
+
         # 获取所有管道（当前主要是 __auto__）
         pipelines = self.kedro_engine.pipelines
         if not pipelines:
             raise ValueError("未发现已构建的 Kedro 管道")
+
         # 仅支持单管道或合并多个管道节点
         all_nodes = []
         for pname, p in pipelines.items():
             for n in p.nodes:
                 all_nodes.append((pname, n))
-        # 构建数据集 -> 生产节点映射
-        dataset_producer = {}
+
+        # 构建节点映射
         node_inputs_map = {}
         node_outputs_map = {}
         for _, nd in all_nodes:
             outs = list(nd.outputs) if isinstance(nd.outputs, (list, tuple, set)) else ([nd.outputs] if nd.outputs else [])
-            for o in outs:
-                dataset_producer[o] = nd.name
             ins = list(nd.inputs) if isinstance(nd.inputs, (list, tuple, set)) else ([nd.inputs] if nd.inputs else [])
             node_inputs_map[nd.name] = ins
             node_outputs_map[nd.name] = outs
-        # 依赖：节点依赖于所有其输入数据集的生产节点
-        node_deps = {}
+
+        # 构建节点配置（用于 DependencyGraph）
+        auto_nodes = config.get('pipeline', {}).get('kedro_pipelines', {}).get('__auto__', {}).get('nodes', [])
+        explicit_deps_map = {n.get('name'): n.get('depends_on', []) for n in auto_nodes if n.get('name')}
+
+        node_configs = {}
         for _, nd in all_nodes:
-            deps = set()
-            for din in node_inputs_map[nd.name]:
-                if din in dataset_producer:
-                    deps.add(dataset_producer[din])
-            deps.discard(nd.name)
-            node_deps[nd.name] = sorted(deps)
+            node_configs[nd.name] = {
+                'inputs': node_inputs_map[nd.name],
+                'outputs': node_outputs_map[nd.name],
+                'depends_on': explicit_deps_map.get(nd.name, []),
+            }
+
+        # 使用统一的 DependencyGraph 构建依赖关系
+        dep_graph = DependencyGraph.from_node_configs(
+            node_configs,
+            sources=[
+                DataDependencySource(),
+                ExplicitDependencySource(),
+            ],
+            logger=self.logger
+        )
+
+        # 获取执行计划
+        execution_plan = dep_graph.build_execution_plan()
+
+        # 转换为 node_deps 格式（保持向后兼容）
+        node_deps = {
+            node: list(dep_graph.get_predecessors(node))
+            for node in node_configs.keys()
+        }
+
+        # 记录显式依赖
+        for node_name, explicit_deps in explicit_deps_map.items():
+            if explicit_deps and node_name in node_deps:
+                self.logger.info(f"📌 Node层显式依赖: {node_name} -> {explicit_deps}")
+
         soft_fail = bool(orchestration.get('soft_fail', False))
         task_runner_type = orchestration.get('task_runner', 'sequential').lower()
         max_workers = orchestration.get('max_workers', 4)

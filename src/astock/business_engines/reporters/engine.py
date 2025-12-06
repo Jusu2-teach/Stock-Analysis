@@ -39,9 +39,16 @@ def report_generic(result: ScoreResult, config: Dict[str, Any] = None, output_pa
     engine_type="reporting",
     description="Generate comprehensive trend analysis report from multiple metrics"
 )
-def report_comprehensive(data_dir: str = "data/filter_middle", output_path: str = "data/comprehensive_analysis_report.md") -> str:
+def report_comprehensive(
+    data_dir: str = "data/filter_middle",
+    output_path: str = "data/comprehensive_analysis_report.md"
+) -> str:
     """
     生成综合趋势分析报告
+
+    Args:
+        data_dir: 数据目录
+        output_path: 输出报告路径
     """
     generator = ComprehensiveReportGenerator(data_dir=data_dir)
     return generator.generate_report(output_path=output_path)

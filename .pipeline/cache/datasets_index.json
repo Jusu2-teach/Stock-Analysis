@@ -15,7 +15,7 @@
     "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
   },
   "Score_ROIC_Quality__ROIC_Quality_Result": {
-    "fingerprint": "obj:3a253a6d9e8c48da3edab4a95a0a546508623a9412bdbddfef4663797f8e3743",
+    "fingerprint": "obj:018c028675a4743b3ad4056cdbdeec735d80ff3799ac2542d25f0bc2bf80c054",
     "type": "ScoreResult",
     "file": "datasets/Score_ROIC_Quality__ROIC_Quality_Result.pkl"
   },
@@ -70,7 +70,7 @@
     "file": "datasets/Analyze_Profit_Trend__Profit_Trend_Result.pkl"
   },
   "Generate_Comprehensive_Report__Comprehensive_Report_Path": {
-    "fingerprint": "obj:21b197550c45a27b63605ba05abdeed4147a32e0b267e5cab3fd57a806b362bb",
+    "fingerprint": "obj:1bb17934b376b82dbe3a0bc3345233d9b87de98ec4516d4b3b885055438cadb5",
     "type": "str",
     "file": "datasets/Generate_Comprehensive_Report__Comprehensive_Report_Path.pkl"
   }

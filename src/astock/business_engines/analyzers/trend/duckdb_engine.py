@@ -17,9 +17,9 @@ import logging
 from typing import Union, List, Optional
 
 # orchestrator 已移至根目录
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
-from ..core.duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
+from ...core.duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
 from .config import (
     INDUSTRY_FILTER_CONFIGS,
     DEFAULT_FILTER_CONFIG,
@@ -39,7 +39,7 @@ from . import (
 )
 # 🔌 导入插件化派生器系统
 from .derivers import find_deriver, list_available_metrics, check_derivable
-from ..core.interfaces import IAnalyzer, AnalysisResult
+from ...core.interfaces import IAnalyzer, AnalysisResult
 
 logger = logging.getLogger(__name__)
 

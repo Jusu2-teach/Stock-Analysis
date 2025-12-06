@@ -1,43 +1,153 @@
 """ConfigService: 负责配置加载/解析/拓扑/节点构建
 
+职责：
+1. 加载和解析 YAML 配置文件
+2. 构建 StepSpec 规范对象
+3. 使用 DependencyGraph 计算执行顺序
+4. 生成 Kedro 兼容的节点配置
+
+设计原则：
+- 单一职责：只负责配置解析，不执行任何业务逻辑
+- 依赖反转：通过 PipelineContext 共享状态
+- 开闭原则：通过 DependencySource 扩展依赖解析
+
 重构为依赖 PipelineContext 而非 ExecuteManager，降低耦合。
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Set
-from collections import defaultdict, deque
+from collections import defaultdict
 import yaml
 import hashlib
 import re
 import logging
 
 from ..context import PipelineContext, StepSpec, StepOutput
+from ..dependency_graph import (
+    DependencyGraph,
+    DependencyType,
+    DependencySource,
+    DependencyEdge,
+    ExecutionPlan,
+    CyclicDependencyError,
+)
+
+
+class StepDataDependencySource(DependencySource):
+    """Step 级数据依赖源
+
+    从 StepSpec 的 inputs 字段（数据集名）推导依赖。
+    """
+
+    def extract_dependencies(self, node_name: str, node_config: Dict[str, Any],
+                            all_nodes: Dict[str, Any]) -> List[DependencyEdge]:
+        edges = []
+        inputs = node_config.get('inputs', [])
+        if isinstance(inputs, str):
+            inputs = [inputs]
+
+        # 构建输出到节点的映射
+        output_to_node = {}
+        for name, cfg in all_nodes.items():
+            for out in cfg.get('outputs', []):
+                output_to_node[out] = name
+
+        for inp in inputs:
+            if inp in output_to_node:
+                producer = output_to_node[inp]
+                if producer != node_name:
+                    edges.append(DependencyEdge(
+                        from_node=producer,
+                        to_node=node_name,
+                        dep_type=DependencyType.DATA,
+                        metadata={'dataset': inp}
+                    ))
+        return edges
+
+
+class StepExplicitDependencySource(DependencySource):
+    """Step 级显式依赖源
+
+    从 depends_on 字段解析显式声明的依赖。
+    """
+
+    def extract_dependencies(self, node_name: str, node_config: Dict[str, Any],
+                            all_nodes: Dict[str, Any]) -> List[DependencyEdge]:
+        edges = []
+        depends_on = node_config.get('depends_on', [])
+        if isinstance(depends_on, str):
+            depends_on = [depends_on]
+
+        for dep in depends_on:
+            if dep in all_nodes:
+                edges.append(DependencyEdge(
+                    from_node=dep,
+                    to_node=node_name,
+                    dep_type=DependencyType.EXPLICIT,
+                    metadata={'source': 'depends_on'}
+                ))
+        return edges
 
 
 class ConfigService:
-    """配置服务（解耦版本）
+    """配置服务（专业级实现）
 
-    通过 PipelineContext 访问共享状态，而非直接依赖 ExecuteManager。
+    通过 PipelineContext 访问共享状态，使用 DependencyGraph 管理依赖。
+
+    核心流程：
+    1. load_config() -> 解析 YAML
+    2. _parse_steps() -> 构建 StepSpec
+    3. _build_dependency_graph() -> 创建依赖图
+    4. _compute_execution_order() -> 拓扑排序
     """
 
-    __slots__ = ('ctx', 'logger')
+    __slots__ = ('ctx', 'logger', '_dependency_graph')
 
+    # 步骤引用模式：steps.<step_name>.outputs.parameters.<param_name>
     REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
 
     def __init__(self, context: PipelineContext, logger: logging.Logger | None = None):
         self.ctx = context
         self.logger = logger or logging.getLogger(__name__)
+        self._dependency_graph: DependencyGraph | None = None
 
-    # ---- public orchestrated methods ----
+    @property
+    def dependency_graph(self) -> DependencyGraph | None:
+        """获取依赖图（只读访问）"""
+        return self._dependency_graph
+
+    # ========== Public API ==========
+
     def load_config(self, path: str) -> Dict[str, Any]:
-        """加载并解析配置文件"""
+        """加载并解析配置文件
+
+        Args:
+            path: YAML 配置文件路径
+
+        Returns:
+            解析后的配置字典
+        """
         with open(path, 'r', encoding='utf-8') as f:
             self.ctx.config = yaml.safe_load(f)
         self.logger.info(f"🧾 已加载配置: {path}")
+
         self._parse_steps()
+        self._build_dependency_graph()
         self._compute_execution_order()
+
         return self.ctx.config
 
-    # ---- internal pieces ----
+    def get_execution_plan(self) -> ExecutionPlan:
+        """获取执行计划
+
+        Returns:
+            ExecutionPlan 实例，包含层次信息和关键路径
+        """
+        if self._dependency_graph is None:
+            raise RuntimeError("依赖图未初始化，请先调用 load_config()")
+        return self._dependency_graph.build_execution_plan()
+
+    # ========== Internal: Step Parsing ==========
+
     def _parse_steps(self):
         """解析配置中的步骤定义"""
         self.ctx.steps.clear()
@@ -45,6 +155,7 @@ class ConfigService:
         raw_steps = pipeline.get('steps') or self.ctx.config.get('steps')
         if not isinstance(raw_steps, list):
             raise ValueError("配置中 pipeline.steps 必须为列表")
+
         # 预扫描引用
         referenced_map: Dict[str, Set[str]] = defaultdict(set)
 
@@ -106,13 +217,19 @@ class ConfigService:
                 outputs.extend(auto_outputs)
                 self.logger.info(f"🧩 自动补全隐式 outputs: step={name} -> {[o.name for o in auto_outputs]}")
 
+            # 解析显式依赖声明
+            explicit_deps = raw.get('depends_on', [])
+            if isinstance(explicit_deps, str):
+                explicit_deps = [explicit_deps]
+
             spec = StepSpec(
                 name=name,
                 component=component,
                 engine=engine,
                 methods=methods,
                 raw_parameters=self._mark_references(params),
-                outputs=outputs
+                outputs=outputs,
+                depends_on=explicit_deps
             )
             self.ctx.steps[name] = spec
 
@@ -138,39 +255,76 @@ class ConfigService:
         """生成引用的哈希值"""
         return hashlib.md5(ref.encode('utf-8')).hexdigest()[:16]
 
-    def _compute_execution_order(self):
-        """计算步骤执行顺序（拓扑排序）"""
-        deps: Dict[str, Set[str]] = defaultdict(set)
+    # ========== Internal: Dependency Graph ==========
+
+    def _build_dependency_graph(self) -> None:
+        """构建依赖图
+
+        使用专业的 DependencyGraph 类管理依赖关系。
+        这是单一职责：依赖图只负责依赖建模和拓扑排序。
+        """
+        # 将 StepSpec 转换为节点配置格式（用于 DependencySource）
+        node_configs = {}
         for name, spec in self.ctx.steps.items():
+            # 收集数据集输入
+            inputs = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
                     m = self.REF_PATTERN.match(ref)
                     if m:
-                        deps[name].add(m.group('step'))
+                        ds_name = self.ctx.dataset_name(m.group('step'), m.group('param'))
+                        inputs.append(ds_name)
 
-        in_degree = {name: 0 for name in self.ctx.steps}
-        for name, pres in deps.items():
-            for pre in pres:
-                if pre in in_degree:
-                    in_degree[name] += 1
+            # 收集数据集输出
+            outputs = [self.ctx.dataset_name(name, o.name) for o in spec.outputs]
 
-        queue = deque([n for n, d in in_degree.items() if d == 0])
-        order: List[str] = []
-        while queue:
-            cur = queue.popleft()
-            order.append(cur)
-            for succ, pres in deps.items():
-                if cur in pres:
-                    in_degree[succ] -= 1
-                    if in_degree[succ] == 0:
-                        queue.append(succ)
+            node_configs[name] = {
+                'inputs': inputs,
+                'outputs': outputs,
+                'depends_on': spec.depends_on,
+            }
 
-        if len(order) != len(self.ctx.steps):
-            missing = set(self.ctx.steps) - set(order)
-            raise ValueError(f"检测到循环或缺失依赖: {missing}")
+        # 使用依赖源策略创建依赖图
+        self._dependency_graph = DependencyGraph.from_node_configs(
+            node_configs,
+            sources=[
+                StepDataDependencySource(),
+                StepExplicitDependencySource(),
+            ],
+            logger=self.logger
+        )
 
-        self.ctx.execution_order = order
-        self.logger.info(f"🧭 执行顺序: {order}")
+        # 记录显式依赖（便于调试）
+        for name, spec in self.ctx.steps.items():
+            if spec.depends_on:
+                self.logger.info(f"📌 显式依赖: {name} -> {spec.depends_on}")
+
+    def _compute_execution_order(self) -> None:
+        """计算步骤执行顺序
+
+        使用 DependencyGraph 的拓扑排序功能，提供：
+        - 循环依赖检测
+        - 层次化执行计划
+        - 关键路径分析
+        """
+        if self._dependency_graph is None:
+            raise RuntimeError("依赖图未初始化，请先调用 _build_dependency_graph()")
+
+        try:
+            plan = self._dependency_graph.build_execution_plan()
+            self.ctx.execution_order = plan.flatten()
+
+            # 将执行计划存储到上下文中（供 Prefect Engine 使用）
+            self.ctx.set_runtime_value('execution_plan', plan)
+
+            self.logger.info(f"🧭 执行顺序: {self.ctx.execution_order}")
+            self.logger.info(f"📊 执行计划: {plan.depth} 层, 最大并行度 {plan.max_parallelism}")
+
+            if plan.critical_path:
+                self.logger.debug(f"🔥 关键路径: {' -> '.join(plan.critical_path)}")
+
+        except CyclicDependencyError as e:
+            raise ValueError(f"检测到循环依赖: {e.cycle}") from e
 
     def _extract_refs(self, val) -> List[str]:
         """递归提取引用标记"""
@@ -185,6 +339,8 @@ class ConfigService:
             for v in val:
                 refs.extend(self._extract_refs(v))
         return refs
+
+    # ========== Internal: Node Config Building ==========
 
     def build_auto_nodes(self) -> Dict[str, Any]:
         """构建自动节点配置"""
@@ -243,6 +399,10 @@ class ConfigService:
                             inputs.append(ds_in)
             if inputs:
                 node_cfg['inputs'] = inputs
+
+            # 添加显式依赖（用于 Prefect Engine 拓扑排序）
+            if spec.depends_on:
+                node_cfg['depends_on'] = spec.depends_on
 
             auto_nodes.append(node_cfg)
 

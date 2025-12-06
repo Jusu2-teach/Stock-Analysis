@@ -196,7 +196,7 @@ METRIC_PROFILES: Dict[str, MetricProfile] = {
         mild_decline_slope=-0.15,
         high_growth_threshold=0.15,       # 营收增长15%是高成长
         min_value_for_growth=0.5,         # 每股营收>0.5才算有效基数
-        reference_metrics=["roe"],        # 营收增长要看ROE是否跟上
+        reference_metrics=["roe", "eps"], # 营收增长要看ROE和EPS是否跟上（防增收不增利）
         quality_check_metrics=["ocfps"],
     ),
 

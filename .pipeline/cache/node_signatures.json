@@ -5,7 +5,7 @@
   "Score_ROIC_Quality": "Analyze_ROIC_Trend__ROIC_Trend_Result:df:356af5420ee6575d9fa23811bfc3f43ac223a233fdd7256dda11d705319b6c65#Score_ROIC_Quality",
   "store_ROIC_Trend": "Analyze_ROIC_Trend__ROIC_Trend_Result:df:356af5420ee6575d9fa23811bfc3f43ac223a233fdd7256dda11d705319b6c65#store_ROIC_Trend",
   "store_ROIIC_Trend": "Analyze_ROIIC_Trend__ROIIC_Trend_Result:df:fbc809119525d99a0ca7062ffe426c0aba7b4bb09e6e49c2b2d222190b05403d#store_ROIIC_Trend",
-  "store_ROIC_Quality": "store#store@polars:unknown:0#[('data', ScoreResult(data=        ts_code  name  ... grade  recommendation\n0     000020.SZ  深华发A  ...     F          ❌ 规避风险\n1     000021.SZ   深科技  ...     F          ❌ 规避风险\n2     000034.SZ  神州数码  ...     F          ❌ 规避风险\n3     000045.SZ  深纺织A  ...     F          ❌ 规避风险\n4     000050.SZ  深天马A  ...     F          ❌ 规避风险\n...         ...   ...  ...   ...             ...\n1226  920111.BJ  聚星科技  ...     C         ⚠️ 谨慎观察\n1227  920112.BJ   巴兰仕  ...     A         ⭐⭐ 推荐买入\n1228  920128.BJ  胜业电气  ...     D          ❌ 规避风险\n1229  920682.BJ  球冠电缆  ...     F          ❌ 规避风险\n1230  920799.BJ  艾融软件  ...     F          ❌ 规避风险\n\n[1231 rows x 85 columns], score_col='quality_score', grade_col='grade', metadata={'config': {}})), ('file_path', 'data/filter_middle/roic_quality_scored.csv'), ('format', 'csv')]#Score_ROIC_Quality__ROIC_Quality_Result:obj:3a253a6d9e8c48da3edab4a95a0a546508623a9412bdbddfef4663797f8e3743",
+  "store_ROIC_Quality": "Score_ROIC_Quality__ROIC_Quality_Result:obj:018c028675a4743b3ad4056cdbdeec735d80ff3799ac2542d25f0bc2bf80c054#store_ROIC_Quality",
   "Load_Data": "#Load_Data",
   "Analyze_ROIC_Generic": "Load_Data__Raw_Data:df:66580ac0cca3755a636df8e44026b117ede882edfb7772d6eb5a7ffd6086b726#Analyze_ROIC_Generic",
   "Score_ROIC_Generic": "Analyze_ROIC_Generic__ROIC_Analysis_Result:obj:b040d6e25429e7b1fdfe6d1c71680aa79bdf14fea9602e6aa26dbcc578cb84c1#Score_ROIC_Generic",
@@ -23,5 +23,5 @@
   "store_GrossMargin_Trend": "Analyze_GrossMargin_Trend__GrossMargin_Trend_Result:df:264f197a86bcfa6346ed0919a1546e1b1840ec5680e3cb453912fe3c4901ec95#store_GrossMargin_Trend",
   "store_Revenue_Trend": "Analyze_Revenue_Trend__Revenue_Trend_Result:df:272bf816fb6016be13eca15527e63d7c8cae2df68e677749f2a9f1570c5335aa#store_Revenue_Trend",
   "store_Profit_Trend": "Analyze_Profit_Trend__Profit_Trend_Result:df:c9a47fea44e663a6fa20d1c5399f0fbe0a94950e0f51edc951773a662da624c7#store_Profit_Trend",
-  "Generate_Comprehensive_Report": "#Generate_Comprehensive_Report"
+  "Generate_Comprehensive_Report": "report_comprehensive#report_comprehensive@reporting:unknown:0#[('data_dir', 'data/filter_middle'), ('output_path', 'data/comprehensive_analysis_report.md')]#"
 }

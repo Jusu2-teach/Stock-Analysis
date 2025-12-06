@@ -1,17 +1,20 @@
 """
-业务引擎模块（重构版）
-===================
+业务引擎模块（重构版 v2）
+========================
 
 提供业务分析功能：
-- trend: 趋势分析 (DuckDB Engine)
-- scoring: 质量评分 (Generic Scorer)
-- reporting: 报告生成 (Generic Reporter)
+- analyzers/trend: 趋势分析 (DuckDB Engine)
+- analyzers/quality: 质量分析 (预留)
+- analyzers/valuation: 估值分析 (预留)
+- scorers: 评分器 (Generic Scorer)
+- reporters: 报告生成 (Generic Reporter)
+- analysis: 通用分析 (DuckDB Engine)
 """
 
 from orchestrator import Registry
-from .trend import duckdb_engine as trend_engine
-from .scoring import engine as scoring_engine
-from .reporting import engine as reporting_engine
+from .analyzers.trend import duckdb_engine as trend_engine
+from .scorers import engine as scoring_engine
+from .reporters import engine as reporting_engine
 from .analysis import duckdb_engine as analysis_engine
 
 # Scan Analysis (General)

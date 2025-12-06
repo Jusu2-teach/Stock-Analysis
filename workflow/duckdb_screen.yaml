@@ -120,6 +120,7 @@ pipeline:
         data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
 
     # ========== 营收趋势分析 (规模增长) ==========
+    # 交叉验证：ROE（增长效率）+ EPS（增收是否增利）
     - name: "Analyze_Revenue_Trend"
       component: "business_engine"
       engine: "duckdb"
@@ -131,7 +132,7 @@ pipeline:
         prefix: ""
         suffix: ""
         min_periods: 5
-        reference_metrics: ["roe"]
+        reference_metrics: ["roe", "eps"]
       outputs:
         parameters:
           - name: Revenue_Trend_Result
@@ -290,6 +291,7 @@ pipeline:
         data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
 
     # ========== 综合报告生成 (Cross-Analysis Report) ==========
+    # 依赖所有 store 步骤完成后才执行
     - name: "Generate_Comprehensive_Report"
       component: "business_engine"
       engine: "reporting"
@@ -297,6 +299,16 @@ pipeline:
       parameters:
         data_dir: "data/filter_middle"
         output_path: "data/comprehensive_analysis_report.md"
+      depends_on:
+        - "store_ROIC_Trend"
+        - "store_ROIIC_Trend"
+        - "store_Revenue_Trend"
+        - "store_Profit_Trend"
+        - "store_GrossMargin_Trend"
+        - "store_NetMargin_Trend"
+        - "store_ROE_Trend"
+        - "store_OCF_Trend"
+        - "store_ROIC_Quality"
       outputs:
         parameters:
           - name: Comprehensive_Report_Path

@@ -24,6 +24,7 @@ class StepSpec:
     methods: List[str]
     raw_parameters: Dict[str, Any] = field(default_factory=dict)
     outputs: List[StepOutput] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)  # 显式依赖声明
 
 
 @dataclass
