@@ -22,6 +22,7 @@ from typing import List, Tuple, Optional
 from ..models import VolatilityResult, TrendWarning
 from ..config import get_default_config
 from .common import DataQualityChecker
+from .fast_stats import fast_linregress_no_pvalue
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,9 @@ def detrended_volatility(values: np.ndarray) -> Tuple[float, float]:
     if n < 3:
         return float(np.std(values, ddof=1)), float('inf')
 
-    # 线性回归去趋势
-    x = np.arange(n)
-    slope, intercept, _, _, _ = stats.linregress(x, values)
+    # 线性回归去趋势（使用快速版本）
+    x = np.arange(n, dtype=np.float64)
+    slope, intercept, _, _ = fast_linregress_no_pvalue(x, values)
     trend = slope * x + intercept
     residuals = values - trend
 

@@ -353,10 +353,25 @@ def store(data: Optional[Union[pl.DataFrame, Any]] = None,
             if isinstance(data, pd.DataFrame):
                 logger.info("store: 检测到 pandas.DataFrame, 自动转换为 Polars")
                 try:
+                    # 先尝试直接转换
                     data = pl.from_pandas(data)
                 except Exception as conv_e:
-                    logger.error(f"pandas->Polars 转换失败: {conv_e}")
-                    return None
+                    logger.warning(f"直接转换失败 ({conv_e}), 尝试清理数据类型...")
+                    try:
+                        # 清理 pandas DataFrame 中的不兼容类型
+                        df_clean = data.copy()
+                        for col in df_clean.columns:
+                            # 处理 object 类型列，转换为 string
+                            if df_clean[col].dtype == 'object':
+                                df_clean[col] = df_clean[col].astype(str)
+                            # 处理 nullable Int64 等类型
+                            elif str(df_clean[col].dtype).startswith('Int') or str(df_clean[col].dtype).startswith('UInt'):
+                                df_clean[col] = df_clean[col].astype(float)
+                        data = pl.from_pandas(df_clean)
+                        logger.info("数据类型清理后转换成功")
+                    except Exception as clean_e:
+                        logger.error(f"pandas->Polars 转换失败: {clean_e}")
+                        return None
             else:
                 logger.error("store 仅支持 Polars 或 pandas DataFrame")
                 return None

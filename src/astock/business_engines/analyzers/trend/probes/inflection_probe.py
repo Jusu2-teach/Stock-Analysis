@@ -24,6 +24,7 @@ from typing import List, Tuple, Optional, Dict
 from ..models import InflectionResult, TrendWarning
 from ..config import get_default_config
 from .common import DataQualityChecker
+from .fast_stats import fast_linregress, fast_linregress_no_pvalue
 
 logger = logging.getLogger(__name__)
 
@@ -208,8 +209,8 @@ class InflectionDetector:
         )
 
         # 1. 全局回归（H0: 没有拐点，单一直线）
-        x = np.arange(n)
-        slope_g, intercept_g, r_val_g, _, std_err_g = stats.linregress(x, values_array)
+        x = np.arange(n, dtype=np.float64)
+        slope_g, intercept_g, r_val_g, _, std_err_g = fast_linregress(x, values_array)
         y_pred_g = slope_g * x + intercept_g
         sse_global = np.sum((values_array - y_pred_g) ** 2)
         df_global = n - 2  # 自由度 = n - 参数数量
@@ -230,7 +231,7 @@ class InflectionDetector:
             if len(x_l) < self.min_segment_length:
                 continue
 
-            slope_l, intercept_l, r_l, _, std_l = stats.linregress(x_l, y_l)
+            slope_l, intercept_l, r_l, _, std_l = fast_linregress(x_l, y_l)
             sse_l = np.sum((y_l - (slope_l * x_l + intercept_l)) ** 2)
 
             # 右段: k 到 n
@@ -239,7 +240,7 @@ class InflectionDetector:
             if len(x_r) < self.min_segment_length:
                 continue
 
-            slope_r, intercept_r, r_r, _, std_r = stats.linregress(x_r, y_r)
+            slope_r, intercept_r, r_r, _, std_r = fast_linregress(x_r, y_r)
             sse_r = np.sum((y_r - (slope_r * x_r + intercept_r)) ** 2)
 
             sse_total = sse_l + sse_r
@@ -451,7 +452,7 @@ class InflectionDetector:
         for start in range(values_array.size - window_size + 1):
             segment = values_array[start : start + window_size]
             try:
-                slope, _, r_value, _, _ = stats.linregress(years, segment)
+                slope, _, r_value, _ = fast_linregress_no_pvalue(years, segment)
             except ValueError:
                 slope = 0.0
                 r_value = 0.0

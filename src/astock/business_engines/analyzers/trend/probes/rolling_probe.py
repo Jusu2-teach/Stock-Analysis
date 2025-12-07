@@ -12,12 +12,12 @@
 
 import logging
 import numpy as np
-from scipy import stats
 from typing import List, Tuple
 
 from ..models import RollingTrendResult, TrendWarning
 from ..config import get_default_config
 from .common import DataQualityChecker
+from .fast_stats import fast_linregress_no_pvalue
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,10 @@ class RollingTrendCalculator:
         if len(values) < 2:
             return 0.0, 0.0
         try:
-            x = np.arange(len(values))
+            x = np.arange(len(values), dtype=np.float64)
             y = np.arcsinh(values)  # 使用arcsinh处理负值
-            slope, _, r_value, _, _ = stats.linregress(x, y)
-            return float(slope), float(r_value ** 2)
+            slope, _, _, r_squared = fast_linregress_no_pvalue(x, y)
+            return float(slope), float(r_squared)
         except (ValueError, RuntimeWarning):
             return 0.0, 0.0
 

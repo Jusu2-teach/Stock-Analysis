@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..models import LogTrendResult, TrendWarning, DataQualitySummary, OutlierDetectionResult
 from ..config import TrendAnalysisConfig, get_default_config
 from .common import DataQualityChecker, OutlierDetectorFactory
+from .fast_stats import fast_linregress, fast_linregress_no_pvalue
 
 logger = logging.getLogger(__name__)
 
@@ -332,12 +333,12 @@ class LogTrendCalculator:
             transformed = np.log(values)
             transform_method = "log"
 
-        # ========== 1. 标准 OLS 回归 ==========
-        log_slope, log_intercept, r_value, p_value, std_err = stats.linregress(
+        # ========== 1. 标准 OLS 回归（使用快速版本） ==========
+        log_slope, log_intercept, r_value, p_value, std_err = fast_linregress(
             years, transformed
         )
 
-        linear_slope, linear_intercept, _, _, _ = stats.linregress(
+        linear_slope, linear_intercept, _, _ = fast_linregress_no_pvalue(
             years, values
         )
 
