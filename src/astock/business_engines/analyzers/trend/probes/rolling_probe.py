@@ -59,21 +59,25 @@ class RollingTrendCalculator:
         if len(values_array) >= 3:
             early_3y_slope, early_3y_r_squared = self._compute_log_slope(values_array[:3])
 
-        # 4. 加速度计算 (专业改进版)
-        # 传统方法: acceleration = recent_slope - full_slope
-        # 改进方法: 使用早期vs近期的对比，并加权R²置信度
+        # 4. 加速度计算 (修复版)
+        # 改进：R²作为置信度标签，而非乘数
+        # 原始加速度 = 近期斜率 - 早期斜率
         raw_acceleration = recent_3y_slope - early_3y_slope
 
-        # 置信度加权：只有当两段趋势都可信时，加速度才可信
-        confidence = min(recent_3y_r_squared, early_3y_r_squared)
-        trend_acceleration = raw_acceleration * confidence  # 低置信度时压缩加速度
+        # 置信度：两段趋势的最小 R²
+        # 不再用于乘以加速度，而是单独记录用于判断
+        acceleration_confidence = min(recent_3y_r_squared, early_3y_r_squared)
+
+        # 保留原始加速度值，不再压缩
+        trend_acceleration = raw_acceleration
 
         # 5. 判断阈值 (考虑数据量级)
         # 动态阈值：基于全样本斜率的20%作为显著变化
         threshold = max(abs(full_5y_slope) * 0.2, 0.05)  # 最低0.05防止除零
 
-        is_accelerating = trend_acceleration > threshold and recent_3y_r_squared > 0.3
-        is_decelerating = trend_acceleration < -threshold and recent_3y_r_squared > 0.3
+        # 只有当置信度足够 (>0.3) 时才确认加速/减速
+        is_accelerating = trend_acceleration > threshold and acceleration_confidence > 0.3
+        is_decelerating = trend_acceleration < -threshold and acceleration_confidence > 0.3
 
         warnings: List[TrendWarning] = []
         if is_accelerating:
@@ -101,7 +105,10 @@ class RollingTrendCalculator:
             full_5y_slope=full_5y_slope,
             full_5y_r_squared=full_5y_r_squared,
             trend_acceleration=trend_acceleration,
+            acceleration_confidence=acceleration_confidence,
             is_accelerating=is_accelerating,
             is_decelerating=is_decelerating,
+            early_3y_slope=early_3y_slope,
+            early_3y_r_squared=early_3y_r_squared,
             warnings=warnings,
         )

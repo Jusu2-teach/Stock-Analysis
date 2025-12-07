@@ -16,6 +16,13 @@ import pandas as pd
 import logging
 from typing import Union, List, Optional
 
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    tqdm = None
+
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
@@ -255,8 +262,23 @@ def analyze_metric_trend(
     result_collector = TrendResultCollector()
 
     grouped = df_full.groupby(group_cols_list[0])
+    total_groups = grouped.ngroups
 
-    for group_key, group_df in grouped:
+    # 使用进度条（如果 tqdm 可用）
+    if HAS_TQDM:
+        iterator = tqdm(
+            grouped,
+            total=total_groups,
+            desc=f"📊 {metric_name} 趋势分析",
+            unit="公司",
+            ncols=100,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+        )
+    else:
+        iterator = grouped
+        logger.info(f"处理 {total_groups} 个分组...")
+
+    for group_key, group_df in iterator:
         # 检查数据完整性
         if len(group_df) < min_periods:
             logger.debug(f"跳过 {group_key}: 数据不足{min_periods}期(实际{len(group_df)}期)")

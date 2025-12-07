@@ -4,73 +4,53 @@
     "type": "DataFrame",
     "file": "datasets/Load_Financial_Data__Raw_Data.pkl"
   },
-  "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
-    "fingerprint": "df:fbc809119525d99a0ca7062ffe426c0aba7b4bb09e6e49c2b2d222190b05403d",
-    "type": "DataFrame",
-    "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
-  },
-  "Analyze_ROIC_Trend__ROIC_Trend_Result": {
-    "fingerprint": "df:356af5420ee6575d9fa23811bfc3f43ac223a233fdd7256dda11d705319b6c65",
-    "type": "DataFrame",
-    "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
-  },
-  "Score_ROIC_Quality__ROIC_Quality_Result": {
-    "fingerprint": "obj:018c028675a4743b3ad4056cdbdeec735d80ff3799ac2542d25f0bc2bf80c054",
-    "type": "ScoreResult",
-    "file": "datasets/Score_ROIC_Quality__ROIC_Quality_Result.pkl"
-  },
-  "Load_Data__Raw_Data": {
-    "fingerprint": "df:66580ac0cca3755a636df8e44026b117ede882edfb7772d6eb5a7ffd6086b726",
-    "type": "DataFrame",
-    "file": "datasets/Load_Data__Raw_Data.pkl"
-  },
-  "Analyze_ROIC_Generic__ROIC_Analysis_Result": {
-    "fingerprint": "obj:b040d6e25429e7b1fdfe6d1c71680aa79bdf14fea9602e6aa26dbcc578cb84c1",
-    "type": "AnalysisResult",
-    "file": "datasets/Analyze_ROIC_Generic__ROIC_Analysis_Result.pkl"
-  },
-  "Score_ROIC_Generic__ROIC_Score_Result": {
-    "fingerprint": "obj:6db06bc8c5f7ed6da174f8cc1dc4a4c0778b9f660c3e2d163bce02e3ae44cf63",
-    "type": "ScoreResult",
-    "file": "datasets/Score_ROIC_Generic__ROIC_Score_Result.pkl"
-  },
-  "Report_ROIC_Generic__ROIC_Report_Text": {
-    "fingerprint": "obj:4ff502cde889fd9ac19166d53a9f679ff55ed08c8c4f72243e07c0de0dd76ba2",
-    "type": "str",
-    "file": "datasets/Report_ROIC_Generic__ROIC_Report_Text.pkl"
-  },
   "Analyze_Revenue_Trend__Revenue_Trend_Result": {
-    "fingerprint": "df:272bf816fb6016be13eca15527e63d7c8cae2df68e677749f2a9f1570c5335aa",
+    "fingerprint": "df:56a92e8f859e57bde804c56b27fb17a129289746cede19933bcd9c2e24a7deee",
     "type": "DataFrame",
     "file": "datasets/Analyze_Revenue_Trend__Revenue_Trend_Result.pkl"
   },
-  "Analyze_OCF_Trend__OCF_Trend_Result": {
-    "fingerprint": "df:bfa0c1b2b6d77f20ab6fb39770d4e1a3b635f5693e46bf3c81741210241ccd67",
-    "type": "DataFrame",
-    "file": "datasets/Analyze_OCF_Trend__OCF_Trend_Result.pkl"
-  },
-  "Analyze_ROE_Trend__ROE_Trend_Result": {
-    "fingerprint": "df:253646e440e88915be287b6531e0bf245e9a6acc7b805897d273dbc2fe16ac03",
-    "type": "DataFrame",
-    "file": "datasets/Analyze_ROE_Trend__ROE_Trend_Result.pkl"
-  },
-  "Analyze_NetMargin_Trend__NetMargin_Trend_Result": {
-    "fingerprint": "df:bc553a1ee5d1069bcb60fad919d5149f0802af1e07f0580ecfaebe8d249db3a2",
-    "type": "DataFrame",
-    "file": "datasets/Analyze_NetMargin_Trend__NetMargin_Trend_Result.pkl"
-  },
   "Analyze_GrossMargin_Trend__GrossMargin_Trend_Result": {
-    "fingerprint": "df:264f197a86bcfa6346ed0919a1546e1b1840ec5680e3cb453912fe3c4901ec95",
+    "fingerprint": "df:22a2a7313f9faef26c8bdb1abdb0b85aab32ef1c2ca9bc7373d806573e03416c",
     "type": "DataFrame",
     "file": "datasets/Analyze_GrossMargin_Trend__GrossMargin_Trend_Result.pkl"
   },
+  "Analyze_NetMargin_Trend__NetMargin_Trend_Result": {
+    "fingerprint": "df:0704601d88e14f974e5e7a7ed790f2df6263927ab155b366505efa4e7233da5e",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_NetMargin_Trend__NetMargin_Trend_Result.pkl"
+  },
+  "Analyze_OCF_Trend__OCF_Trend_Result": {
+    "fingerprint": "df:534b7579bd00cd8e6ff066b30bd4902df57c2a738d3bf17adf1f7575989b3feb",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_OCF_Trend__OCF_Trend_Result.pkl"
+  },
   "Analyze_Profit_Trend__Profit_Trend_Result": {
-    "fingerprint": "df:c9a47fea44e663a6fa20d1c5399f0fbe0a94950e0f51edc951773a662da624c7",
+    "fingerprint": "df:5d8ca8e355d0d07da62351fa6e31f0e1ff8c7e15032cd21c3062608d06ea4069",
     "type": "DataFrame",
     "file": "datasets/Analyze_Profit_Trend__Profit_Trend_Result.pkl"
   },
+  "Analyze_ROIC_Trend__ROIC_Trend_Result": {
+    "fingerprint": "df:ecfa7c4993c390dc57f1a93b604d0fe60ce5aeaebea5b9806d5c1e54e7d5e3c1",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
+  },
+  "Analyze_ROE_Trend__ROE_Trend_Result": {
+    "fingerprint": "df:c98121ebf8cf65843f1b26b782a251d7d1f00434c4e519f93e9677700c8dc7aa",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_ROE_Trend__ROE_Trend_Result.pkl"
+  },
+  "Analyze_ROIIC_Trend__ROIIC_Trend_Result": {
+    "fingerprint": "df:1f0762eecef29db8b4113169fd8d22e0c96e1e7205dbd586cdf643c9b1951221",
+    "type": "DataFrame",
+    "file": "datasets/Analyze_ROIIC_Trend__ROIIC_Trend_Result.pkl"
+  },
+  "Score_ROIC_Quality__ROIC_Quality_Result": {
+    "fingerprint": "obj:b2419b1539b84cff12721b06c59159f657fb1bf18e51f827e8887aedf3e334a7",
+    "type": "ScoreResult",
+    "file": "datasets/Score_ROIC_Quality__ROIC_Quality_Result.pkl"
+  },
   "Generate_Comprehensive_Report__Comprehensive_Report_Path": {
-    "fingerprint": "obj:d84635f06b6c1442eeccf7c7edc7d3fbaede76ee72c0315f7798030c0da87f2e",
+    "fingerprint": "obj:d330a7fb208cc9f0c8e274cc3b49110db88b079e824d5864b2850fdedb6ada09",
     "type": "str",
     "file": "datasets/Generate_Comprehensive_Report__Comprehensive_Report_Path.pkl"
   }

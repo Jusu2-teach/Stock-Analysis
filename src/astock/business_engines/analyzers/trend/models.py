@@ -102,6 +102,12 @@ class VolatilityResult(SerializableResult):
     volatility_type: str
     mean_near_zero: bool
     warnings: List[TrendWarning] = field(default_factory=list)
+    # 专业增强字段 v2.0
+    detrended_cv: float = 0.0  # 去趋势后的CV
+    has_arch_effect: bool = False  # 是否有ARCH效应（波动聚集）
+    arch_correlation: float = 0.0  # ARCH相关系数
+    volatility_regime: str = "stable"  # 波动率体制: stable, increasing_vol, decreasing_vol
+    volatility_change_ratio: float = 1.0  # 波动率变化比率 (后期/前期)
 
 
 @dataclass
@@ -132,6 +138,11 @@ class RecentDeteriorationResult(SerializableResult):
     decline_threshold_abs: float
     industry: str
     warnings: List[TrendWarning] = field(default_factory=list)
+    # 专业增强字段 v2.0
+    consecutive_decline_years: int = 0  # 连续下跌年数
+    deterioration_acceleration: float = 0.0  # 恶化加速度
+    deterioration_pattern: str = "none"  # 恶化模式分类
+    deterioration_probability: float = 0.0  # 贝叶斯恶化概率 (0-1)
 
 
 @dataclass
@@ -161,9 +172,12 @@ class RollingTrendResult(SerializableResult):
     recent_3y_r_squared: float
     full_5y_slope: float
     full_5y_r_squared: float
-    trend_acceleration: float
+    trend_acceleration: float  # 原始加速度 (recent - early)，未被R²压缩
+    acceleration_confidence: float  # 加速度的置信度 (基于R²)
     is_accelerating: bool
     is_decelerating: bool
+    early_3y_slope: float  # 前3年斜率 (年1-3)
+    early_3y_r_squared: float  # 前3年R²
     warnings: List[TrendWarning] = field(default_factory=list)
 
 
@@ -229,6 +243,19 @@ class TrendContext:
     mann_kendall_p_value: float = 1.0
     reference_metrics: Dict[str, Dict[str, float]] = field(default_factory=dict)
     warnings: List[TrendWarning] = field(default_factory=list)
+    # 专业增强字段 v2.0
+    deterioration_probability: float = 0.0  # 贝叶斯恶化概率
+    deterioration_pattern: str = "none"  # 恶化模式
+    wls_slope: Optional[float] = None  # WLS斜率
+    bootstrap_ci_low: Optional[float] = None  # Bootstrap置信区间下界
+    bootstrap_ci_high: Optional[float] = None  # Bootstrap置信区间上界
+    has_arch_effect: bool = False  # ARCH效应
+    volatility_regime: str = "stable"  # 波动率体制
+    volatility_change_ratio: float = 1.0  # 波动率变化比率
+    detrended_cv: float = 0.0  # 去趋势CV
+    # 改进规则 v2.1 - 原始数据支持
+    raw_values: Optional[List[float]] = None  # 原始时间序列数据
+    max_value: Optional[float] = None  # 历史最大值
 
     def deterioration_value(self, key: str, default: float = 0.0) -> float:
         value = self.deterioration_result.get(key, default)
@@ -279,6 +306,19 @@ class TrendContext:
             mann_kendall_p_value=vector.mann_kendall_p_value,
             reference_metrics=vector.reference_metrics,
             warnings=vector.warnings,
+            # 专业增强字段 v2.0
+            deterioration_probability=vector.deterioration_probability,
+            deterioration_pattern=vector.deterioration_pattern,
+            wls_slope=vector.wls_slope,
+            bootstrap_ci_low=vector.bootstrap_ci_low,
+            bootstrap_ci_high=vector.bootstrap_ci_high,
+            has_arch_effect=vector.has_arch_effect,
+            volatility_regime=vector.volatility_regime,
+            volatility_change_ratio=vector.volatility_change_ratio,
+            detrended_cv=vector.detrended_cv,
+            # 改进规则 v2.1 - 原始数据支持
+            raw_values=list(vector.raw_values) if vector.raw_values else None,
+            max_value=vector.max_value,
         )
 
 
@@ -301,6 +341,11 @@ class TrendRuleParameters:
     roiic_negative_penalty_cap: float
     roiic_divergence_slope_gap: float
     roiic_positive_bonus_threshold: float
+    # 交叉验证阈值
+    cross_val_profit_ocf_divergence: float  # 利润增速 vs 现金流增速的差距阈值
+    cross_val_profit_positive_threshold: float  # 利润增速为正的阈值
+    cross_val_ocf_negative_threshold: float  # 现金流增速为负的阈值
+    cross_val_profit_ocf_gap: float  # 利润-现金流增速差距阈值
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "TrendRuleParameters":
@@ -322,6 +367,10 @@ class TrendRuleParameters:
             roiic_negative_penalty_cap=float(config.get("roiic_negative_penalty_cap", 12.0)),
             roiic_divergence_slope_gap=float(config.get("roiic_divergence_slope_gap", 0.12)),
             roiic_positive_bonus_threshold=float(config.get("roiic_positive_bonus_threshold", 8.0)),
+            cross_val_profit_ocf_divergence=float(config.get("cross_val_profit_ocf_divergence", 0.20)),
+            cross_val_profit_positive_threshold=float(config.get("cross_val_profit_positive_threshold", 0.10)),
+            cross_val_ocf_negative_threshold=float(config.get("cross_val_ocf_negative_threshold", -0.05)),
+            cross_val_profit_ocf_gap=float(config.get("cross_val_profit_ocf_gap", 0.20)),
         )
 
 
@@ -444,6 +493,19 @@ class TrendVector:
     robust: RobustTrendResult
     reference_metrics: Dict[str, Dict[str, float]] = field(default_factory=dict)
     warnings: List[TrendWarning] = field(default_factory=list)
+    # 专业增强字段 v2.0 - 从各探针结果提取
+    deterioration_probability: float = 0.0  # 贝叶斯恶化概率
+    deterioration_pattern: str = "none"  # 恶化模式
+    wls_slope: Optional[float] = None  # WLS斜率
+    bootstrap_ci_low: Optional[float] = None  # Bootstrap CI下界
+    bootstrap_ci_high: Optional[float] = None  # Bootstrap CI上界
+    has_arch_effect: bool = False  # ARCH效应
+    volatility_regime: str = "stable"  # 波动率体制
+    volatility_change_ratio: float = 1.0  # 波动率变化比率
+    detrended_cv: float = 0.0  # 去趋势CV
+    # 改进规则 v2.1 - 原始数据支持
+    raw_values: Tuple[float, ...] = field(default_factory=tuple)  # 原始时间序列数据
+    max_value: Optional[float] = None  # 历史最大值
 
     @property
     def robust_slope(self) -> float:

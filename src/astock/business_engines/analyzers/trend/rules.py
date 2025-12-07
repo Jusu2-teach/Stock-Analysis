@@ -207,15 +207,16 @@ def rule_earnings_quality_divergence(context: TrendContext, params: TrendRulePar
     profit_slope = context.log_slope
     ocf_slope = ocf_stats.get("log_slope", 0.0)
 
-    # 1. 剪刀差风险：利润向上(>10%)，现金流向下(<-5%)
-    if profit_slope > 0.10 and ocf_slope < -0.05:
+    # 1. 剪刀差风险：利润向上，现金流向下 (使用可配置阈值)
+    profit_threshold = params.cross_val_profit_positive_threshold  # 默认 0.10
+    ocf_threshold = params.cross_val_ocf_negative_threshold  # 默认 -0.05
+    if profit_slope > profit_threshold and ocf_slope < ocf_threshold:
         message = f"盈利质量预警-利润高增({profit_slope:.1%})但现金流恶化({ocf_slope:.1%})"
-        return RuleResult("earnings_quality_divergence", "penalty", message, 15.0) # 重罚
+        return RuleResult("earnings_quality_divergence", "penalty", message, 15.0)
 
-    # 2. 长期造假嫌疑：利润长期增长，但 OCF 长期几乎为 0 或负
-    # (这里假设数据已经归一化或单位一致，或者比较趋势)
-    # 更稳健的做法是比较斜率的差距
-    if profit_slope - ocf_slope > 0.20: # 利润增速比现金流增速快 20个百分点
+    # 2. 长期造假嫌疑：利润增速远超现金流增速 (使用可配置阈值)
+    gap_threshold = params.cross_val_profit_ocf_gap  # 默认 0.20
+    if profit_slope - ocf_slope > gap_threshold:
         message = f"现金流跟不上利润-增速差{profit_slope - ocf_slope:.1%}"
         return RuleResult("profit_cash_gap", "penalty", message, 10.0)
 
@@ -701,3 +702,432 @@ def rule_explosive_growth_validation(context: TrendContext, params: TrendRulePar
 
     return None
 
+
+# ============================================================================
+# 新增专业规则：基于贝叶斯概率和高级统计指标
+# ============================================================================
+
+def rule_bayesian_deterioration_alert(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【贝叶斯恶化预警】基于贝叶斯后验概率的恶化判断
+
+    比传统规则更精确：综合考虑多个恶化信号的联合概率。
+
+    触发条件：
+    - deterioration_probability > 0.85: 高置信度恶化 → 严重扣分
+    - deterioration_probability > 0.70: 中置信度恶化 → 中等扣分
+    - deterioration_probability < 0.30: 低恶化概率 → 可能是误判，给予豁免加分
+    """
+    prob = context.deterioration_probability
+
+    if prob is None or prob == 0.0:
+        return None  # 无贝叶斯概率数据
+
+    # 高置信度恶化（>85%）
+    if prob > 0.85:
+        # 如果传统检测也认为恶化，则加重处罚
+        if context.has_deterioration and context.deterioration_severity == "severe":
+            penalty = 12.0
+            message = f"贝叶斯高置信度恶化-{penalty:.0f}分(恶化概率{prob:.1%}，严重恶化确认)"
+            return RuleResult("bayesian_severe_deterioration", "penalty", message, penalty)
+        else:
+            penalty = 8.0
+            message = f"贝叶斯恶化预警-{penalty:.0f}分(恶化概率{prob:.1%})"
+            return RuleResult("bayesian_deterioration_warning", "penalty", message, penalty)
+
+    # 中置信度恶化（70-85%）
+    elif prob > 0.70:
+        penalty = 5.0
+        message = f"贝叶斯中度恶化预警-{penalty:.0f}分(恶化概率{prob:.1%})"
+        return RuleResult("bayesian_moderate_deterioration", "penalty", message, penalty)
+
+    # 低恶化概率（<30%）但传统检测报告恶化 → 可能是误判
+    elif prob < 0.30 and context.has_deterioration:
+        bonus = 3.0
+        message = f"贝叶斯豁免+{bonus:.0f}分(恶化概率仅{prob:.1%}，传统检测可能误判)"
+        return RuleResult("bayesian_false_positive_exempt", "bonus", message, bonus)
+
+    return None
+
+
+def rule_volatility_regime_adjustment(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【波动率体制调整】基于波动率变化趋势的风险调整
+
+    - 波动率上升: 不确定性增加，降低置信度
+    - 波动率下降: 趋势更可靠
+    - ARCH效应: 波动聚集，可能有更大波动即将到来
+    """
+    vol_regime = context.volatility_regime
+    vol_change = context.volatility_change_ratio
+    has_arch = context.has_arch_effect
+
+    if vol_regime is None:
+        return None
+
+    # 波动率显著上升 (>2倍)
+    if vol_regime == "increasing_vol" and vol_change > 2.0:
+        penalty = min(vol_change * 2, 8.0)
+        message = f"波动率飙升预警-{penalty:.1f}分(近期波动是早期的{vol_change:.1f}倍)"
+        return RuleResult("volatility_surge_penalty", "penalty", message, penalty)
+
+    # ARCH效应 + 波动率上升 = 双重风险
+    if has_arch and vol_regime == "increasing_vol":
+        penalty = 6.0
+        message = f"波动聚集风险-{penalty:.0f}分(ARCH效应+波动上升)"
+        return RuleResult("arch_volatility_risk", "penalty", message, penalty)
+
+    # 单独的ARCH效应（温和警告）
+    if has_arch:
+        penalty = 2.0
+        message = f"波动聚集提示-{penalty:.0f}分(大波动后可能跟着大波动)"
+        return RuleResult("arch_effect_warning", "penalty", message, penalty)
+
+    # 波动率显著下降 + 趋势向好 = 可靠性加分
+    if vol_regime == "decreasing_vol" and vol_change < 0.5 and context.log_slope > 0:
+        bonus = 3.0
+        message = f"波动收敛加分+{bonus:.0f}分(波动率下降,趋势更可靠)"
+        return RuleResult("volatility_convergence_bonus", "bonus", message, bonus)
+
+    return None
+
+
+def rule_bootstrap_confidence_adjustment(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【Bootstrap置信度调整】基于斜率置信区间的判断修正
+
+    Bootstrap CI 比 p-value 更可靠：
+    - 如果CI跨越零，趋势方向不确定
+    - 如果CI很窄，趋势判断更可靠
+    - 如果CI很宽，需要谨慎解读
+    """
+    ci_low = context.bootstrap_ci_low
+    ci_high = context.bootstrap_ci_high
+
+    if ci_low is None or ci_high is None:
+        return None
+
+    ci_width = ci_high - ci_low
+    slope = context.log_slope
+
+    # 1. 置信区间跨越零：趋势方向不确定
+    if ci_low < 0 < ci_high:
+        # 如果传统检测认为是显著趋势，但CI跨零，则需要打折
+        if context.r_squared > 0.5:
+            penalty = 4.0
+            message = f"趋势不确定预警-{penalty:.0f}分(Bootstrap CI跨零: [{ci_low:.3f}, {ci_high:.3f}])"
+            return RuleResult("bootstrap_uncertain_trend", "penalty", message, penalty)
+
+    # 2. CI非常窄（<0.05）且与趋势方向一致 → 高置信度
+    if ci_width < 0.05:
+        if slope > 0 and ci_low > 0.02:
+            bonus = 3.0
+            message = f"高置信度增长+{bonus:.0f}分(Bootstrap CI窄: [{ci_low:.3f}, {ci_high:.3f}])"
+            return RuleResult("bootstrap_confident_growth", "bonus", message, bonus)
+        elif slope < 0 and ci_high < -0.02:
+            # 高置信度衰退，这是坏事，加重扣分
+            penalty = 3.0
+            message = f"高置信度衰退-{penalty:.0f}分(Bootstrap CI确认下行)"
+            return RuleResult("bootstrap_confident_decline", "penalty", message, penalty)
+
+    # 3. CI非常宽（>0.3）→ 数据质量差或波动太大
+    if ci_width > 0.3:
+        penalty = 2.0
+        message = f"趋势不可靠-{penalty:.0f}分(Bootstrap CI过宽: {ci_width:.3f})"
+        return RuleResult("bootstrap_unreliable_trend", "penalty", message, penalty)
+
+    return None
+
+
+def rule_wls_ols_divergence(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【WLS-OLS背离检测】加权与普通最小二乘的背离分析
+
+    当WLS斜率与OLS斜率显著不同时，说明近期趋势与整体趋势有差异。
+    这是一个重要的趋势转折信号。
+    """
+    wls_slope = context.wls_slope
+    ols_slope = context.log_slope
+
+    if wls_slope is None:
+        return None
+
+    diff = wls_slope - ols_slope
+
+    # WLS更负（近期恶化加速）
+    if diff < -0.05 and wls_slope < 0:
+        penalty = min(abs(diff) * 30, 8.0)
+        message = f"近期恶化加速-{penalty:.1f}分(WLS={wls_slope:.3f} < OLS={ols_slope:.3f})"
+        return RuleResult("wls_recent_deterioration", "penalty", message, penalty)
+
+    # WLS更正（近期改善）
+    if diff > 0.05 and wls_slope > ols_slope:
+        bonus = min(diff * 20, 6.0)
+        message = f"近期改善信号+{bonus:.1f}分(WLS={wls_slope:.3f} > OLS={ols_slope:.3f})"
+        return RuleResult("wls_recent_improvement", "bonus", message, bonus)
+
+    # OLS显示衰退但WLS显示稳定/改善 → 困境反转信号
+    if ols_slope < -0.05 and wls_slope > -0.02:
+        bonus = 4.0
+        message = f"困境反转信号+{bonus:.0f}分(整体下滑但近期企稳)"
+        return RuleResult("wls_turnaround_signal", "bonus", message, bonus)
+
+    return None
+
+
+def rule_chronic_decline_pattern(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【慢性衰退模式识别】基于恶化模式的精细化处理
+
+    不同的恶化模式有不同的投资含义：
+    - accelerating_decline: 最危险，加速下滑
+    - chronic_decline: 长期阴跌，商业模式可能有问题
+    - cliff_drop: 单次暴跌，可能是事件驱动
+    - grinding_decline: 缓慢侵蚀，需要警惕
+    - high_level_pullback: 高位回调，可能是正常波动
+    """
+    pattern = context.deterioration_pattern
+
+    if pattern is None or pattern == "none":
+        return None
+
+    if pattern == "accelerating_decline":
+        # 加速下滑是最危险的模式
+        penalty = 10.0
+        message = f"加速下滑模式-{penalty:.0f}分(恶化速度越来越快)"
+        return RuleResult("accelerating_decline_pattern", "penalty", message, penalty)
+
+    elif pattern == "chronic_decline":
+        # 慢性衰退表明结构性问题
+        penalty = 8.0
+        message = f"慢性衰退模式-{penalty:.0f}分(连续多年下跌，可能有结构性问题)"
+        return RuleResult("chronic_decline_pattern", "penalty", message, penalty)
+
+    elif pattern == "cliff_drop":
+        # 断崖式下跌可能是事件驱动，需要具体分析
+        penalty = 6.0
+        message = f"断崖式下跌-{penalty:.0f}分(单年暴跌，关注是否为一次性事件)"
+        return RuleResult("cliff_drop_pattern", "penalty", message, penalty)
+
+    elif pattern == "grinding_decline":
+        # 阴跌，温水煮青蛙
+        penalty = 5.0
+        message = f"阴跌模式-{penalty:.0f}分(缓慢侵蚀，需警惕)"
+        return RuleResult("grinding_decline_pattern", "penalty", message, penalty)
+
+    elif pattern == "high_level_pullback":
+        # 高位回调通常是正常的
+        # 如果当前值仍然很高，可以豁免
+        if context.latest_value > (thresholds.min_latest_value or 10) * 1.5:
+            bonus = 2.0
+            message = f"高位正常回调+{bonus:.0f}分(绝对值仍处高位)"
+            return RuleResult("high_level_pullback_exempt", "bonus", message, bonus)
+
+    return None
+
+
+# ============================================================================
+# 改进规则 v2.1: 峰值跌幅、智能连续下跌、绝对水平保护
+# ============================================================================
+
+def rule_peak_decline_severe(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【峰值跌幅规则】检测从历史峰值的累计大幅下跌
+
+    解决问题：义翘神州(155% -> 1.78%)这类案例，虽然最后一年微涨，
+    但累计跌幅巨大，应该被严重扣分甚至否决。
+
+    触发条件：
+    - 从峰值跌幅 > 70%: 一票否决
+    - 从峰值跌幅 > 50%: 严重扣分 (-15分)
+    - 从峰值跌幅 > 30%: 中等扣分 (-8分)
+    """
+    peak_value = context.max_value
+    latest_value = context.latest_value
+
+    if peak_value is None or latest_value is None:
+        return None
+
+    if peak_value <= 0:
+        return None
+
+    # 计算从峰值的跌幅百分比
+    peak_decline_pct = ((latest_value - peak_value) / peak_value) * 100
+
+    # 如果是上涨或轻微下跌，不处理
+    if peak_decline_pct > -30:
+        return None
+
+    # 从峰值跌幅超过70% - 一票否决
+    if peak_decline_pct < -70:
+        message = f"峰值暴跌否决(从{peak_value:.1f}跌至{latest_value:.1f}，跌幅{peak_decline_pct:.1f}%)"
+        return RuleResult("peak_decline_veto", "veto", message, 0.0)
+
+    # 从峰值跌幅超过50% - 严重扣分
+    if peak_decline_pct < -50:
+        penalty = 15.0
+        message = f"峰值大幅下跌-{penalty:.0f}分(从{peak_value:.1f}跌至{latest_value:.1f}，跌幅{peak_decline_pct:.1f}%)"
+        return RuleResult("peak_decline_severe", "penalty", message, penalty)
+
+    # 从峰值跌幅超过30% - 中等扣分
+    penalty = 8.0
+    message = f"峰值明显下跌-{penalty:.0f}分(从{peak_value:.1f}跌至{latest_value:.1f}，跌幅{peak_decline_pct:.1f}%)"
+    return RuleResult("peak_decline_moderate", "penalty", message, penalty)
+
+
+def rule_smart_consecutive_decline(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【智能连续下跌检测】改进的连续下跌计数
+
+    解决问题：创耀科技最后一年+0.07微涨，打断了连续下跌计数，
+    导致规则失效。
+
+    改进：微小反弹(涨幅<2%)不应重置连续下跌计数。
+    使用"实质性下跌"的概念而非简单的同比下跌。
+    """
+    values = context.raw_values
+
+    if values is None or len(values) < 3:
+        return None
+
+    # 智能连续下跌计数：微小反弹(<2%)不打断连续下跌
+    MICRO_BOUNCE_THRESHOLD = 2.0  # 涨幅小于2%视为无实质性反弹
+
+    smart_consecutive = 0
+    cumulative_decline = 0.0
+
+    for i in range(len(values) - 1, 0, -1):
+        current = values[i]
+        previous = values[i - 1]
+
+        if previous == 0:
+            continue
+
+        pct_change = ((current - previous) / abs(previous)) * 100
+
+        # 实质性下跌：跌幅超过2%
+        if pct_change < -2.0:
+            smart_consecutive += 1
+            cumulative_decline += pct_change
+        # 微小反弹：涨幅小于2%，不打断连续计数，但也不累加
+        elif pct_change < MICRO_BOUNCE_THRESHOLD:
+            # 继续计数，但不增加连续年数（保持当前计数）
+            pass
+        else:
+            # 实质性反弹，停止计数
+            break
+
+    # 计算累计跌幅（从起点到终点）
+    if values[0] != 0:
+        total_decline_pct = ((values[-1] - values[0]) / abs(values[0])) * 100
+    else:
+        total_decline_pct = 0
+
+    # 智能连续下跌 >= 3年 且 累计跌幅显著
+    if smart_consecutive >= 3 and total_decline_pct < -30:
+        penalty = min(smart_consecutive * 4, 16.0)
+        message = f"智能连续下跌-{penalty:.0f}分({smart_consecutive}年实质性下跌，累计跌幅{total_decline_pct:.1f}%)"
+        return RuleResult("smart_consecutive_severe", "penalty", message, penalty)
+
+    # 智能连续下跌 >= 2年
+    if smart_consecutive >= 2 and total_decline_pct < -20:
+        penalty = smart_consecutive * 3.0
+        message = f"连续下跌警示-{penalty:.0f}分({smart_consecutive}年下跌，累计{total_decline_pct:.1f}%)"
+        return RuleResult("smart_consecutive_warning", "penalty", message, penalty)
+
+    return None
+
+
+def rule_absolute_level_protection(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【绝对水平保护】对高ROIC水平给予保护性加分
+
+    解决问题：华特达因ROIC仍有22%，远超平均水平，
+    但因近期下跌被降级到C。应该考虑绝对水平。
+
+    逻辑：
+    - ROIC > 25%: 优质资产保护 +5分
+    - ROIC > 20%: 良好资产保护 +3分
+    - ROIC > 15%: 合格资产保护 +2分
+
+    但如果正在加速恶化，保护减半。
+    """
+    latest = context.latest_value
+
+    if latest is None:
+        return None
+
+    # 获取恶化状态（如果正在加速恶化，保护减半）
+    is_accelerating = False
+    if context.deterioration_pattern in ("accelerating_decline", "cliff_drop"):
+        is_accelerating = True
+
+    protection_factor = 0.5 if is_accelerating else 1.0
+
+    # 优质资产 (ROIC > 25%)
+    if latest > 25:
+        bonus = 5.0 * protection_factor
+        if is_accelerating:
+            message = f"优质资产保护+{bonus:.1f}分(ROIC={latest:.1f}%仍优秀，但恶化中减半)"
+        else:
+            message = f"优质资产保护+{bonus:.0f}分(ROIC={latest:.1f}%属优质资产)"
+        return RuleResult("excellent_asset_protection", "bonus", message, bonus)
+
+    # 良好资产 (ROIC > 20%)
+    if latest > 20:
+        bonus = 3.0 * protection_factor
+        if is_accelerating:
+            message = f"良好资产保护+{bonus:.1f}分(ROIC={latest:.1f}%良好，但恶化中减半)"
+        else:
+            message = f"良好资产保护+{bonus:.0f}分(ROIC={latest:.1f}%属良好资产)"
+        return RuleResult("good_asset_protection", "bonus", message, bonus)
+
+    # 合格资产 (ROIC > 15%)
+    if latest > 15:
+        bonus = 2.0 * protection_factor
+        if is_accelerating:
+            message = f"合格资产保护+{bonus:.1f}分(ROIC={latest:.1f}%合格，但恶化中减半)"
+        else:
+            message = f"合格资产保护+{bonus:.0f}分(ROIC={latest:.1f}%属合格资产)"
+        return RuleResult("fair_asset_protection", "bonus", message, bonus)
+
+    return None
+
+
+def rule_cumulative_decline_veto(context: TrendContext, params: TrendRuleParameters, thresholds: TrendThresholds) -> Optional[RuleResult]:
+    """
+    【累计跌幅否决】当ROIC从高位跌到低位时的否决规则
+
+    专门处理：ROIC从高位(如155%)跌到低位(如1.78%)的情况
+    即使不是连续下跌，这种累计恶化也应该被否决。
+    """
+    values = context.raw_values
+    latest = context.latest_value
+
+    if values is None or len(values) < 3 or latest is None:
+        return None
+
+    # 找到历史最高值
+    max_val = max(values)
+
+    if max_val <= 0:
+        return None
+
+    # 计算从最高值的跌幅
+    decline_from_max = ((latest - max_val) / max_val) * 100
+
+    # 条件：从高位大幅跌落到低位
+    # 1. 历史最高 > 30% (曾经是优质资产)
+    # 2. 当前 < 5% (已经变成劣质资产)
+    # 3. 跌幅 > 80%
+    if max_val > 30 and latest < 5 and decline_from_max < -80:
+        message = f"累计崩塌否决(曾达{max_val:.1f}%，现仅{latest:.1f}%，跌幅{decline_from_max:.1f}%)"
+        return RuleResult("cumulative_collapse_veto", "veto", message, 0.0)
+
+    # 较温和的情况：曾经优质，现在平庸
+    if max_val > 25 and latest < 10 and decline_from_max < -60:
+        penalty = 12.0
+        message = f"品质退化严重-{penalty:.0f}分(曾达{max_val:.1f}%，现仅{latest:.1f}%)"
+        return RuleResult("quality_degradation_severe", "penalty", message, penalty)
+
+    return None

@@ -1,8 +1,9 @@
 # AStock Business Engines 架构文档
 
-> **版本**: 4.0 (2025-12)
+> **版本**: 4.1 (2025-12-07)
 > **定位**: 专业级基本面量化选股系统的业务引擎层
 > **核心理念**: "用成长的速度衡量扩张，用质量的高度衡量护城河，用交叉验证识别造假"
+> **最新更新**: v2.1 改进规则 - 峰值跌幅检测、智能连续下跌、绝对水平保护
 
 ---
 
@@ -761,10 +762,56 @@ class MetricAdapter:
 │   │  └── rule_turnaround_signal: 反转信号                    │  │
 │   └─────────────────────────────────────────────────────────┘  │
 │                                                                 │
+│   ┌─────────────────────────────────────────────────────────┐  │
+│   │  高级统计规则 (Advanced Statistical Rules) v2.0          │  │
+│   │  ├── rule_bayesian_deterioration_alert: 贝叶斯恶化概率   │  │
+│   │  ├── rule_volatility_regime_adjustment: 波动率体制调整   │  │
+│   │  └── rule_bootstrap_confidence_adjustment: Bootstrap置信 │  │
+│   └─────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│   ┌─────────────────────────────────────────────────────────┐  │
+│   │  改进规则 (Enhanced Rules) v2.1 - 新增                    │  │
+│   │  ├── rule_peak_decline_severe: 峰值跌幅检测              │  │
+│   │  ├── rule_smart_consecutive_decline: 智能连续下跌        │  │
+│   │  ├── rule_cumulative_decline_veto: 累计崩塌否决          │  │
+│   │  └── rule_absolute_level_protection: 绝对水平保护        │  │
+│   └─────────────────────────────────────────────────────────┘  │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 规则定义示例
+### 9.2 规则分层详解
+
+#### 9.2.1 高级统计规则 (v2.0)
+
+| 规则名称 | 触发条件 | 效果 |
+|---------|---------|------|
+| `bayesian_deterioration_alert` | 贝叶斯恶化概率 > 85% | -8~12分 (高置信度恶化) |
+| `volatility_regime_adjustment` | 波动率上升 > 2倍 + ARCH效应 | -2~8分 |
+| `bootstrap_confidence_adjustment` | Bootstrap CI 跨零 | -2~4分 |
+
+#### 9.2.2 改进规则 v2.1 (新增)
+
+解决的核心问题：
+- ❌ **义翘神州案例**: ROIC 从 155% 暴跌到 1.78%，旧方法未能淘汰
+- ❌ **创耀科技案例**: 最后一年 +0.07 微涨打断连续下跌计数
+- ❌ **华特达因案例**: ROIC 仍有 22% 但被过度惩罚
+
+| 规则名称 | 功能 | 触发条件 | 效果 |
+|---------|------|---------|------|
+| `peak_decline_severe` | 峰值跌幅检测 | 从历史峰值跌幅 > 70% | **一票否决** |
+| | | 从历史峰值跌幅 > 50% | -15分 |
+| | | 从历史峰值跌幅 > 30% | -8分 |
+| `smart_consecutive_decline` | 智能连续下跌 | 连续3年下跌 + 累计跌幅 > 30% | -16分 (最高) |
+| | | 微小反弹 < 2% 不打断连续计数 | |
+| `cumulative_decline_veto` | 累计崩塌否决 | 曾 > 30%，现 < 5%，跌幅 > 80% | **一票否决** |
+| | | 曾 > 25%，现 < 10%，跌幅 > 60% | -12分 |
+| `absolute_level_protection` | 绝对水平保护 | ROIC > 25% | +5分 |
+| | | ROIC > 20% | +3分 |
+| | | ROIC > 15% | +2分 |
+| | | 如正在加速恶化 | 保护减半 |
+
+### 9.3 规则定义示例
 
 ```python
 # analyzers/trend/rules.py
@@ -1091,7 +1138,34 @@ MIT License
 ---
 
 **维护者**: AStock Team
-**最后更新**: 2025-12-06
+**最后更新**: 2025-12-07
+
+---
+
+## 📋 更新日志
+
+### v4.1 (2025-12-07)
+
+- ✨ **新增改进规则 v2.1**
+  - `rule_peak_decline_severe`: 峰值跌幅检测，解决累计大幅恶化漏检问题
+  - `rule_smart_consecutive_decline`: 智能连续下跌，微小反弹不打断计数
+  - `rule_cumulative_decline_veto`: 累计崩塌否决，针对曾经优质现在劣质的公司
+  - `rule_absolute_level_protection`: 绝对水平保护，ROIC仍优秀时减少惩罚
+- 🔧 **模型增强**
+  - `TrendContext` 新增 `raw_values`, `max_value` 字段
+  - `TrendVector` 同步新增对应字段
+- 📊 **规则总数**: 36条
+
+### v4.0 (2025-12-06)
+
+- ✨ **新增高级统计规则 v2.0**
+  - `rule_bayesian_deterioration_alert`: 贝叶斯恶化概率
+  - `rule_volatility_regime_adjustment`: 波动率体制调整
+  - `rule_bootstrap_confidence_adjustment`: Bootstrap置信区间
+- 🔧 **探针增强**
+  - LogTrendProbe: 新增 WLS 回归、Bootstrap CI
+  - VolatilityProbe: 新增 ARCH 效应检测
+  - DeteriorationProbe: 新增贝叶斯恶化概率计算
     1.  **LogTrendProbe**: 计算对数线性回归斜率 (CAGR)，作为基础增长率。
     2.  **RobustTrendProbe**: 使用 **Theil-Sen 估算器** 计算稳健斜率，并进行 **Mann-Kendall 检验**。
         *   *作用*: 过滤掉由单年非经常性损益导致的"伪高增长"。

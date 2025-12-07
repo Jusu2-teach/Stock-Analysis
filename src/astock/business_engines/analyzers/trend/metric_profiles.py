@@ -67,13 +67,21 @@ class MetricProfile:
     # === 规则参数 ===
     # 否决规则
     min_latest_value: Optional[float] = None      # 最新值门槛（如ROE>=8%）
-    max_decline_pct: float = 60.0                 # 最大允许跌幅
+    max_decline_pct: float = 60.0                 # 最大允许跌幅（普通）
+    max_decline_pct_cyclical: float = 75.0        # 周期股最大允许跌幅
     max_loss_years: int = 3                       # 最大允许亏损年数
 
     # 扣分参数
     penalty_factor: float = 20.0                  # 扣分系数
     severe_decline_slope: float = -0.30           # 严重衰退斜率阈值
     mild_decline_slope: float = -0.15             # 轻度衰退斜率阈值
+
+    # === 交叉验证阈值 ===
+    # 盈利质量检验：利润上涨阈值，现金流下跌阈值
+    cross_val_profit_up_threshold: float = 0.10   # 利润增速>10%
+    cross_val_ocf_down_threshold: float = -0.05   # 现金流跌幅<-5%
+    cross_val_divergence_threshold: float = 0.20  # 利润vs现金流差距>20%
+    cross_val_roe_min_for_growth: float = 0.08    # 高增长需ROE>8%
 
     # === 策略参数 ===
     # 高增长策略

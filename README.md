@@ -93,7 +93,7 @@ pip install -r requirements.txt
 ### 运行分析
 ```bash
 # 1. 运行完整的趋势分析工作流
-python pipeline/main.py run -c workflow/duckdb_screen.yaml
+python pipeline/main.py run -c workflow/analysis.yaml
 
 # 2. 生成综合分析报告
 python -c "from src.astock.business_engines.reporters.comprehensive_generator import ComprehensiveReportGenerator; ComprehensiveReportGenerator().generate_report()"

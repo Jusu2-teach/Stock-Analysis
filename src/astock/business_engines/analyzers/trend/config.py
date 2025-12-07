@@ -59,17 +59,37 @@ class TrendAnalysisConfig:
     peak_to_trough_saturation: float = 9.0
     cv_saturation: float = 4.0
 
-    # 周期性行业
+    # 周期性行业 (按A股实际分类，覆盖申万一级/二级)
+    # 注意：证券、养殖等高周期行业也应纳入
     cyclical_industries: List[str] = field(default_factory=lambda: [
+        # --- 上游资源 (大宗商品周期) ---
         "小金属", "黄金", "钢铁", "煤炭", "有色金属", "石油石化",
-        "化工", "化学制品", "基础化工", "化学纤维",
-        "建材", "水泥", "玻璃",
-        "航运", "港口", "交运设备",
-        "房地产", "建筑", "建筑材料",
-        "机械", "专用设备", "通用设备",
-        "汽车", "汽车零部件",
-        "造纸", "包装印刷",
-        "轻工制造", "家居用品",
+        "铝", "铜", "锌", "稀土", "锂",  # 细分金属
+
+        # --- 化工 (原材料周期) ---
+        "化工", "化学制品", "基础化工", "化学纤维", "化肥", "农药",
+
+        # --- 建材地产 (房地产周期) ---
+        "建材", "水泥", "玻璃", "房地产", "建筑", "建筑材料",
+        "装饰装修", "房地产服务",
+
+        # --- 交通运输 (贸易周期) ---
+        "航运", "港口", "交运设备", "远洋运输", "集装箱",
+
+        # --- 机械设备 (资本开支周期) ---
+        "机械", "专用设备", "通用设备", "工程机械", "重型机械",
+
+        # --- 汽车 (可选消费周期) ---
+        "汽车", "汽车零部件", "乘用车", "商用车",
+
+        # --- 金融 (信用周期) ---
+        "证券", "保险", "多元金融",  # 金融是顺周期的
+
+        # --- 农业 (养殖周期/猪周期) ---
+        "养殖", "猪肉", "禽畜养殖", "饲料", "农产品加工",
+
+        # --- 其他周期性 ---
+        "造纸", "包装印刷", "轻工制造", "家居用品",
     ])
 
     # 窗口配置
@@ -124,12 +144,53 @@ class TrendAnalysisConfig:
             return False
         return industry in self.cyclical_industries
 
-    def get_weights(self, window_size: int = None) -> np.ndarray:
-        """获取权重"""
-        if window_size is None or window_size == len(self.default_weights):
+    def get_weights(
+        self,
+        window_size: int = None,
+        decay_factor: float = 0.8,
+        method: str = "exponential"
+    ) -> np.ndarray:
+        """
+        获取时间加权权重（近期数据权重更高）
+
+        Parameters
+        ----------
+        window_size : int, optional
+            窗口大小，默认使用default_weights的长度
+        decay_factor : float, optional
+            指数衰减因子，范围(0,1)，越小则近期权重越高。默认0.8
+        method : str, optional
+            权重计算方法:
+            - "exponential": 指数衰减 w_i = decay^(n-1-i) (默认)
+            - "linear": 线性递增 w_i = i+1
+            - "default": 使用预设的default_weights
+
+        Returns
+        -------
+        np.ndarray
+            归一化的权重数组，和为1
+        """
+        if window_size is None:
+            window_size = len(self.default_weights)
+
+        if method == "default" and window_size == len(self.default_weights):
             return self.default_weights
 
-        weights = np.arange(1, window_size + 1, dtype=float)
+        if method == "exponential":
+            # 指数衰减：越近的年份权重越高
+            # 例如 window=5, decay=0.8: [0.8^4, 0.8^3, 0.8^2, 0.8^1, 0.8^0] = [0.41, 0.51, 0.64, 0.8, 1.0]
+            indices = np.arange(window_size)
+            weights = np.power(decay_factor, (window_size - 1 - indices))
+        elif method == "linear":
+            # 线性递增
+            weights = np.arange(1, window_size + 1, dtype=float)
+        else:
+            # fallback to default behavior
+            if window_size == len(self.default_weights):
+                return self.default_weights
+            weights = np.arange(1, window_size + 1, dtype=float)
+
+        # 归一化
         weights = weights / weights.sum()
         return weights
 
@@ -159,30 +220,65 @@ def reset_default_config():
 # 行业配置（向后兼容）
 # ============================================================================
 
-# 行业分类映射
+# 行业分类映射 (按申万行业分类，映射到三大类别)
 _INDUSTRY_CATEGORY_MAP = {
     # --- 强周期性行业 (Cyclical) ---
+    # 上游资源
     "小金属": "cyclical", "黄金": "cyclical", "钢铁": "cyclical", "煤炭": "cyclical",
-    "有色金属": "cyclical", "石油石化": "cyclical", "化工": "cyclical", "基础化工": "cyclical",
-    "化学纤维": "cyclical", "建材": "cyclical", "水泥": "cyclical", "玻璃": "cyclical",
-    "房地产": "cyclical", "航运": "cyclical", "港口": "cyclical", "远洋运输": "cyclical",
-    "建筑": "cyclical", "工程机械": "cyclical", "重型机械": "cyclical",
-    "证券": "cyclical", "保险": "cyclical", "多元金融": "cyclical", # 金融也是顺周期的
+    "有色金属": "cyclical", "石油石化": "cyclical", "铝": "cyclical", "铜": "cyclical",
+    "锌": "cyclical", "稀土": "cyclical", "锂": "cyclical",
+    # 化工
+    "化工": "cyclical", "基础化工": "cyclical", "化学纤维": "cyclical",
+    "化肥": "cyclical", "农药": "cyclical", "化学制品": "cyclical",
+    # 建材地产
+    "建材": "cyclical", "水泥": "cyclical", "玻璃": "cyclical",
+    "房地产": "cyclical", "建筑": "cyclical", "装饰装修": "cyclical",
+    # 交运
+    "航运": "cyclical", "港口": "cyclical", "远洋运输": "cyclical", "集装箱": "cyclical",
+    # 机械
+    "工程机械": "cyclical", "重型机械": "cyclical", "机械": "cyclical",
+    "专用设备": "cyclical", "通用设备": "cyclical",
+    # 汽车
+    "汽车": "cyclical", "汽车零部件": "cyclical", "乘用车": "cyclical", "商用车": "cyclical",
+    # 金融 (顺周期)
+    "证券": "cyclical", "保险": "cyclical", "多元金融": "cyclical",
+    # 农业周期
+    "养殖": "cyclical", "猪肉": "cyclical", "禽畜养殖": "cyclical",
+    # 其他周期
+    "造纸": "cyclical", "包装印刷": "cyclical",
 
     # --- 成长性行业 (Growth) ---
+    # 医药
     "医药": "growth", "生物制药": "growth", "医疗器械": "growth", "医疗服务": "growth",
+    "创新药": "growth", "CXO": "growth",
+    # 科技
     "电子": "growth", "半导体": "growth", "元件": "growth", "光学光电子": "growth",
     "计算机": "growth", "软件": "growth", "互联网": "growth", "通信设备": "growth",
+    "人工智能": "growth", "云计算": "growth",
+    # 新能源
     "新能源": "growth", "光伏设备": "growth", "电池": "growth", "风电设备": "growth",
+    "储能": "growth", "新能源车": "growth",
+    # 高端制造
     "航空航天": "growth", "军工": "growth", "自动化设备": "growth",
+    "机器人": "growth", "工业母机": "growth",
 
     # --- 防御性/稳定行业 (Defensive) ---
-    "食品饮料": "defensive", "白酒": "defensive", "饮料制造": "defensive", "食品加工": "defensive",
-    "农林牧渔": "defensive", "饲料": "defensive",
+    # 消费
+    "食品饮料": "defensive", "白酒": "defensive", "饮料制造": "defensive",
+    "食品加工": "defensive", "调味品": "defensive", "乳制品": "defensive",
+    # 农业(非周期部分)
+    "农林牧渔": "defensive", "种植业": "defensive", "饲料": "defensive",
+    # 公用事业
     "公用事业": "defensive", "电力": "defensive", "水务": "defensive", "燃气": "defensive",
-    "环保": "defensive", "交通运输": "defensive", "高速公路": "defensive", "机场": "defensive",
-    "银行": "defensive", # 银行相对稳健，虽有周期性但波动率低于券商
-    "家电": "defensive", "白色家电": "defensive",
+    "环保": "defensive",
+    # 交运(稳定部分)
+    "交通运输": "defensive", "高速公路": "defensive", "机场": "defensive", "铁路": "defensive",
+    # 金融(稳定部分)
+    "银行": "defensive",  # 银行相对稳健
+    # 家电
+    "家电": "defensive", "白色家电": "defensive", "小家电": "defensive",
+    # 其他防御
+    "纺织服装": "defensive", "商贸零售": "defensive",
 }
 
 # 周期性阈值
@@ -245,25 +341,56 @@ _DECLINE_THRESHOLDS = {
 # 一般中国企业的WACC在 8% 左右。长期ROIC < 8% 意味着毁灭价值。
 # 但考虑到行业特性，给予一定宽容度或溢价。
 _ROIC_FILTER_CONFIGS = {
-    # 高壁垒/高周转行业: 要求 > 10% (显著创造价值)
+    # === 高壁垒/品牌溢价行业: 要求 > 12% (显著创造价值) ===
     "食品饮料": {"min_roic": 0.12, "min_slope": -0.02},
-    "白酒": {"min_roic": 0.15, "min_slope": -0.02},
+    "白酒": {"min_roic": 0.15, "min_slope": -0.02},  # 白酒护城河极深
+    "调味品": {"min_roic": 0.12, "min_slope": -0.02},
     "家电": {"min_roic": 0.10, "min_slope": -0.02},
-    "医药": {"min_roic": 0.08, "min_slope": -0.02}, # 研发投入大，净资产可能虚高
+    "白色家电": {"min_roic": 0.12, "min_slope": -0.02},
 
-    # 资本密集/重资产行业: 要求 > 6% (接近WACC即可，主要看现金流)
+    # === 医药健康: 分化严重，研发投入大 ===
+    "医药": {"min_roic": 0.08, "min_slope": -0.02},
+    "医疗器械": {"min_roic": 0.10, "min_slope": -0.02},
+    "医疗服务": {"min_roic": 0.08, "min_slope": -0.02},
+    "生物制药": {"min_roic": 0.06, "min_slope": -0.03},  # 研发期可能亏损
+
+    # === 科技/成长行业: 看重增长，对当前回报宽容 ===
+    "电子": {"min_roic": 0.06, "min_slope": -0.03},
+    "半导体": {"min_roic": 0.05, "min_slope": -0.04},  # 重资本开支周期
+    "计算机": {"min_roic": 0.06, "min_slope": -0.03},
+    "软件": {"min_roic": 0.08, "min_slope": -0.03},    # 轻资产应更高
+    "互联网": {"min_roic": 0.08, "min_slope": -0.03},  # 轻资产高回报
+    "通信": {"min_roic": 0.06, "min_slope": -0.03},
+
+    # === 新能源: 重资本开支期，阈值降低 ===
+    "新能源": {"min_roic": 0.05, "min_slope": -0.04},
+    "光伏设备": {"min_roic": 0.06, "min_slope": -0.04},
+    "电池": {"min_roic": 0.06, "min_slope": -0.04},
+    "风电设备": {"min_roic": 0.05, "min_slope": -0.04},
+
+    # === 资本密集/重资产行业: 要求 > 6% (接近WACC即可) ===
     "公用事业": {"min_roic": 0.06, "min_slope": -0.01},
     "电力": {"min_roic": 0.06, "min_slope": -0.01},
+    "水务": {"min_roic": 0.05, "min_slope": -0.01},
+    "燃气": {"min_roic": 0.06, "min_slope": -0.01},
     "交通运输": {"min_roic": 0.05, "min_slope": -0.01},
-    "钢铁": {"min_roic": 0.05, "min_slope": -0.05}, # 周期底部可能很低
-    "煤炭": {"min_roic": 0.08, "min_slope": -0.05}, # 资源属性，ROIC应较高
+    "高速公路": {"min_roic": 0.06, "min_slope": -0.01},
+    "机场": {"min_roic": 0.06, "min_slope": -0.02},
 
-    # 科技/成长行业: 要求 > 6% (看重增长，对当前回报宽容)
-    "电子": {"min_roic": 0.06, "min_slope": -0.03},
-    "半导体": {"min_roic": 0.05, "min_slope": -0.03},
-    "计算机": {"min_roic": 0.06, "min_slope": -0.03},
+    # === 周期性行业: 底部宽容，斜率重要 ===
+    "钢铁": {"min_roic": 0.04, "min_slope": -0.06},  # 周期底部可能很低
+    "煤炭": {"min_roic": 0.08, "min_slope": -0.06},  # 资源属性，均值应较高
+    "有色金属": {"min_roic": 0.05, "min_slope": -0.06},
+    "化工": {"min_roic": 0.06, "min_slope": -0.05},
+    "建材": {"min_roic": 0.06, "min_slope": -0.05},
+    "房地产": {"min_roic": 0.04, "min_slope": -0.06}, # 当前行业困境
 
-    # 默认: 6% (底线思维，至少要覆盖大部分债务成本)
+    # === 金融行业: 特殊处理 ===
+    "银行": {"min_roic": 0.10, "min_slope": -0.02},   # 用ROE更合适
+    "证券": {"min_roic": 0.06, "min_slope": -0.06},   # 强周期
+    "保险": {"min_roic": 0.08, "min_slope": -0.03},
+
+    # === 默认: 6% (底线思维，至少要覆盖大部分债务成本) ===
     "default": {"min_roic": 0.06, "min_slope": -0.05},
 }
 
@@ -422,6 +549,26 @@ def trend_field_schema() -> List[TrendField]:
         TrendField("is_decelerating", "rolling.is_decelerating", "是否放缓", category="rolling"),
         TrendField("full_5y_slope", "rolling.full_5y_slope", "5年全样本斜率", category="rolling"),
         TrendField("full_5y_r_squared", "rolling.full_5y_r_squared", "5年全样本拟合优度", category="rolling"),
+
+        # === 高级统计指标 (Advanced Statistical Metrics) ===
+        # WLS回归与Bootstrap置信区间
+        TrendField("wls_slope", "trend.wls_slope", "WLS加权斜率", unit="slope", category="advanced"),
+        TrendField("bootstrap_ci_median", "trend.bootstrap_ci_median", "Bootstrap斜率中位数", unit="slope", category="advanced"),
+        TrendField("bootstrap_ci_low", "trend.bootstrap_ci_low", "Bootstrap斜率95%CI下限", unit="slope", category="advanced"),
+        TrendField("bootstrap_ci_high", "trend.bootstrap_ci_high", "Bootstrap斜率95%CI上限", unit="slope", category="advanced"),
+        TrendField("heteroscedasticity_detected", "trend.heteroscedasticity_detected", "检测到异方差", category="advanced"),
+        TrendField("fused_slope", "trend.fused_slope", "融合斜率(OLS/WLS)", unit="slope", category="advanced"),
+
+        # 贝叶斯恶化概率
+        TrendField("deterioration_probability", "deterioration.deterioration_probability", "贝叶斯恶化概率", unit="ratio", category="advanced"),
+        TrendField("consecutive_decline_years", "deterioration.consecutive_decline_years", "连续恶化年数", category="advanced"),
+        TrendField("deterioration_acceleration", "deterioration.deterioration_acceleration", "恶化加速度", category="advanced"),
+        TrendField("deterioration_pattern", "deterioration.deterioration_pattern", "恶化模式", category="advanced"),
+
+        # ARCH效应与波动率体制
+        TrendField("detrended_cv", "volatility.detrended_cv", "去趋势CV", category="advanced"),
+        TrendField("has_arch_effect", "volatility.has_arch_effect", "存在ARCH效应", category="advanced"),
+        TrendField("volatility_regime", "volatility.volatility_regime", "波动率体制", category="advanced"),
     ]
 
 def get_default_fields() -> Tuple[TrendField, ...]:

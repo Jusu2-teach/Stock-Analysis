@@ -4,14 +4,15 @@
 
 检测指标近期恶化趋势，用于识别基本面拐点风险。
 
-增强功能：
+专业性增强 v2.0：
 1. 连续恶化年数统计
 2. 恶化加速度检测（越跌越快）
-3. 恶化模式分类（持续恶化 vs 单次下跌）
-4. 高位回调豁免
+3. 恶化模式分类（5种模式）
+4. 贝叶斯恶化概率：综合多因素量化恶化置信度
+5. 高位回调豁免
 
 作者: AStock Analysis System
-日期: 2025-12-06
+日期: 2025-01-07
 """
 
 import logging
@@ -23,6 +24,112 @@ from ..config import get_default_config, get_decline_thresholds
 from .common import DataQualityChecker
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# 贝叶斯恶化概率计算
+# ============================================================================
+
+def calculate_deterioration_probability(
+    consecutive_years: int,
+    acceleration: float,
+    recent_change_pct: float,
+    total_change_pct: float,
+    is_below_threshold: bool,
+) -> Tuple[float, List[Tuple[str, float]]]:
+    """
+    贝叶斯恶化概率计算
+
+    综合多个恶化信号，使用贝叶斯更新计算后验概率。
+    这比简单的规则分类更能量化恶化的"置信度"。
+
+    先验概率 P(恶化) = 0.3（基线假设30%的公司有恶化迹象）
+
+    似然比计算：
+    - 连续下跌年数: P(连续n年|恶化) / P(连续n年|正常)
+    - 加速度: P(加速|恶化) / P(加速|正常)
+    - 跌幅: P(跌幅x%|恶化) / P(跌幅x%|正常)
+
+    Returns:
+        (posterior_probability, evidence_list)
+    """
+    prior = 0.3  # 先验概率
+    evidence_factors: List[Tuple[str, float]] = []
+
+    # 1. 连续下跌年数的似然比
+    # 1年: LR=1.2, 2年: LR=2.5, 3年: LR=5.0, 4+年: LR=10.0
+    if consecutive_years == 0:
+        lr_consecutive = 0.5  # 没有连续下跌，是恶化的概率降低
+    elif consecutive_years == 1:
+        lr_consecutive = 1.2
+    elif consecutive_years == 2:
+        lr_consecutive = 2.5
+    elif consecutive_years == 3:
+        lr_consecutive = 5.0
+    else:
+        lr_consecutive = 10.0
+    evidence_factors.append(("连续下跌年数", lr_consecutive))
+
+    # 2. 恶化加速度的似然比
+    # 负加速度（放缓）: LR=0.6
+    # 零加速度: LR=1.0
+    # 正加速度（加速恶化）: LR 与加速度成正比
+    if acceleration < -0.2:
+        lr_acceleration = 0.5  # 恶化放缓
+    elif acceleration < 0.1:
+        lr_acceleration = 1.0  # 匀速
+    elif acceleration < 0.5:
+        lr_acceleration = 2.0  # 轻微加速
+    else:
+        lr_acceleration = min(3.0 + acceleration * 2, 8.0)  # 显著加速
+    evidence_factors.append(("恶化加速度", lr_acceleration))
+
+    # 3. 近期跌幅的似然比
+    if recent_change_pct > 0:
+        lr_recent = 0.4  # 近期上涨，不支持恶化假设
+    elif recent_change_pct > -5:
+        lr_recent = 1.0  # 轻微下跌
+    elif recent_change_pct > -15:
+        lr_recent = 2.0  # 中等下跌
+    elif recent_change_pct > -30:
+        lr_recent = 4.0  # 显著下跌
+    else:
+        lr_recent = 8.0  # 暴跌
+    evidence_factors.append(("近期变化", lr_recent))
+
+    # 4. 总跌幅的似然比
+    if total_change_pct > 10:
+        lr_total = 0.3  # 实际是上涨
+    elif total_change_pct > 0:
+        lr_total = 0.6
+    elif total_change_pct > -15:
+        lr_total = 1.5
+    elif total_change_pct > -30:
+        lr_total = 3.0
+    else:
+        lr_total = 6.0
+    evidence_factors.append(("累计变化", lr_total))
+
+    # 5. 是否低于阈值的似然比
+    if is_below_threshold:
+        lr_threshold = 3.0  # 低于阈值是强恶化信号
+    else:
+        lr_threshold = 0.8
+    evidence_factors.append(("低于阈值", lr_threshold))
+
+    # 贝叶斯更新：P(恶化|证据) = P(证据|恶化) * P(恶化) / P(证据)
+    # 使用似然比的乘积
+    combined_lr = lr_consecutive * lr_acceleration * lr_recent * lr_total * lr_threshold
+
+    # 后验odds = prior_odds * combined_lr
+    prior_odds = prior / (1 - prior)
+    posterior_odds = prior_odds * combined_lr
+
+    # 转换回概率
+    posterior_prob = posterior_odds / (1 + posterior_odds)
+    posterior_prob = max(0.0, min(1.0, posterior_prob))
+
+    return float(posterior_prob), evidence_factors
 
 
 class DeteriorationDetector:
@@ -184,6 +291,34 @@ class DeteriorationDetector:
                 )
             )
 
+        # ========== 新增：贝叶斯恶化概率 ==========
+        is_below_threshold = year5 < high_level_threshold
+        deterioration_probability, evidence_factors = calculate_deterioration_probability(
+            consecutive_years=consecutive_decline_years,
+            acceleration=deterioration_acceleration,
+            recent_change_pct=change_4_to_5_pct,
+            total_change_pct=total_decline_pct,
+            is_below_threshold=is_below_threshold,
+        )
+
+        # 贝叶斯概率警告（高置信度恶化）
+        if deterioration_probability > 0.7:
+            # 构建证据说明
+            top_evidence = sorted(evidence_factors, key=lambda x: x[1], reverse=True)[:3]
+            evidence_desc = ", ".join([f"{e[0]}(LR={e[1]:.1f})" for e in top_evidence])
+
+            warnings.append(
+                TrendWarning(
+                    code="HIGH_DETERIORATION_PROBABILITY",
+                    level="warn" if deterioration_probability > 0.85 else "info",
+                    message=f"贝叶斯恶化概率={deterioration_probability:.1%}，主要证据: {evidence_desc}",
+                    context={
+                        "probability": float(deterioration_probability),
+                        "evidence_factors": {e[0]: e[1] for e in evidence_factors},
+                    },
+                )
+            )
+
         return RecentDeteriorationResult(
             has_deterioration=bool(has_deterioration),
             severity=severity,
@@ -197,7 +332,11 @@ class DeteriorationDetector:
             decline_threshold_abs=float(DECLINE_THRESHOLD_ABS),
             industry=industry or "default",
             warnings=warnings,
-            # 新增字段（需要在models.py中添加，暂时放在warnings的context中）
+            # 新增专业字段
+            consecutive_decline_years=int(consecutive_decline_years),
+            deterioration_acceleration=float(deterioration_acceleration),
+            deterioration_pattern=deterioration_pattern,
+            deterioration_probability=float(deterioration_probability),
         )
 
     def _count_consecutive_declines(

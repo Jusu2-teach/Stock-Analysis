@@ -97,6 +97,17 @@ from .rules import (
     rule_fcf_quality_check,
     rule_capex_intensity_check,
     rule_explosive_growth_validation,
+    # 新增专业规则：贝叶斯概率与高级统计指标 v2.0
+    rule_bayesian_deterioration_alert,
+    rule_volatility_regime_adjustment,
+    rule_bootstrap_confidence_adjustment,
+    rule_wls_ols_divergence,
+    rule_chronic_decline_pattern,
+    # 新增改进规则 v2.1：峰值跌幅、智能连续下跌、绝对水平保护
+    rule_peak_decline_severe,
+    rule_smart_consecutive_decline,
+    rule_absolute_level_protection,
+    rule_cumulative_decline_veto,
 )
 from .strategies import get_default_strategies, TrendStrategy
 
@@ -167,6 +178,12 @@ def empty_volatility_result() -> VolatilityResult:
         volatility_type="unknown",
         mean_near_zero=False,
         warnings=[],
+        # 专业增强字段 v2.0
+        detrended_cv=0.0,
+        has_arch_effect=False,
+        arch_correlation=0.0,
+        volatility_regime="stable",
+        volatility_change_ratio=1.0,
     )
 
 
@@ -199,6 +216,11 @@ def empty_deterioration_result() -> RecentDeteriorationResult:
         decline_threshold_abs=-2.0,
         industry="default",
         warnings=[],
+        # 专业增强字段 v2.0
+        consecutive_decline_years=0,
+        deterioration_acceleration=0.0,
+        deterioration_pattern="none",
+        deterioration_probability=0.0,
     )
 
 
@@ -231,8 +253,11 @@ def empty_rolling_result() -> RollingTrendResult:
         full_5y_slope=0.0,
         full_5y_r_squared=0.0,
         trend_acceleration=0.0,
+        acceleration_confidence=0.0,
         is_accelerating=False,
         is_decelerating=False,
+        early_3y_slope=0.0,
+        early_3y_r_squared=0.0,
         warnings=[],
     )
 
@@ -474,6 +499,19 @@ DEFAULT_TREND_RULES: List[TrendRule] = [
     TrendRule("roiic_positive_bonus", rule_roiic_positive_bonus),
     TrendRule("growth_momentum_bonus", rule_growth_momentum_bonus),
     TrendRule("mean_reversion_adjustment", rule_mean_reversion_adjustment),
+
+    # === 高级统计规则 (Advanced Statistical Rules) ===
+    # 基于贝叶斯概率、ARCH效应、Bootstrap置信区间的专业统计方法
+    TrendRule("bayesian_deterioration_alert", rule_bayesian_deterioration_alert),   # 贝叶斯恶化概率
+    TrendRule("volatility_regime_adjustment", rule_volatility_regime_adjustment),   # 波动率体制调整
+    TrendRule("bootstrap_confidence_adjustment", rule_bootstrap_confidence_adjustment),  # Bootstrap置信区间
+
+    # === 改进规则 v2.1 (Enhanced Rules) ===
+    # 解决峰值跌幅、智能连续下跌、绝对水平保护的问题
+    TrendRule("peak_decline_severe", rule_peak_decline_severe),                     # 峰值跌幅检测
+    TrendRule("smart_consecutive_decline", rule_smart_consecutive_decline),         # 智能连续下跌
+    TrendRule("cumulative_decline_veto", rule_cumulative_decline_veto),             # 累计崩塌否决
+    TrendRule("absolute_level_protection", rule_absolute_level_protection),         # 绝对水平保护
 ]
 
 trend_rule_engine = TrendRuleEngine(DEFAULT_TREND_RULES)
@@ -798,6 +836,10 @@ class TrendAnalyzer:
         all_warnings.extend(rolling.warnings or [])
         all_warnings.extend(robust.warnings or [])
 
+        # 从 trend.metadata 提取 WLS 和 Bootstrap 信息
+        trend_metadata = trend.metadata or {}
+        bootstrap_ci = trend_metadata.get("bootstrap_ci", {})
+
         return TrendVector(
             log_slope=trend.log_slope,
             r_squared=trend.r_squared,
@@ -829,6 +871,19 @@ class TrendAnalyzer:
             robust=robust,
             reference_metrics=self.reference_stats,
             warnings=all_warnings,
+            # 专业增强字段 v2.0
+            deterioration_probability=deterioration.deterioration_probability,
+            deterioration_pattern=deterioration.deterioration_pattern,
+            wls_slope=trend_metadata.get("wls_slope"),
+            bootstrap_ci_low=bootstrap_ci.get("low"),
+            bootstrap_ci_high=bootstrap_ci.get("high"),
+            has_arch_effect=volatility.has_arch_effect,
+            volatility_regime=volatility.volatility_regime,
+            volatility_change_ratio=volatility.volatility_change_ratio,
+            detrended_cv=volatility.detrended_cv,
+            # 改进规则 v2.1 - 原始数据支持
+            raw_values=tuple(self.values_list),
+            max_value=max(self.values_list) if self.values_list else None,
         )
 
     def build_snapshot(

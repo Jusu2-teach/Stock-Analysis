@@ -255,10 +255,13 @@ class ComprehensiveReportGenerator:
         # === 3. 困境反转机会 (仅中大型) ===
         lines.extend(self._section_turnaround(df))
 
-        # === 4. 交叉验证风险警示 (Risk Warnings) ===
+        # === 4. 贝叶斯风险预警 (Bayesian Risk Alert) ===
+        lines.extend(self._section_bayesian_risk_alert(df))
+
+        # === 5. 交叉验证风险警示 (Risk Warnings) ===
         lines.extend(self._section_cross_validation_risks(df))
 
-        # === 5. 行业全景图 (Industry Overview) ===
+        # === 6. 行业全景图 (Industry Overview) ===
         lines.extend(self._section_industry_overview(df))
 
         # === 保存 ===
@@ -509,6 +512,107 @@ class ComprehensiveReportGenerator:
                 lines.append(f"| {item['code']} | {item['name']} | {item['type']} | {item['desc']} |")
 
         lines.append("")
+        return lines
+
+    def _section_bayesian_risk_alert(self, df: pd.DataFrame) -> List[str]:
+        """
+        贝叶斯恶化概率风险预警 (Bayesian Deterioration Risk Alert)
+
+        基于高级统计方法识别高恶化风险公司：
+        1. 贝叶斯后验概率 > 70% 表示高恶化风险
+        2. 存在ARCH效应表示波动风险加剧
+        3. 波动率体制为'increasing'表示风险上升
+        """
+        lines = ["## 📊 贝叶斯风险预警 (Bayesian Risk Alert)", ""]
+        lines.append("基于**贝叶斯后验概率**、**ARCH效应检测**、**波动率体制分析**的专业风险评估：")
+        lines.append("")
+
+        # 获取ROIC恶化概率列
+        col_deterioration_prob = self._get_col('roic', 'deterioration_probability')
+        col_arch_effect = self._get_col('roic', 'has_arch_effect')
+        col_vol_regime = self._get_col('roic', 'volatility_regime')
+        col_detrended_cv = self._get_col('roic', 'detrended_cv')
+
+        high_risk_candidates = []
+
+        # 只筛选中型及以上公司进行预警
+        if 'size_class' in df.columns:
+            size_filter = df['size_class'].isin(['mid', 'large', 'mega'])
+            filtered_df = df[size_filter].copy()
+        else:
+            filtered_df = df.copy()
+
+        for _, row in filtered_df.iterrows():
+            risk_factors = []
+            risk_level = 0
+
+            # 1. 贝叶斯恶化概率
+            det_prob = row.get(col_deterioration_prob, 0)
+            if pd.notna(det_prob) and det_prob > 0.7:
+                risk_factors.append(f"恶化概率{det_prob:.0%}")
+                risk_level += 3
+            elif pd.notna(det_prob) and det_prob > 0.5:
+                risk_factors.append(f"恶化概率{det_prob:.0%}")
+                risk_level += 1
+
+            # 2. ARCH效应
+            has_arch = row.get(col_arch_effect, False)
+            if pd.notna(has_arch) and has_arch:
+                risk_factors.append("ARCH效应")
+                risk_level += 2
+
+            # 3. 波动率体制
+            vol_regime = row.get(col_vol_regime, "stable")
+            if pd.notna(vol_regime) and vol_regime == "increasing":
+                risk_factors.append("波动率↑")
+                risk_level += 2
+
+            # 4. 去趋势CV过高
+            detrended_cv = row.get(col_detrended_cv, 0)
+            if pd.notna(detrended_cv) and detrended_cv > 0.5:
+                risk_factors.append(f"去趋势CV={detrended_cv:.2f}")
+                risk_level += 1
+
+            # 只收录风险等级 >= 3 的公司
+            if risk_level >= 3 and risk_factors:
+                high_risk_candidates.append({
+                    "code": row['ts_code'],
+                    "name": row['name'],
+                    "industry": row.get('industry', '未知'),
+                    "size": row.get('size_label', '未知'),
+                    "det_prob": det_prob if pd.notna(det_prob) else 0,
+                    "risk_factors": risk_factors,
+                    "risk_level": risk_level
+                })
+
+        if not high_risk_candidates:
+            lines.append("✅ **未发现高恶化风险公司** - 当前筛选标准下无显著风险信号")
+            lines.append("")
+            return lines
+
+        # 按风险等级排序
+        high_risk_candidates.sort(key=lambda x: (-x['risk_level'], -x['det_prob']))
+
+        lines.append("### 🚨 高恶化风险预警")
+        lines.append("> ⚠️ 以下公司基于贝叶斯统计分析存在较高恶化风险，建议密切关注或规避")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 行业 | 规模 | 恶化概率 | 风险信号 |")
+        lines.append("|---|---|---|---|---|---|")
+
+        # 展示前30个高风险公司
+        for item in high_risk_candidates[:30]:
+            prob_display = f"{item['det_prob']:.0%}" if item['det_prob'] > 0 else "-"
+            signals = ", ".join(item['risk_factors'])
+            lines.append(f"| {item['code']} | {item['name']} | {item['industry']} | {item['size']} | **{prob_display}** | {signals} |")
+
+        lines.append("")
+
+        # 添加统计摘要
+        total_high_risk = len(high_risk_candidates)
+        avg_prob = np.mean([x['det_prob'] for x in high_risk_candidates if x['det_prob'] > 0])
+        lines.append(f"> 📈 **统计摘要**: 共发现 {total_high_risk} 家高风险公司，平均恶化概率 {avg_prob:.1%}")
+        lines.append("")
+
         return lines
 
     def _section_industry_overview(self, df: pd.DataFrame) -> List[str]:
