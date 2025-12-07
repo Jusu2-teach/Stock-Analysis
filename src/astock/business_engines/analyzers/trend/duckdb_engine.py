@@ -38,6 +38,7 @@ from .config import (
 from . import (
     TrendAnalyzer,
     TrendAnalyzerConfig,
+    TrendSeriesConfig,
     ConfigResolver,
     TrendEvaluationResult,
     TrendResultCollector,
@@ -133,6 +134,8 @@ def analyze_metric_trend(
     prefix: str = "",
     suffix: str = "_trend",
     min_periods: int = 5,
+    window_size: Optional[int] = None,  # 趋势计算窗口(近N年), None=使用全部数据
+    enable_multi_horizon: bool = True,  # 是否启用多时间窗口分析
     analyzer_config: Optional[TrendAnalyzerConfig] = None,
     filter_config: Optional[dict] = None,  # 新增：支持外部注入配置
     industry_configs: Optional[dict] = None, # 新增：支持外部注入行业配置
@@ -140,11 +143,19 @@ def analyze_metric_trend(
     """
     对指定指标进行通用趋势分析
 
+    双窗口设计:
+    - 全量数据: 用于断点检测和周期分析
+    - 趋势计算数据(window_size):
+      - None: 使用全部数据计算趋势(与断点检测相同范围)
+      - 整数N: 只用最近N年数据计算趋势
+
     核心功能:
     1. 计算加权平均(最近数据权重更高)
     2. 线性回归分析(斜率、R²、p值)
-    3. 趋势过滤(可选,根据配置)
-    4. 评分调整(可选,根据配置)
+    3. 结构断点检测(使用全量数据)
+    4. 周期性分析(使用全量数据)
+    5. 趋势过滤(可选,根据配置)
+    6. 评分调整(可选,根据配置)
 
     Args:
         data: 输入数据(必须包含多期数据,按时间排序)
@@ -152,7 +163,11 @@ def analyze_metric_trend(
         metric_name: 要分析的指标名(如 'roic', 'roe', 'roa')
         prefix: 输出列名前缀(默认空)
         suffix: 输出列名后缀(默认 '_trend')
-        min_periods: 最少需要的期数(默认5)
+        min_periods: 最少需要的期数(默认5)，数据不足此年限的公司会被跳过
+        window_size: 趋势计算窗口
+            - None(默认): 使用全部数据计算趋势，有多少年算多少年
+            - 整数N: 只使用最近N年数据计算趋势(如5表示近5年)
+        enable_multi_horizon: 是否启用多时间窗口分析(断点/周期检测)(默认True)
         analyzer_config: 趋势分析器配置(窗口、权重、探针、参考指标等)
         filter_config: 过滤配置字典 (IoC注入)
         industry_configs: 行业差异化配置字典 (IoC注入)
@@ -164,11 +179,16 @@ def analyze_metric_trend(
         - {prefix}{metric_name}_slope{suffix}: 趋势斜率
         - {prefix}{metric_name}_r_squared{suffix}: R²
         - {prefix}{metric_name}_latest{suffix}: 最新期值
+        - {prefix}{metric_name}_has_break{suffix}: 是否存在结构断点
+        - {prefix}{metric_name}_break_idx{suffix}: 断点位置
+        - {prefix}{metric_name}_regime{suffix}: 数据体制
         - {prefix}{metric_name}_penalty{suffix}: 扣分(如果启用过滤)
     """
 
     logger.info("=" * 80)
     logger.info(f"🔍 通用趋势分析启动: {metric_name}")
+    window_desc = f"{window_size}年" if window_size else "全部数据"
+    logger.info(f"📊 趋势计算窗口: {window_desc} | 多时间窗口分析: {'开启' if enable_multi_horizon else '关闭'}")
     logger.info("=" * 80)
 
     # ========== 1. 加载数据 ==========
@@ -232,12 +252,12 @@ def analyze_metric_trend(
     logger.info(f"过滤基线配置(默认阈值): {base_config}")
 
     # ========== 3. 读取数据并排序 ==========
-    # 检查是否有 name 和 industry 列（用于输出）
+    # 检查是否有 name, industry, size_class, invest_capital 列（用于输出）
+    # 这样报告生成器不需要再从原始数据加载规模信息
     keep_cols = []
-    if 'name' in all_cols:
-        keep_cols.append('name')
-    if 'industry' in all_cols:
-        keep_cols.append('industry')
+    for col in ['name', 'industry', 'size_class', 'invest_capital']:
+        if col in all_cols:
+            keep_cols.append(col)
 
     # 构建SELECT列表
     select_cols = [_q(group_cols_list[0]), _q(metric_name), 'end_date']
@@ -263,6 +283,35 @@ def analyze_metric_trend(
 
     grouped = df_full.groupby(group_cols_list[0])
     total_groups = grouped.ngroups
+
+    # ========== 构建 TrendAnalyzerConfig ==========
+    # 如果未提供 analyzer_config，则根据参数创建
+    if analyzer_config is None:
+        series_config = TrendSeriesConfig(
+            window_size=window_size,
+            enable_multi_horizon=enable_multi_horizon,
+        )
+        analyzer_config = TrendAnalyzerConfig(series=series_config)
+    else:
+        # 如果提供了 analyzer_config，但没有设置 window_size，则覆盖
+        if analyzer_config.series.window_size != window_size:
+            series_config = TrendSeriesConfig(
+                window_size=window_size,
+                enable_multi_horizon=enable_multi_horizon,
+                order_column=analyzer_config.series.order_column,
+                weights=analyzer_config.series.weights,
+                fill_strategy=analyzer_config.series.fill_strategy,
+                fill_value=analyzer_config.series.fill_value,
+                min_valid_ratio=analyzer_config.series.min_valid_ratio,
+                allow_partial_window=analyzer_config.series.allow_partial_window,
+                drop_non_finite=analyzer_config.series.drop_non_finite,
+            )
+            analyzer_config = TrendAnalyzerConfig(
+                series=series_config,
+                probes=analyzer_config.probes,
+                output_fields=analyzer_config.output_fields,
+                reference_metrics=analyzer_config.reference_metrics,
+            )
 
     # 使用进度条（如果 tqdm 可用）
     if HAS_TQDM:
@@ -370,7 +419,7 @@ def analyze_metric_trend(
         logger.info(f"  下滑趋势(斜率<-1): {declining} ({declining/len(df_result)*100:.1f}%)")
 
         # 扣分统计
-    if base_config.get('enable_filter'):
+        if base_config.get('enable_filter'):
             penalty_col = f"{prefix}{metric_name}_penalty{suffix}"
             penalized = (df_result[penalty_col] > 0).sum()
             if penalized > 0:

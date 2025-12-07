@@ -539,6 +539,14 @@ class TrendSnapshot:
     latest_vs_weighted_ratio: float
     extra_fields: Dict[str, Any] = field(default_factory=dict)
 
+    # 多时间窗口分析结果(可选)
+    full_data_years: int = 0           # 全量数据年数
+    trend_window_years: int = 5        # 趋势计算窗口年数
+    has_structural_break: bool = False # 是否存在结构断点
+    break_year_index: Optional[int] = None     # 断点位置
+    break_effect_size: float = 0.0     # 断点效应量
+    data_regime: str = "stable"        # 数据体制: stable/broken/transitional
+
 
 # ============================================================================
 # 字段 Schema
@@ -588,9 +596,16 @@ class MetricProbe(Protocol):
 
 @dataclass(frozen=True)
 class TrendSeriesConfig:
-    """Control how raw metric series are prepared ahead of probe execution."""
+    """Control how raw metric series are prepared ahead of probe execution.
 
-    window_size: Optional[int] = 5
+    双窗口设计:
+    - window_size: 用于趋势计算(斜率/CAGR/加权平均)的近期窗口
+      - None: 使用全量数据计算趋势（与断点检测使用相同数据范围）
+      - 整数N: 只使用最近N年数据计算趋势
+    - 全量数据: 用于断点检测和周期分析(自动使用输入的全部数据)
+    """
+
+    window_size: Optional[int] = None  # 趋势计算窗口(近N年)，None表示使用全部数据
     order_column: Optional[str] = "end_date"
     weights: Optional[Sequence[float]] = None
     fill_strategy: Literal["median", "ffill", "bfill", "zero", "constant"] = "median"
@@ -599,10 +614,23 @@ class TrendSeriesConfig:
     allow_partial_window: bool = False
     drop_non_finite: bool = True
 
+    # 多时间窗口分析配置
+    enable_multi_horizon: bool = True  # 是否启用多时间窗口分析
+    break_detection_threshold: float = 0.20  # 断点效应量阈值(均值变化比例)
+    # 阈值说明:
+    # - 0.15: 宽松，可能检测到较多断点，适合探索性分析
+    # - 0.20: 推荐，平衡灵敏度和准确性
+    # - 0.30: 严格，只检测显著断点，适合保守分析
+
 
 @dataclass(frozen=True)
 class TrendAnalyzerConfig:
-    """Bundle analyzer-wide tuning knobs so metric definitions stay declarative."""
+    """Bundle analyzer-wide tuning knobs so metric definitions stay declarative.
+
+    关键配置:
+    - series.window_size: 趋势计算使用近N年数据
+    - series.enable_multi_horizon: 是否启用断点/周期分析(使用全量数据)
+    """
 
     series: TrendSeriesConfig = field(default_factory=TrendSeriesConfig)
     probes: Optional[Sequence["MetricProbe"]] = None

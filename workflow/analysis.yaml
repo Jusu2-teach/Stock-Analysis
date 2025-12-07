@@ -1,11 +1,29 @@
-# DuckDB 财务筛选工作流 (v2.0)
+# DuckDB 财务筛选工作流 (v2.1)
 # ========================================
+#
+# 更新日志 (2025-12-07 v2.1):
+# - window_size 增强：
+#   - 不配置(注释掉): 使用全部数据计算趋势，有多少年算多少年
+#   - 配置为整数N: 只使用最近N年数据计算趋势
+# - min_periods: 最低年限要求，数据不足此年限的公司会被跳过
+#
+# 更新日志 (2025-12-07 v2.0):
+# - 新增双窗口设计：全量数据用于断点/周期分析，近N年用于趋势计算
+# - 新增 enable_multi_horizon 参数：是否启用多时间窗口分析(默认true)
+# - 输出新增字段：has_break(断点), break_idx(断点位置), regime(数据体制)
 #
 # 更新日志 (2025-12-06):
 # - 新增 reference_metrics 交叉验证配置
 # - 支持 MetricAdapter 自动调整分析参数
 # - 29条规则引擎 (7 veto + 10 penalty + 6 cross-val + 3 cycle + 5 bonus)
 # - 5种策略评估 (high_growth, turnaround, stable_dividend, cyclical_bottom, moat_defense)
+#
+# 参数说明:
+# - min_periods: 最少需要的年数(默认5)，数据不足此年限的公司会被跳过
+# - window_size: 趋势计算窗口
+#   - 不配置: 使用全部数据计算趋势(推荐，有多少年算多少年)
+#   - 配置为5: 只使用最近5年数据计算趋势
+# - enable_multi_horizon: 是否启用断点检测和周期分析(默认true)
 #
 # 指标配置说明:
 # - roic: 效率指标，核心筛选指标，交叉验证 roe/roiic
@@ -34,7 +52,8 @@ pipeline:
       engine: "duckdb"
       method: ["load_file"]
       parameters:
-        path: "data/polars/5yd_final_industry.csv"
+        # 使用10年数据（5年数据路径: data/polars/5yd_final_industry.csv）
+        path: "data/polars/10yd_final_industry.csv"
       outputs:
         parameters:
           - name: Raw_Data
@@ -52,22 +71,13 @@ pipeline:
         metric_name: 'roic'
         prefix: ""
         suffix: ""
-        min_periods: 5
-        reference_metrics: ["roe", "roiic"]  # 新增交叉验证
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据；配置5=只用近5年
+        enable_multi_horizon: true  # 启用断点检测(使用全量数据)
+        reference_metrics: ["roe", "roiic"]  # 交叉验证
       outputs:
         parameters:
           - name: ROIC_Trend_Result
-
-    - name: "Score_ROIC_Quality"
-      component: "business_engine"
-      engine: "scoring"
-      method: ["score_quality"]
-      parameters:
-        data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
-        report_path: "data/filter_middle/roic_quality_report.txt"
-      outputs:
-        parameters:
-          - name: ROIC_Quality_Result
 
     - name: "store_ROIC_Trend"
       component: "data_engine"
@@ -78,16 +88,6 @@ pipeline:
         path: "data/filter_middle/roic_trend_analysis.csv"
         format: "csv"
         data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
-
-    - name: "store_ROIC_Quality"
-      component: "data_engine"
-      engine: "pandas"
-      method:
-        - "store"
-      parameters:
-        path: "data/filter_middle/roic_quality_scored.csv"
-        format: "csv"
-        data: "steps.Score_ROIC_Quality.outputs.parameters.ROIC_Quality_Result"
 
     # ========== ROIIC 趋势分析 (增量资本回报) ==========
     # 辅助指标：增量资本回报率，评估新投资效率
@@ -103,8 +103,9 @@ pipeline:
         metric_name: 'roiic'
         prefix: ""
         suffix: ""
-        min_periods: 5
-        reference_metrics: ["roic"]  # 新增交叉验证
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
+        reference_metrics: ["roic"]  # 交叉验证
       outputs:
         parameters:
           - name: ROIIC_Trend_Result
@@ -131,7 +132,8 @@ pipeline:
         metric_name: 'total_revenue_ps'
         prefix: ""
         suffix: ""
-        min_periods: 5
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
         reference_metrics: ["roe", "eps"]
       outputs:
         parameters:
@@ -158,7 +160,8 @@ pipeline:
         metric_name: 'eps'
         prefix: ""
         suffix: ""
-        min_periods: 5
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
         reference_metrics: ["ocfps"]
       outputs:
         parameters:
@@ -187,8 +190,10 @@ pipeline:
         metric_name: 'grossprofit_margin'
         prefix: ""
         suffix: ""
-        min_periods: 5
-        reference_metrics: ["netprofit_margin"]  # 新增交叉验证
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
+        enable_multi_horizon: true  # 启用断点检测
+        reference_metrics: ["netprofit_margin"]  # 交叉验证
       outputs:
         parameters:
           - name: GrossMargin_Trend_Result
@@ -216,8 +221,9 @@ pipeline:
         metric_name: 'netprofit_margin'
         prefix: ""
         suffix: ""
-        min_periods: 5
-        reference_metrics: ["grossprofit_margin", "ocfps"]  # 新增交叉验证
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
+        reference_metrics: ["grossprofit_margin", "ocfps"]  # 交叉验证
       outputs:
         parameters:
           - name: NetMargin_Trend_Result
@@ -245,7 +251,9 @@ pipeline:
         metric_name: 'roe'
         prefix: ""
         suffix: ""
-        min_periods: 5
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
+        enable_multi_horizon: true  # 启用断点检测
         reference_metrics: ["netprofit_margin", "roic"]  # 杜邦分解验证
       outputs:
         parameters:
@@ -274,7 +282,8 @@ pipeline:
         metric_name: 'ocfps'
         prefix: ""
         suffix: ""
-        min_periods: 5
+        min_periods: 5              # 最低5年数据要求
+        window_size: 5            # 不配置=使用全部数据
         reference_metrics: ["eps"]  # 现金流与利润交叉验证
       outputs:
         parameters:
@@ -308,7 +317,6 @@ pipeline:
         - "store_NetMargin_Trend"
         - "store_ROE_Trend"
         - "store_OCF_Trend"
-        - "store_ROIC_Quality"
       outputs:
         parameters:
           - name: Comprehensive_Report_Path

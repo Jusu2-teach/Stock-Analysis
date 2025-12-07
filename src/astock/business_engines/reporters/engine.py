@@ -37,7 +37,7 @@ def report_generic(result: ScoreResult, config: Dict[str, Any] = None, output_pa
     engine_name="report_comprehensive",
     component_type="business_engine",
     engine_type="reporting",
-    description="Generate comprehensive trend analysis report from multiple metrics"
+    description="Generate comprehensive trend analysis report from multiple metrics (V2: focused on 3 types)"
 )
 def report_comprehensive(
     data_dir: str = "data/filter_middle",
@@ -45,6 +45,11 @@ def report_comprehensive(
 ) -> str:
     """
     生成综合趋势分析报告
+
+    聚焦于3类公司：
+    1. 🚀 高成长优质公司 (GARP)
+    2. 🏰 白马护城河 (Quality)
+    3. 🔄 困境反转 (Turnaround)
 
     Args:
         data_dir: 数据目录

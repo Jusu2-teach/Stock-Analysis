@@ -118,15 +118,29 @@ def calculate_deterioration_probability(
     evidence_factors.append(("低于阈值", lr_threshold))
 
     # 贝叶斯更新：P(恶化|证据) = P(证据|恶化) * P(恶化) / P(证据)
-    # 使用似然比的乘积
-    combined_lr = lr_consecutive * lr_acceleration * lr_recent * lr_total * lr_threshold
+    # 使用似然比的乘积 - 使用对数空间计算防止溢出
+    log_combined_lr = (
+        np.log(lr_consecutive) +
+        np.log(lr_acceleration) +
+        np.log(lr_recent) +
+        np.log(lr_total) +
+        np.log(lr_threshold)
+    )
+    # 限制在合理范围内防止溢出
+    log_combined_lr = np.clip(log_combined_lr, -20, 20)
+    combined_lr = np.exp(log_combined_lr)
 
     # 后验odds = prior_odds * combined_lr
     prior_odds = prior / (1 - prior)
     posterior_odds = prior_odds * combined_lr
 
-    # 转换回概率
-    posterior_prob = posterior_odds / (1 + posterior_odds)
+    # 转换回概率 - 防止数值不稳定
+    if posterior_odds > 1e10:
+        posterior_prob = 1.0
+    elif posterior_odds < 1e-10:
+        posterior_prob = 0.0
+    else:
+        posterior_prob = posterior_odds / (1 + posterior_odds)
     posterior_prob = max(0.0, min(1.0, posterior_prob))
 
     return float(posterior_prob), evidence_factors

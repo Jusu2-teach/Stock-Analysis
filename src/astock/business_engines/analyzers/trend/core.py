@@ -64,6 +64,13 @@ from .probes.deterioration_probe import DeteriorationDetector
 from .probes.cyclical_probe import CyclicalPatternDetector
 from .probes.rolling_probe import RollingTrendCalculator
 from .probes.robust_probe import RobustTrendProbe
+from .probes.multi_horizon_probe import (
+    MultiHorizonAnalyzer,
+    StructuralBreakDetector,
+    MultiHorizonResult,
+    StructuralBreakResult,
+    BreakType,
+)
 
 from .rules import (
     rule_roiic_capital_destruction,
@@ -522,7 +529,12 @@ trend_rule_engine = TrendRuleEngine(DEFAULT_TREND_RULES)
 # ============================================================================
 
 class TrendAnalyzer:
-    """Encapsulate per-group trend calculations to keep the orchestrator lean."""
+    """Encapsulate per-group trend calculations to keep the orchestrator lean.
+
+    双窗口设计:
+    - full_values_list: 全量数据，用于断点检测和周期分析
+    - values_list: 近N年数据(window_size)，用于趋势计算
+    """
 
     _PROBE_RESULT_MAP: ClassVar[Dict[str, Tuple[str, type]]] = {
         "log_trend": ("trend_result", LogTrendResult),
@@ -585,7 +597,10 @@ class TrendAnalyzer:
         self.valid: bool = True
         self.error_reason: str = ""
 
-        self.values_list: List[float] = []
+        # 双窗口数据
+        self.full_values_list: List[float] = []  # 全量数据(断点/周期分析)
+        self.values_list: List[float] = []       # 近N年数据(趋势计算)
+
         self.weighted_avg: float = 0.0
         self.trend_result: LogTrendResult = empty_log_trend_result()
         self.volatility_result: VolatilityResult = empty_volatility_result()
@@ -594,6 +609,10 @@ class TrendAnalyzer:
         self.cyclical_result: CyclicalPatternResult = empty_cyclical_result()
         self.rolling_result: RollingTrendResult = empty_rolling_result()
         self.robust_result: RobustTrendResult = empty_robust_result()
+
+        # 多时间窗口分析结果
+        self.multi_horizon_result: Optional[MultiHorizonResult] = None
+        self.structural_break: Optional[StructuralBreakResult] = None
 
         self.latest_value: float = 0.0
         self.latest_vs_weighted_ratio: float = 1.0
@@ -617,10 +636,34 @@ class TrendAnalyzer:
 
     # ------------------------------------------------------------------
     def _prepare(self) -> None:
+        """准备数据：双窗口设计
+
+        1. full_values_list: 全量数据，用于断点检测和周期分析
+        2. values_list: 趋势计算数据
+           - window_size=None: 使用全量数据(与断点检测相同)
+           - window_size=N: 只用最近N年数据
+        """
         try:
-            self.values_list = self._prepare_metric_series(self.metric_name)
+            # 步骤1: 准备全量数据(用于断点/周期分析)
+            self.full_values_list = self._prepare_full_metric_series(self.metric_name)
+
+            # 步骤2: 准备趋势计算数据
+            # window_size=None 表示使用全量数据，否则截取最近N年
+            if self.series_config.window_size is None:
+                # 不截断，直接使用全量数据
+                self.values_list = self.full_values_list.copy()
+            else:
+                self.values_list = self._prepare_trend_series(self.metric_name)
+
+            # 步骤3: 多时间窗口分析(断点检测+周期分析)
+            # 条件: 启用配置 且 数据量足够(至少6年才有意义做断点检测)
+            if self.series_config.enable_multi_horizon and len(self.full_values_list) >= 6:
+                self._run_multi_horizon_analysis()
+
+            # 步骤4: 计算加权平均和运行探针
             self.weighted_avg = self._compute_weighted_average()
             self._run_metric_probes()
+
         except FatalMetricProbeError as fatal_exc:
             self.valid = False
             self.error_reason = str(fatal_exc.original)
@@ -645,7 +688,36 @@ class TrendAnalyzer:
         )
 
     # ------------------------------------------------------------------
-    def _prepare_metric_series(self, column: str) -> List[float]:
+    def _prepare_full_metric_series(self, column: str) -> List[float]:
+        """准备全量数据序列(用于断点检测和周期分析)"""
+        if column not in self.group_df.columns:
+            raise ValueError(f"缺少指标列: {column}")
+
+        series_cfg = self.series_config
+        values_array = self.group_df[column].to_numpy(dtype=float, copy=True)
+
+        # 全量数据：不做窗口截断
+        total_count = values_array.size
+        finite_mask = np.isfinite(values_array) if series_cfg.drop_non_finite else ~np.isnan(values_array)
+        valid_count = int(finite_mask.sum())
+
+        if valid_count == 0:
+            raise ValueError("全部为缺失值")
+
+        if valid_count < total_count:
+            values_array = self._fill_missing_values(values_array, finite_mask)
+
+        if not np.all(np.isfinite(values_array)):
+            raise ValueError("仍存在非法数值")
+
+        return values_array.astype(float).tolist()
+
+    # ------------------------------------------------------------------
+    def _prepare_trend_series(self, column: str) -> List[float]:
+        """准备趋势计算数据序列(截取最近N年，由window_size控制)
+
+        注意: 此方法仅在 window_size 不为 None 时被调用
+        """
         if column not in self.group_df.columns:
             raise ValueError(f"缺少指标列: {column}")
 
@@ -656,6 +728,7 @@ class TrendAnalyzer:
         if target_window is None and series_cfg.weights is not None:
             target_window = len(series_cfg.weights)
 
+        # 窗口截断：只取最近N年
         if target_window is not None:
             if values_array.size < target_window and not series_cfg.allow_partial_window:
                 raise ValueError(f"需要至少{target_window}期数据, 实际{values_array.size}期")
@@ -681,6 +754,52 @@ class TrendAnalyzer:
             raise ValueError("仍存在非法数值")
 
         return values_array.astype(float).tolist()
+
+    # ------------------------------------------------------------------
+    def _run_multi_horizon_analysis(self) -> None:
+        """运行多时间窗口分析(断点检测+周期分析)"""
+        try:
+            # 使用全量数据进行断点检测
+            break_detector = StructuralBreakDetector(
+                min_segment=3,
+                effect_size_threshold=self.series_config.break_detection_threshold
+            )
+            self.structural_break = break_detector.detect(self.full_values_list)
+
+            # 如果检测到断点，记录日志
+            if self.structural_break.has_break:
+                self.logger.debug(
+                    "%s 检测到结构断点: 类型=%s, 位置=%d, 效应量=%.2f",
+                    self.group_key,
+                    self.structural_break.break_type.value,
+                    self.structural_break.break_point or -1,
+                    self.structural_break.effect_size
+                )
+
+            # 完整的多时间窗口分析
+            # recent_years: 如果 window_size 为 None，使用全量数据长度
+            recent_years = self.series_config.window_size or len(self.full_values_list)
+            horizon_analyzer = MultiHorizonAnalyzer(
+                recent_years=recent_years,
+                break_threshold=self.series_config.break_detection_threshold
+            )
+            self.multi_horizon_result = horizon_analyzer.analyze(
+                self.full_values_list,
+                metric_name=self.metric_name
+            )
+
+        except Exception as exc:
+            self.logger.debug(
+                "%s 多时间窗口分析失败: %s",
+                self.group_key, exc
+            )
+            self.structural_break = None
+            self.multi_horizon_result = None
+
+    # ------------------------------------------------------------------
+    def _prepare_metric_series(self, column: str) -> List[float]:
+        """兼容旧接口：准备趋势计算数据"""
+        return self._prepare_trend_series(column)
 
     # ------------------------------------------------------------------
     def _fill_missing_values(self, values_array: np.ndarray, finite_mask: np.ndarray) -> np.ndarray:
@@ -891,6 +1010,20 @@ class TrendAnalyzer:
         evaluation: "TrendEvaluationResult",
         vector: TrendVector,
     ) -> TrendSnapshot:
+        # 多时间窗口分析结果
+        has_break = False
+        break_idx = None
+        break_effect = 0.0
+        data_regime = "stable"
+
+        if self.structural_break is not None:
+            has_break = self.structural_break.has_break
+            break_idx = self.structural_break.break_point
+            break_effect = self.structural_break.effect_size
+
+        if self.multi_horizon_result is not None:
+            data_regime = self.multi_horizon_result.data_regime
+
         return TrendSnapshot(
             group_key=self.group_key,
             metric_name=self.metric_name,
@@ -908,6 +1041,13 @@ class TrendAnalyzer:
             weighted_avg=self.weighted_avg,
             latest_vs_weighted_ratio=self.latest_vs_weighted_ratio,
             extra_fields=dict(self.extra_fields),
+            # 多时间窗口分析结果
+            full_data_years=len(self.full_values_list),
+            trend_window_years=len(self.values_list),
+            has_structural_break=has_break,
+            break_year_index=break_idx,
+            break_effect_size=break_effect,
+            data_regime=data_regime,
         )
 
     # ------------------------------------------------------------------
@@ -957,6 +1097,14 @@ class TrendAnalyzer:
         notes = snapshot.evaluation.auxiliary_notes
         if notes:
             row[f"{metric_prefix}_notes{suffix}"] = "; ".join(notes)
+
+        # 多时间窗口分析结果
+        row[f"{metric_prefix}_full_years{suffix}"] = snapshot.full_data_years
+        row[f"{metric_prefix}_trend_years{suffix}"] = snapshot.trend_window_years
+        row[f"{metric_prefix}_has_break{suffix}"] = 1 if snapshot.has_structural_break else 0
+        row[f"{metric_prefix}_break_idx{suffix}"] = snapshot.break_year_index
+        row[f"{metric_prefix}_break_effect{suffix}"] = snapshot.break_effect_size
+        row[f"{metric_prefix}_regime{suffix}"] = snapshot.data_regime
 
         return row
 

@@ -7,6 +7,7 @@
 """
 
 import logging
+import numpy as np
 from typing import Optional, Dict, List
 from .models import (
     TrendContext,
@@ -411,8 +412,6 @@ def rule_growth_momentum_bonus(context: TrendContext, params: TrendRuleParameter
     if bonus_value <= 0: return None
     message = f"成长动能+{bonus_value:.1f}分(对数斜率{context.log_slope:.3f}, 近3年斜率{context.recent_3y_slope:.3f})"
     return RuleResult("growth_momentum_bonus", "bonus", message, bonus_value)
-
-import numpy as np
 
 # ============================================================================
 # 新增专业规则：杜邦分解一致性校验
