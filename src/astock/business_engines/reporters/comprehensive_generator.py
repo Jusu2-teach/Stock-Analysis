@@ -13,8 +13,13 @@
 - 第3层：拐点检测（断点检测、恶化概率、反转信号）
 - 第4层：综合评分&分类
 
+专业增强 v3.0：
+- 行业自适应阈值：不同行业使用差异化标准
+- 多元化公司处理：识别并特殊处理多元化集团
+- 行业相对排名：使用行业内百分位而非绝对阈值
+
 作者: AStock Analysis System
-日期: 2025-12-07
+日期: 2025-12-08
 """
 
 import pandas as pd
@@ -23,6 +28,17 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import logging
+
+# 导入行业自适应阈值引擎
+try:
+    from ..analyzers.trend.industry_adaptive import (
+        get_adaptive_engine,
+        get_company_thresholds,
+        AdaptiveThresholds,
+    )
+    HAS_ADAPTIVE_ENGINE = True
+except ImportError:
+    HAS_ADAPTIVE_ENGINE = False
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +58,11 @@ class ComprehensiveReportGenerator:
 
     专注于找出3类真正的好公司，所有分析工具（断点检测、贝叶斯概率等）
     都是为最终筛选服务的内部工具，不单独展示。
+
+    v3.0 新增：
+    - 行业自适应阈值引擎集成
+    - 多元化公司识别
+    - 行业相对排名计算
     """
 
     def __init__(self, data_dir: str = "data/filter_middle"):
@@ -57,6 +78,11 @@ class ComprehensiveReportGenerator:
             "roiic": {"file": "roiic_trend_analysis.csv", "prefix": "roiic", "name": "ROIIC"},
         }
         self.df_merged = pd.DataFrame()
+
+        # v3.0: 初始化自适应阈值引擎
+        self.adaptive_engine = get_adaptive_engine() if HAS_ADAPTIVE_ENGINE else None
+        if not HAS_ADAPTIVE_ENGINE:
+            logger.warning("行业自适应阈值引擎不可用，将使用统一阈值")
 
     def _get_col(self, metric_key: str, field: str) -> str:
         """获取特定指标的列名"""
@@ -509,34 +535,52 @@ class ComprehensiveReportGenerator:
 
     def _select_garp_companies(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        筛选高成长优质公司 (GARP)
+        筛选高成长优质公司 (GARP) - v3.0 行业自适应版
 
         必须满足：
-        - 营收CAGR > 10%
-        - 利润CAGR > 15%
+        - 营收CAGR > 行业自适应阈值（成长行业10%，防御行业5%）
+        - 利润CAGR > 行业自适应阈值
         - 现金流验证通过
         - 无恶化信号
         - 规模 >= 中型
         """
         candidates = df.copy()
 
-        # 基础成长要求
+        # 获取列名
         col_rev_cagr = self._get_col('revenue', 'cagr')
         col_prof_cagr = self._get_col('profit', 'cagr')
+        col_ocf = self._get_col('ocf', 'log_slope')
+        col_det = self._get_col('roic', 'deterioration_probability')
 
-        if col_rev_cagr in candidates.columns:
-            candidates = candidates[candidates[col_rev_cagr] > 0.10]
+        # v3.0: 行业自适应筛选
+        if self.adaptive_engine and 'industry' in candidates.columns:
+            # 使用行业内相对排名
+            if col_rev_cagr in candidates.columns:
+                # 行业内营收增长排名前50%
+                rev_rank = self.adaptive_engine.calculate_industry_relative_score(
+                    candidates, col_rev_cagr, 'industry'
+                )
+                candidates = candidates[rev_rank > 50]  # 行业内前50%
 
-        if col_prof_cagr in candidates.columns:
-            candidates = candidates[candidates[col_prof_cagr] > 0.15]
+            if col_prof_cagr in candidates.columns:
+                # 行业内利润增长排名前40%
+                prof_rank = self.adaptive_engine.calculate_industry_relative_score(
+                    candidates, col_prof_cagr, 'industry'
+                )
+                candidates = candidates[prof_rank > 60]  # 行业内前40%
+
+        else:
+            # 回退到统一阈值
+            if col_rev_cagr in candidates.columns:
+                candidates = candidates[candidates[col_rev_cagr] > 0.10]
+            if col_prof_cagr in candidates.columns:
+                candidates = candidates[candidates[col_prof_cagr] > 0.15]
 
         # 现金流健康
-        col_ocf = self._get_col('ocf', 'log_slope')
         if col_ocf in candidates.columns:
             candidates = candidates[candidates[col_ocf] > -0.05]
 
         # 无恶化信号
-        col_det = self._get_col('roic', 'deterioration_probability')
         if col_det in candidates.columns:
             candidates = candidates[(candidates[col_det] < 0.5) | (candidates[col_det].isna())]
 
@@ -552,35 +596,65 @@ class ComprehensiveReportGenerator:
 
     def _select_quality_moat_companies(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        筛选白马护城河公司 (Quality Moat)
+        筛选白马护城河公司 (Quality Moat) - v3.0 行业自适应版
 
         必须满足：
-        - ROIC > 12% 稳定
-        - ROE > 15%
-        - 毛利率 > 25%
-        - R² > 0.6 (趋势稳定)
+        - ROIC > 行业自适应阈值（品牌行业15%，重资产行业8%）
+        - ROE > 行业自适应阈值
+        - 毛利率 > 行业中位数
+        - R² > 0.5 (趋势稳定)
         - 无杠杆陷阱
         - 规模 >= 中型
         """
         candidates = df.copy()
 
-        # 高ROIC
+        # 获取列名
         col_roic = self._get_col('roic', 'latest')
-        if col_roic in candidates.columns:
-            candidates = candidates[candidates[col_roic] > 12]
-
-        # 高ROE
         col_roe = self._get_col('roe', 'latest')
-        if col_roe in candidates.columns:
-            candidates = candidates[candidates[col_roe] > 15]
-
-        # 高毛利率
         col_gm = self._get_col('gross_margin', 'latest')
-        if col_gm in candidates.columns:
-            candidates = candidates[candidates[col_gm] > 25]
+        col_r2 = self._get_col('roic', 'r_squared')
+
+        # v3.0: 行业自适应筛选
+        if self.adaptive_engine and 'industry' in candidates.columns:
+            # 方法1：使用行业自适应阈值
+            def apply_adaptive_roic_filter(row):
+                industry = row.get('industry', '')
+                size_class = row.get('size_class', 'mid')
+                ts_code = row.get('ts_code', '')
+                roic_val = row.get(col_roic, np.nan) if col_roic in row.index else np.nan
+
+                if pd.isna(roic_val):
+                    return False
+
+                thresholds, _ = get_company_thresholds(industry, size_class, ts_code)
+                return roic_val > thresholds.min_roic * 100  # ROIC是百分比形式
+
+            candidates = candidates[candidates.apply(apply_adaptive_roic_filter, axis=1)]
+
+            # 方法2：行业内相对排名（ROE）
+            if col_roe in candidates.columns:
+                roe_rank = self.adaptive_engine.calculate_industry_relative_score(
+                    candidates, col_roe, 'industry'
+                )
+                candidates = candidates[roe_rank > 60]  # 行业内前40%
+
+            # 方法3：毛利率使用行业中位数比较
+            if col_gm in candidates.columns:
+                gm_rank = self.adaptive_engine.calculate_industry_relative_score(
+                    candidates, col_gm, 'industry'
+                )
+                candidates = candidates[gm_rank > 50]  # 行业内前50%
+
+        else:
+            # 回退到统一阈值
+            if col_roic in candidates.columns:
+                candidates = candidates[candidates[col_roic] > 12]
+            if col_roe in candidates.columns:
+                candidates = candidates[candidates[col_roe] > 15]
+            if col_gm in candidates.columns:
+                candidates = candidates[candidates[col_gm] > 25]
 
         # 趋势稳定
-        col_r2 = self._get_col('roic', 'r_squared')
         if col_r2 in candidates.columns:
             candidates = candidates[(candidates[col_r2] > 0.5) | (candidates[col_r2].isna())]
 

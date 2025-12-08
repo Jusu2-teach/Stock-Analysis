@@ -406,7 +406,9 @@ class TrendRuleEngine:
         penalty_details: List[str] = []
         bonus_details: List[str] = []
         auxiliary_notes: List[str] = []
-        is_auxiliary_metric = context.metric_name.lower() == "roiic"
+        # 使用配置的 is_auxiliary 标记，而不是硬编码检查 roiic
+        is_auxiliary_metric = getattr(thresholds, 'is_auxiliary', False) or context.metric_name.lower() == "roiic"
+        metric_label = f"【{context.metric_name.upper()}辅助】" if is_auxiliary_metric else ""
 
         for rule in self._rules:
             result = rule.evaluate(context, params, thresholds)
@@ -418,7 +420,7 @@ class TrendRuleEngine:
                     if logger:
                         logger.log(
                             result.log_level,
-                            f"⚠️ 【ROIIC辅助】{context.group_key}: {result.message}",
+                            f"⚠️ {metric_label}{context.group_key}: {result.message}",
                         )
                     auxiliary_notes.append(result.message)
                     continue
@@ -436,7 +438,7 @@ class TrendRuleEngine:
                     if logger:
                         logger.log(
                             result.log_level,
-                            f"⚠️ 【ROIIC辅助】{context.group_key}: {result.message}",
+                            f"⚠️ {metric_label}{context.group_key}: {result.message}",
                         )
                     auxiliary_notes.append(result.message)
                     continue
@@ -450,7 +452,7 @@ class TrendRuleEngine:
                     if logger:
                         logger.log(
                             result.log_level,
-                            f"✅ 【ROIIC辅助】{context.group_key}: {result.message}",
+                            f"✅ {metric_label}{context.group_key}: {result.message}",
                         )
                     auxiliary_notes.append(result.message)
                     continue

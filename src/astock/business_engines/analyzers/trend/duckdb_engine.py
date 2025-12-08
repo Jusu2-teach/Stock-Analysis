@@ -34,6 +34,7 @@ from .config import (
     DEFAULT_ROIIC_FILTER_CONFIG,
     get_industry_category,
     get_default_config,
+    get_metric_filter_config,
 )
 from . import (
     TrendAnalyzer,
@@ -239,9 +240,20 @@ def analyze_metric_trend(
 
     metric_lower = metric_name.lower()
 
-    # IoC: 优先使用注入的配置，否则回退到默认配置
+    # IoC: 优先使用注入的配置，否则回退到指标专属配置
     if filter_config is None:
-        filter_config = DEFAULT_ROIIC_FILTER_CONFIG if metric_lower == "roiic" else DEFAULT_FILTER_CONFIG
+        # 获取指标专属配置
+        metric_config = get_metric_filter_config(metric_lower)
+
+        # 构建过滤配置，整合指标专属阈值
+        filter_config = {
+            "min_latest_value": metric_config.get("min_latest_value"),
+            "log_severe_decline_slope": metric_config.get("severe_decline", -0.30),
+            "log_mild_decline_slope": metric_config.get("mild_decline", -0.15),
+            "is_auxiliary": metric_config.get("is_auxiliary", False),
+        }
+        logger.info(f"📋 使用指标专属配置 [{metric_name}]: min={metric_config.get('min_latest_value')}, "
+                    f"severe={metric_config.get('severe_decline')}, aux={metric_config.get('is_auxiliary')}")
 
     if industry_configs is None:
         industry_configs = ROIIC_INDUSTRY_FILTER_CONFIGS if metric_lower == "roiic" else INDUSTRY_FILTER_CONFIGS

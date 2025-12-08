@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # 专业波动率分析工具
 # ============================================================================
 
-def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float]:
+def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float, bool]:
     """
     简化版 ARCH 效应检测
 
@@ -42,18 +42,21 @@ def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float]:
     检查相邻年份变化的绝对值是否相关。
 
     Returns:
-        (has_arch_effect, arch_correlation, arch_significance)
+        (has_arch_effect, arch_correlation, arch_significance, low_power_warning)
+        - low_power_warning: True 当样本量不足以进行可靠检测时
     """
     n = len(values)
+    low_power_warning = n < 10  # 样本量<10时统计效力不足
+
     if n < 4:
-        return False, 0.0, 1.0
+        return False, 0.0, 1.0, True
 
     # 计算一阶差分（年度变化）
     changes = np.diff(values)
     abs_changes = np.abs(changes)
 
     if len(abs_changes) < 3:
-        return False, 0.0, 1.0
+        return False, 0.0, 1.0, True
 
     # 检测相邻绝对变化的自相关
     # ARCH 效应: 大变化后跟着大变化
@@ -65,7 +68,7 @@ def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float]:
 
     # 计算显著性（基于 Fisher 变换的近似）
     if np.isnan(lag1_corr):
-        return False, 0.0, 1.0
+        return False, 0.0, 1.0, low_power_warning
 
     # 样本量太小，p值仅供参考
     n_pairs = len(abs_changes) - 1
@@ -75,7 +78,7 @@ def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float]:
     else:
         p_value = 1.0
 
-    return bool(has_arch), float(lag1_corr), float(p_value)
+    return bool(has_arch), float(lag1_corr), float(p_value), low_power_warning
 
 
 def detrended_volatility(values: np.ndarray) -> Tuple[float, float]:
@@ -161,9 +164,31 @@ class VolatilityCalculator:
     - ARCH 效应检测
     - 趋势调整波动率
     - 波动率体制识别
+    - 行业差异化CV阈值
     """
 
-    def calculate(self, values: List[float]) -> VolatilityResult:
+    # 行业CV阈值配置
+    # 周期性行业波动大，阈值应更宽松
+    CYCLICAL_INDUSTRIES = {
+        '钢铁', '煤炭', '有色金属', '化工', '航运', '房地产',
+        '证券', '建材', '汽车', '机械', '电子', '半导体'
+    }
+
+    CV_THRESHOLDS_NORMAL = {
+        'ultra_stable': 0.12,
+        'stable': 0.20,
+        'moderate': 0.35,
+        'volatile': 0.55,
+    }
+
+    CV_THRESHOLDS_CYCLICAL = {
+        'ultra_stable': 0.18,  # 周期行业阈值放宽50%
+        'stable': 0.30,
+        'moderate': 0.50,
+        'volatile': 0.75,
+    }
+
+    def calculate(self, values: List[float], industry: str = None) -> VolatilityResult:
         config = get_default_config()
         checker = DataQualityChecker(config)
         values_array = checker.ensure_window(values)
@@ -189,24 +214,28 @@ class VolatilityCalculator:
         detrended_std, detrended_cv = detrended_volatility(values_array)
 
         # ========== 3. ARCH 效应检测 ==========
-        has_arch, arch_corr, arch_pvalue = detect_arch_effect(values_array)
+        has_arch, arch_corr, arch_pvalue, arch_low_power = detect_arch_effect(values_array)
 
         # ========== 4. 波动率体制检测 ==========
         vol_regime, vol_change_ratio = detect_volatility_regime(values_array)
 
-        # ========== 5. 波动率类型分类 ==========
+        # ========== 5. 波动率类型分类（行业差异化） ==========
         # 使用趋势调整后的 CV 更准确
         effective_cv = min(cv, detrended_cv) if detrended_cv != float('inf') else cv
 
+        # 根据行业选择阈值
+        is_cyclical = industry and industry in self.CYCLICAL_INDUSTRIES
+        thresholds = self.CV_THRESHOLDS_CYCLICAL if is_cyclical else self.CV_THRESHOLDS_NORMAL
+
         if mean_near_zero:
             volatility_type = "extreme_volatility"
-        elif effective_cv < 0.12:
+        elif effective_cv < thresholds['ultra_stable']:
             volatility_type = "ultra_stable"
-        elif effective_cv < 0.20:
+        elif effective_cv < thresholds['stable']:
             volatility_type = "stable"
-        elif effective_cv < 0.35:
+        elif effective_cv < thresholds['moderate']:
             volatility_type = "moderate"
-        elif effective_cv < 0.55:
+        elif effective_cv < thresholds['volatile']:
             volatility_type = "volatile"
         else:
             volatility_type = "high_volatility"
@@ -224,20 +253,40 @@ class VolatilityCalculator:
                         "cv": float(cv),
                         "detrended_cv": float(detrended_cv),
                         "volatility_type": volatility_type,
+                        "industry": industry,
+                        "is_cyclical": is_cyclical,
                     },
                 )
             )
 
         # ARCH 效应警告
         if has_arch:
+            arch_message = f"波动聚集效应: 大变化后往往跟着大变化 (相关性={arch_corr:.2f})"
+            if arch_low_power:
+                arch_message += " [注意: 样本量不足，统计效力有限]"
             warnings.append(
                 TrendWarning(
                     code="ARCH_EFFECT_DETECTED",
                     level="info",
-                    message=f"波动聚集效应: 大变化后往往跟着大变化 (相关性={arch_corr:.2f})",
+                    message=arch_message,
                     context={
                         "arch_correlation": float(arch_corr),
                         "arch_pvalue": float(arch_pvalue),
+                        "low_power_warning": arch_low_power,
+                    },
+                )
+            )
+
+        # ARCH 检测样本量不足警告（独立警告）
+        if arch_low_power and not has_arch:
+            warnings.append(
+                TrendWarning(
+                    code="ARCH_LOW_POWER",
+                    level="info",
+                    message=f"ARCH效应检测样本量不足(n={len(values_array)}<10)，统计效力有限，结果仅供参考",
+                    context={
+                        "sample_size": len(values_array),
+                        "recommended_size": 10,
                     },
                 )
             )

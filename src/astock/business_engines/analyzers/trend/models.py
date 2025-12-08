@@ -205,6 +205,7 @@ class TrendThresholds:
     mild_decline: float
     latest_threshold: Optional[float]
     trend_significance: float
+    is_auxiliary: bool = False  # 辅助指标标记，若为True则否决规则变为警告
 
 
 @dataclass
@@ -418,6 +419,7 @@ class TrendRuleConfig:
         )
         latest_threshold = config.get("latest_threshold", config.get("min_latest_value"))
         trend_significance = float(config.get("trend_significance", 0.4))
+        is_auxiliary = bool(config.get("is_auxiliary", False))
 
         thresholds = TrendThresholds(
             min_latest_value=config.get("min_latest_value"),
@@ -425,6 +427,7 @@ class TrendRuleConfig:
             mild_decline=mild_decline,
             latest_threshold=latest_threshold,
             trend_significance=trend_significance,
+            is_auxiliary=is_auxiliary,
         )
 
         parameters = TrendRuleParameters.from_config(config)

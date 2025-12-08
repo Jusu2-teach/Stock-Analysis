@@ -36,6 +36,8 @@ def calculate_deterioration_probability(
     recent_change_pct: float,
     total_change_pct: float,
     is_below_threshold: bool,
+    prior: float = None,
+    industry_cyclical: bool = False,
 ) -> Tuple[float, List[Tuple[str, float]]]:
     """
     贝叶斯恶化概率计算
@@ -43,17 +45,39 @@ def calculate_deterioration_probability(
     综合多个恶化信号，使用贝叶斯更新计算后验概率。
     这比简单的规则分类更能量化恶化的"置信度"。
 
-    先验概率 P(恶化) = 0.3（基线假设30%的公司有恶化迹象）
+    动态先验概率：
+    - 默认 P(恶化) = 0.3（基线假设30%的公司有恶化迹象）
+    - 周期性行业 P(恶化) = 0.4（周期行业恶化更常见）
+    - 可通过 prior 参数自定义
 
     似然比计算：
     - 连续下跌年数: P(连续n年|恶化) / P(连续n年|正常)
     - 加速度: P(加速|恶化) / P(加速|正常)
     - 跌幅: P(跌幅x%|恶化) / P(跌幅x%|正常)
 
+    Args:
+        consecutive_years: 连续下跌年数
+        acceleration: 恶化加速度
+        recent_change_pct: 近期变化百分比
+        total_change_pct: 累计变化百分比
+        is_below_threshold: 是否低于阈值
+        prior: 自定义先验概率（0-1），None则使用默认值
+        industry_cyclical: 是否是周期性行业（如钢铁、化工、航运等）
+
     Returns:
         (posterior_probability, evidence_list)
     """
-    prior = 0.3  # 先验概率
+    # 动态先验：根据行业特性调整
+    if prior is not None:
+        # 使用自定义先验，但确保在合理范围内
+        prior_prob = max(0.05, min(0.8, prior))
+    elif industry_cyclical:
+        # 周期性行业：波动大，恶化更常见，先验提高到0.4
+        prior_prob = 0.4
+    else:
+        # 默认先验
+        prior_prob = 0.3
+
     evidence_factors: List[Tuple[str, float]] = []
 
     # 1. 连续下跌年数的似然比
@@ -131,19 +155,19 @@ def calculate_deterioration_probability(
     combined_lr = np.exp(log_combined_lr)
 
     # 后验odds = prior_odds * combined_lr
-    prior_odds = prior / (1 - prior)
+    prior_odds = prior_prob / (1 - prior_prob)
     posterior_odds = prior_odds * combined_lr
 
     # 转换回概率 - 防止数值不稳定
     if posterior_odds > 1e10:
-        posterior_prob = 1.0
+        posterior_probability = 1.0
     elif posterior_odds < 1e-10:
-        posterior_prob = 0.0
+        posterior_probability = 0.0
     else:
-        posterior_prob = posterior_odds / (1 + posterior_odds)
-    posterior_prob = max(0.0, min(1.0, posterior_prob))
+        posterior_probability = posterior_odds / (1 + posterior_odds)
+    posterior_probability = max(0.0, min(1.0, posterior_probability))
 
-    return float(posterior_prob), evidence_factors
+    return float(posterior_probability), evidence_factors
 
 
 class DeteriorationDetector:
@@ -398,22 +422,43 @@ class DeteriorationDetector:
         正值 = 恶化加速（越跌越快）
         负值 = 恶化减速（跌势放缓）
 
+        关键情景分析：
+        - 场景A: 上期-10%, 本期-20% → 持续下跌且加速 → 高正值
+        - 场景B: 上期+10%, 本期-20% → 急转直下 → 高正值（这是最危险的信号！）
+        - 场景C: 上期-20%, 本期+10% → 触底反弹 → 负值
+        - 场景D: 上期+10%, 本期+5% → 持续增长但放缓 → 轻微负值（非恶化）
+
         Returns:
-            加速度（无量纲，0表示匀速，1表示加速1倍）
+            加速度（无量纲，0表示匀速，正值表示恶化加速）
         """
-        # 如果上期是下跌，这期跌得更狠 = 加速
-        # 如果上期是下跌，这期跌幅收窄 = 减速
+        # ========== 场景A: 两期都下跌 - 持续恶化 ==========
+        if change_3_to_4_pct < 0 and change_4_to_5_pct < 0:
+            # 下跌幅度比较（都是负数，绝对值越大跌得越狠）
+            # 例：上期-10%，本期-20% → 加速 = (|-20| - |-10|) / |-10| = 1.0 (加速1倍)
+            # 例：上期-20%，本期-10% → 加速 = (|-10| - |-20|) / |-20| = -0.5 (减速50%)
+            base = max(abs(change_3_to_4_pct), 1.0)  # 防止除零
+            acceleration = (abs(change_4_to_5_pct) - abs(change_3_to_4_pct)) / base
+            return float(acceleration)
 
-        # 只在两期都是下跌时计算加速度
-        if change_3_to_4_pct >= 0 or change_4_to_5_pct >= 0:
-            return 0.0
+        # ========== 场景B: 由涨转跌 - 急转直下（最危险！） ==========
+        if change_3_to_4_pct >= 0 and change_4_to_5_pct < 0:
+            # 这是真正的"急转直下"信号，应该返回高加速度
+            # 上期涨10%，本期跌20% → 加速度应该很高
+            # 使用跌幅的绝对值作为加速度基础，再加权上期涨幅
+            base = max(abs(change_3_to_4_pct), 1.0)
+            # 跌幅越大 + 之前涨幅越大 = 反转越剧烈
+            reversal_magnitude = abs(change_4_to_5_pct) / base
+            # 额外惩罚：之前涨得越好，现在跌了越危险
+            bonus = min(change_3_to_4_pct / 10.0, 0.5) if change_3_to_4_pct > 0 else 0
+            return float(reversal_magnitude + bonus)
 
-        # 下跌幅度比较（都是负数，绝对值越大跌得越狠）
-        # 例：上期-10%，本期-20% → 加速 = (-20 - -10) / |-10| = -1.0 (加速1倍)
-        # 例：上期-20%，本期-10% → 加速 = (-10 - -20) / |-20| = 0.5 (减速50%)
+        # ========== 场景C: 由跌转涨 - 触底反弹 ==========
+        if change_3_to_4_pct < 0 and change_4_to_5_pct >= 0:
+            # 这是好信号，返回负值表示"恶化减速/停止"
+            base = max(abs(change_3_to_4_pct), 1.0)
+            recovery = -abs(change_4_to_5_pct + abs(change_3_to_4_pct)) / base
+            return float(min(recovery, -0.5))  # 至少返回-0.5表示明确改善
 
-        base = max(abs(change_3_to_4_pct), 1.0)  # 防止除零
-        acceleration = (change_4_to_5_pct - change_3_to_4_pct) / base
-
-        # 取反让正数表示恶化加速
-        return float(-acceleration)
+        # ========== 场景D: 两期都上涨 - 无恶化 ==========
+        # change_3_to_4_pct >= 0 and change_4_to_5_pct >= 0
+        return 0.0

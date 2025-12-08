@@ -403,6 +403,107 @@ _ROIIC_FILTER_CONFIGS = {
     "default": {"min_roiic": 0.04, "min_slope": -0.05},
 }
 
+# ============================================================================
+# 指标专属过滤配置 (Metric-Specific Filter Configs)
+# ============================================================================
+# 设计原则:
+# 1. 让数据说话 - 不同指标有不同的分布特征和业务含义
+# 2. min_latest_value: 最新值的底线门槛
+#    - None 表示不设下限（如营收、现金流可以为负或很小）
+#    - 比例型指标(毛利率等)使用绝对值
+# 3. severe_decline: 严重衰退的log斜率阈值（触发一票否决）
+# 4. mild_decline: 轻度衰退的log斜率阈值（触发扣分）
+# 5. is_auxiliary: 是否为辅助指标（辅助指标的否决规则变为警告）
+
+METRIC_FILTER_CONFIGS: Dict[str, Dict[str, Any]] = {
+    # === 核心盈利能力指标 ===
+    "roic": {
+        "min_latest_value": 0.06,      # 6% - 至少覆盖债务成本
+        "severe_decline": -0.30,       # CAGR约-26%
+        "mild_decline": -0.15,         # CAGR约-14%
+        "is_auxiliary": False,
+        "description": "存量资本回报率，核心质量指标",
+    },
+    "roiic": {
+        "min_latest_value": None,      # 不设下限，增量投资可能暂时为负
+        "severe_decline": -0.35,       # 比ROIC更宽松
+        "mild_decline": -0.20,
+        "is_auxiliary": True,          # 辅助指标，否决变警告
+        "description": "增量资本回报率，波动大，作为参考",
+    },
+    "roe": {
+        "min_latest_value": 0.08,      # 8% - ROE通常应高于ROIC
+        "severe_decline": -0.25,
+        "mild_decline": -0.12,
+        "is_auxiliary": False,
+        "description": "净资产收益率，股东回报核心指标",
+    },
+
+    # === 利润率指标 ===
+    "grossprofit_margin": {
+        "min_latest_value": 0.15,      # 15% - 毛利率底线
+        "severe_decline": -0.20,       # 毛利率通常较稳定，衰退阈值更敏感
+        "mild_decline": -0.10,
+        "is_auxiliary": False,
+        "description": "毛利率，反映产品竞争力和定价权",
+    },
+    "netprofit_margin": {
+        "min_latest_value": 0.03,      # 3% - 净利率可以很低但不能太低
+        "severe_decline": -0.25,
+        "mild_decline": -0.12,
+        "is_auxiliary": False,
+        "description": "净利率，反映综合盈利能力",
+    },
+
+    # === 增长型指标 ===
+    "total_revenue_ps": {
+        "min_latest_value": None,      # 营收无下限，不同行业差异巨大
+        "severe_decline": -0.20,       # 营收持续下滑是严重信号
+        "mild_decline": -0.08,
+        "is_auxiliary": False,
+        "description": "每股营收，反映规模和增长",
+    },
+    "eps": {
+        "min_latest_value": 0.0,       # EPS不能为负（允许微利）
+        "severe_decline": -0.30,       # 利润波动较大
+        "mild_decline": -0.15,
+        "is_auxiliary": False,
+        "description": "每股收益，反映盈利能力",
+    },
+
+    # === 现金流指标 ===
+    "ocfps": {
+        "min_latest_value": None,      # 现金流可以暂时为负（如高增长期）
+        "severe_decline": -0.25,
+        "mild_decline": -0.12,
+        "is_auxiliary": False,
+        "description": "每股经营现金流，反映盈利质量",
+    },
+}
+
+# 默认配置（用于未知指标）
+DEFAULT_METRIC_CONFIG: Dict[str, Any] = {
+    "min_latest_value": None,
+    "severe_decline": -0.30,
+    "mild_decline": -0.15,
+    "is_auxiliary": False,
+    "description": "默认配置",
+}
+
+
+def get_metric_filter_config(metric_name: str) -> Dict[str, Any]:
+    """
+    获取指标专属过滤配置
+
+    Args:
+        metric_name: 指标名称（如 roic, roe, grossprofit_margin 等）
+
+    Returns:
+        包含 min_latest_value, severe_decline, mild_decline, is_auxiliary 的配置字典
+    """
+    metric_lower = metric_name.lower().strip()
+    return METRIC_FILTER_CONFIGS.get(metric_lower, DEFAULT_METRIC_CONFIG).copy()
+
 
 def get_industry_category(industry: str) -> str:
     """获取行业分类"""
@@ -456,6 +557,10 @@ __all__ = [
     'get_decline_thresholds',
     'get_filter_config',
     'get_roiic_filter_config',
+    # 指标专属配置（新增）
+    'get_metric_filter_config',
+    'METRIC_FILTER_CONFIGS',
+    'DEFAULT_METRIC_CONFIG',
     # 配置常量（向后兼容）
     'INDUSTRY_FILTER_CONFIGS',
     'DEFAULT_FILTER_CONFIG',

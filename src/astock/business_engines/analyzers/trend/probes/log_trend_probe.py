@@ -116,7 +116,7 @@ def bootstrap_slope_ci(
     y: np.ndarray,
     n_bootstrap: int = 100,
     ci_level: float = 0.95,
-    seed: int = 42
+    seed: int = None
 ) -> Tuple[float, float, float]:
     """
     Bootstrap 重采样计算斜率置信区间（向量化实现）
@@ -129,7 +129,7 @@ def bootstrap_slope_ci(
         y: 因变量
         n_bootstrap: 重采样次数
         ci_level: 置信水平
-        seed: 随机种子（保证可重复）
+        seed: 随机种子（None=随机，用于生产环境；固定值用于测试可重复性）
 
     Returns:
         (slope_median, ci_lower, ci_upper)
@@ -446,6 +446,21 @@ class LogTrendCalculator:
                     context={
                         "original": quality_summary.original,
                         "cleaned": quality_summary.cleaned,
+                    },
+                )
+            )
+
+        # arcsinh 变换时 CAGR 解释警告
+        if trend_metrics.get('transform_method') == 'arcsinh':
+            warnings.append(
+                TrendWarning(
+                    code="ARCSINH_CAGR_INTERPRETATION",
+                    level="info",
+                    message="使用arcsinh变换，log_slope不能直接解释为CAGR。请参考cagr_approx字段获取实际CAGR（仅适用于恒正数据）",
+                    context={
+                        "transform_method": "arcsinh",
+                        "log_slope": trend_metrics.get('log_slope'),
+                        "note": "arcsinh(x) ≈ ln(2x) for large x, but differs for small/negative values",
                     },
                 )
             )
