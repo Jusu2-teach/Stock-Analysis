@@ -220,20 +220,21 @@ def reset_default_config():
 # 行业配置（向后兼容）
 # ============================================================================
 
-# 行业分类映射 (按申万行业分类，映射到三大类别)
+# 行业分类映射 (按申万行业分类，映射到四大类别)
+# v2.0: 新增 cyclical_growth 类别，细化电力分类
 _INDUSTRY_CATEGORY_MAP = {
     # --- 强周期性行业 (Cyclical) ---
     # 上游资源
     "小金属": "cyclical", "黄金": "cyclical", "钢铁": "cyclical", "煤炭": "cyclical",
     "有色金属": "cyclical", "石油石化": "cyclical", "铝": "cyclical", "铜": "cyclical",
-    "锌": "cyclical", "稀土": "cyclical", "锂": "cyclical",
+    "锌": "cyclical", "稀土": "cyclical",
     # 化工
     "化工": "cyclical", "基础化工": "cyclical", "化学纤维": "cyclical",
     "化肥": "cyclical", "农药": "cyclical", "化学制品": "cyclical",
     # 建材地产
     "建材": "cyclical", "水泥": "cyclical", "玻璃": "cyclical",
     "房地产": "cyclical", "建筑": "cyclical", "装饰装修": "cyclical",
-    # 交运
+    # 交运（周期部分）
     "航运": "cyclical", "港口": "cyclical", "远洋运输": "cyclical", "集装箱": "cyclical",
     # 机械
     "工程机械": "cyclical", "重型机械": "cyclical", "机械": "cyclical",
@@ -246,18 +247,27 @@ _INDUSTRY_CATEGORY_MAP = {
     "养殖": "cyclical", "猪肉": "cyclical", "禽畜养殖": "cyclical",
     # 其他周期
     "造纸": "cyclical", "包装印刷": "cyclical",
+    # 电力（周期部分）- 火电与煤价反向相关
+    "火电": "cyclical", "热电": "cyclical",
+
+    # --- 周期成长行业 (Cyclical Growth) ---
+    # 新能源（产能周期 + 成长属性）
+    "新能源": "cyclical_growth", "光伏设备": "cyclical_growth",
+    "电池": "cyclical_growth", "锂": "cyclical_growth",  # 锂移到周期成长
+    "风电设备": "cyclical_growth", "储能": "cyclical_growth",
+    "新能源车": "cyclical_growth",
+    # 半导体（产能周期 + 成长属性）
+    "半导体": "cyclical_growth", "元件": "cyclical_growth",
+    # 面板/显示（强周期成长）
+    "光学光电子": "cyclical_growth",
 
     # --- 成长性行业 (Growth) ---
     # 医药
     "医药": "growth", "生物制药": "growth", "医疗器械": "growth", "医疗服务": "growth",
     "创新药": "growth", "CXO": "growth",
     # 科技
-    "电子": "growth", "半导体": "growth", "元件": "growth", "光学光电子": "growth",
-    "计算机": "growth", "软件": "growth", "互联网": "growth", "通信设备": "growth",
-    "人工智能": "growth", "云计算": "growth",
-    # 新能源
-    "新能源": "growth", "光伏设备": "growth", "电池": "growth", "风电设备": "growth",
-    "储能": "growth", "新能源车": "growth",
+    "电子": "growth", "计算机": "growth", "软件": "growth", "互联网": "growth",
+    "通信设备": "growth", "人工智能": "growth", "云计算": "growth",
     # 高端制造
     "航空航天": "growth", "军工": "growth", "自动化设备": "growth",
     "机器人": "growth", "工业母机": "growth",
@@ -268,9 +278,12 @@ _INDUSTRY_CATEGORY_MAP = {
     "食品加工": "defensive", "调味品": "defensive", "乳制品": "defensive",
     # 农业(非周期部分)
     "农林牧渔": "defensive", "种植业": "defensive", "饲料": "defensive",
-    # 公用事业
-    "公用事业": "defensive", "电力": "defensive", "水务": "defensive", "燃气": "defensive",
+    # 公用事业（稳定部分）
+    "公用事业": "defensive", "水务": "defensive", "燃气": "defensive",
     "环保": "defensive",
+    # 电力（稳定部分）- 水电/核电/绿电具有防御性
+    "水电": "defensive", "核电": "defensive", "绿色电力": "defensive",
+    "电力": "defensive",  # 混合电力默认归defensive，但火电单独归cyclical
     # 交运(稳定部分)
     "交通运输": "defensive", "高速公路": "defensive", "机场": "defensive", "铁路": "defensive",
     # 金融(稳定部分)
@@ -281,27 +294,62 @@ _INDUSTRY_CATEGORY_MAP = {
     "纺织服装": "defensive", "商贸零售": "defensive",
 }
 
-# 周期性阈值
+# ============================================================================
+# 周期性阈值（v2.0: 增加去趋势CV区分成长vs周期）
+# ============================================================================
+#
+# 关键洞察：爆发性成长股和强周期股在原始CV上可能相似，但去趋势后差异明显
+#
+# 区分逻辑：
+#   - 高成长股: 原始CV高，但去趋势CV低（波动来自趋势本身）
+#   - 周期股: 原始CV高，去趋势CV也高（波动来自周期往复）
+#   - 稳定股: 两个CV都低
+#
+# detrended_cv_ratio = detrended_cv / raw_cv
+#   - ratio < 0.5: 波动主要来自趋势 → 成长特征
+#   - ratio > 0.7: 波动主要来自周期/噪音 → 周期特征
+#
 _CYCLICAL_THRESHOLDS = {
     "cyclical": {
-        "cv_threshold": 0.3,      # 周期股容忍较低的波动率阈值(即更容易被判定为高波动)
-        "peak_valley_ratio": 2.0, # 峰谷比 > 2 即视为显著周期
-        "r_squared_low": 0.4,     # 允许趋势拟合度较低
+        "cv_threshold": 0.3,            # 原始CV阈值（触发周期检测的门槛）
+        "detrended_cv_min": 0.15,       # 去趋势CV下限（真周期股应该有）
+        "detrended_cv_ratio_min": 0.6,  # 去趋势CV/原始CV > 0.6 才是真周期
+        "peak_valley_ratio": 2.0,       # 峰谷比 > 2 即视为显著周期
+        "r_squared_low": 0.4,           # 允许趋势拟合度较低
+        "deterioration_tolerance": 0.35, # 周期底部容忍更大回撤（-35%不算恶化）
     },
     "growth": {
-        "cv_threshold": 0.5,      # 成长股波动率中等
+        "cv_threshold": 0.5,            # 成长股原始CV可以较高
+        "detrended_cv_max": 0.20,       # 但去趋势CV应该较低（波动来自趋势）
+        "detrended_cv_ratio_max": 0.5,  # 去趋势CV/原始CV < 0.5 才是真成长
         "peak_valley_ratio": 3.0,
         "r_squared_low": 0.5,
+        "deterioration_tolerance": 0.25, # 成长股回撤容忍度中等
+    },
+    "cyclical_growth": {
+        # 新类别：周期成长（光伏、锂电、半导体等）
+        # 同时具有成长属性和周期属性
+        "cv_threshold": 0.4,
+        "detrended_cv_min": 0.12,
+        "detrended_cv_max": 0.30,
+        "peak_valley_ratio": 2.5,
+        "r_squared_low": 0.45,
+        "deterioration_tolerance": 0.30, # 介于周期和成长之间
     },
     "defensive": {
-        "cv_threshold": 0.6,      # 防御股应该很稳，CV阈值高(即很难被判定为高波动)
+        "cv_threshold": 0.6,            # 防御股应该很稳，CV阈值高
+        "detrended_cv_max": 0.15,       # 去趋势CV也应该很低
         "peak_valley_ratio": 4.0,
-        "r_squared_low": 0.6,     # 要求较高的趋势平滑度
+        "r_squared_low": 0.6,           # 要求较高的趋势平滑度
+        "deterioration_tolerance": 0.20, # 防御股-20%就是大问题
     },
     "default": {
         "cv_threshold": 0.5,
+        "detrended_cv_min": 0.10,
+        "detrended_cv_max": 0.25,
         "peak_valley_ratio": 3.0,
         "r_squared_low": 0.5,
+        "deterioration_tolerance": 0.25,
     },
 }
 
@@ -395,12 +443,44 @@ _ROIC_FILTER_CONFIGS = {
 }
 
 # ROIIC过滤配置 (增量资本回报率)
-# 反映新投入资本的效率，波动较大，阈值适当降低
+# v2.0: 增加平滑窗口配置，解决单年ROIIC噪音问题
+#
+# 关键改进：
+# 1. 使用3年滚动累计：Rolling 3-Year ROIIC = Σ(ΔProfit_3y) / Σ(ΔIC_3y)
+# 2. 当 ΔIC < 0 或 ΔIC 过小时，ROIIC 无意义，应标记为 NA
+# 3. min_delta_ic_ratio: ΔIC/IC_start 的最小阈值，低于此值视为无意义
+#
 _ROIIC_FILTER_CONFIGS = {
-    "医药": {"min_roiic": 0.06, "min_slope": -0.02},
-    "食品饮料": {"min_roiic": 0.10, "min_slope": -0.02},
-    "电子": {"min_roiic": 0.05, "min_slope": -0.03},
-    "default": {"min_roiic": 0.04, "min_slope": -0.05},
+    "医药": {
+        "min_roiic": 0.06,
+        "min_slope": -0.02,
+        "smoothing_window": 3,           # 3年滚动累计
+        "min_delta_ic_ratio": 0.05,      # ΔIC/IC_start > 5% 才计算ROIIC
+    },
+    "食品饮料": {
+        "min_roiic": 0.10,
+        "min_slope": -0.02,
+        "smoothing_window": 3,
+        "min_delta_ic_ratio": 0.05,
+    },
+    "电子": {
+        "min_roiic": 0.05,
+        "min_slope": -0.03,
+        "smoothing_window": 3,
+        "min_delta_ic_ratio": 0.08,      # 电子行业资本开支波动大，阈值更高
+    },
+    "半导体": {
+        "min_roiic": 0.04,
+        "min_slope": -0.04,
+        "smoothing_window": 3,
+        "min_delta_ic_ratio": 0.10,      # 半导体重资本开支，阈值最高
+    },
+    "default": {
+        "min_roiic": 0.04,
+        "min_slope": -0.05,
+        "smoothing_window": 3,           # 默认3年平滑
+        "min_delta_ic_ratio": 0.05,      # 默认5%
+    },
 }
 
 # ============================================================================
@@ -491,6 +571,249 @@ DEFAULT_METRIC_CONFIG: Dict[str, Any] = {
 }
 
 
+# ============================================================================
+# 扣非利润配置 (Deducted Profit Config) - A股特色
+# ============================================================================
+# 设计原理：
+# A股公司经常通过非经常性损益（卖地、政府补贴、投资收益）美化报表
+# 扣非净利润更能反映主营业务的真实盈利能力
+#
+# 应用场景：
+# 1. 当 (净利润 - 扣非净利润) / 净利润 > threshold 时，触发警告
+# 2. 要求扣非净利率不能为负（排除靠补贴度日的公司）
+# 3. 科技/制造行业应特别关注（政府补贴集中区）
+#
+DEDUCTED_PROFIT_CONFIG: Dict[str, Dict[str, Any]] = {
+    # 对扣非要求严格的行业（非经常性损益频繁）
+    "strict": {
+        "industries": ["软件", "计算机", "互联网", "新能源", "光伏设备", "电池",
+                      "半导体", "医药", "生物制药", "CXO", "军工", "航空航天"],
+        "max_non_recurring_ratio": 0.30,  # 非经常性损益占比 < 30%
+        "min_deducted_margin": 0.02,       # 扣非净利率 > 2%
+    },
+    # 对扣非要求中等的行业
+    "moderate": {
+        "industries": ["电子", "通信设备", "机械", "汽车", "家电"],
+        "max_non_recurring_ratio": 0.40,
+        "min_deducted_margin": 0.01,
+    },
+    # 对扣非要求宽松的行业（如金融、地产有合理投资收益）
+    "lenient": {
+        "industries": ["银行", "证券", "保险", "房地产", "公用事业"],
+        "max_non_recurring_ratio": 0.60,
+        "min_deducted_margin": 0.0,
+    },
+    # 默认配置
+    "default": {
+        "max_non_recurring_ratio": 0.40,
+        "min_deducted_margin": 0.01,
+    },
+}
+
+
+def get_deducted_profit_config(industry: str = None) -> Dict[str, Any]:
+    """
+    获取扣非利润配置
+
+    Args:
+        industry: 行业名称
+
+    Returns:
+        包含 max_non_recurring_ratio, min_deducted_margin 的配置
+    """
+    if not industry:
+        return DEDUCTED_PROFIT_CONFIG["default"].copy()
+
+    for strictness, config in DEDUCTED_PROFIT_CONFIG.items():
+        if strictness == "default":
+            continue
+        if industry in config.get("industries", []):
+            return {
+                "max_non_recurring_ratio": config["max_non_recurring_ratio"],
+                "min_deducted_margin": config["min_deducted_margin"],
+            }
+
+    return DEDUCTED_PROFIT_CONFIG["default"].copy()
+
+
+# ============================================================================
+# 周期性检测置信度配置 (Cyclicality Confidence Config)
+# ============================================================================
+# 基于奈奎斯特采样定理：检测周期T，至少需要2T长度的数据
+# 5年数据只能可靠检测2.5年以下周期，商业周期(3-7年)需要更长数据
+#
+# 置信度上限：数据长度决定了分析结论的可信程度上限
+# 即使数据完美符合周期特征，置信度也不能超过此上限
+#
+CYCLICALITY_CONFIDENCE_CONFIG: Dict[str, Any] = {
+    # 数据年数 -> 置信度上限
+    "confidence_ceiling_by_years": {
+        5: 0.55,   # 5年数据：置信度上限55%
+        6: 0.60,
+        7: 0.70,   # 7年数据：能检测部分商业周期
+        8: 0.75,
+        9: 0.80,
+        10: 0.85,  # 10年数据：较可靠
+        15: 0.95,  # 15年数据：可检测完整商业周期
+    },
+    # 数据年数 -> 可靠检测的最大周期长度
+    "max_reliable_period_by_years": {
+        5: 2.5,    # 5年数据最多可靠检测2.5年周期
+        7: 3.5,
+        10: 5.0,
+        15: 7.0,
+    },
+    # 当检测到的周期长度超过可靠范围时，置信度折扣因子
+    "period_excess_discount": 0.6,  # 周期超出可靠范围时，置信度乘以0.6
+}
+
+
+def get_cyclicality_confidence_ceiling(n_years: int) -> float:
+    """
+    获取周期性检测的置信度上限
+
+    Args:
+        n_years: 数据年数
+
+    Returns:
+        置信度上限 (0-1)
+    """
+    config = CYCLICALITY_CONFIDENCE_CONFIG["confidence_ceiling_by_years"]
+    # 找到不超过n_years的最大配置值
+    applicable_years = [y for y in config.keys() if y <= n_years]
+    if not applicable_years:
+        return 0.30  # 不足5年，置信度很低
+    return config[max(applicable_years)]
+
+
+# ============================================================================
+# 高成长 vs 周期 区分函数 (核心创新)
+# ============================================================================
+
+def classify_growth_vs_cyclical(
+    raw_cv: float,
+    detrended_cv: float,
+    log_slope: float,
+    r_squared: float,
+    industry: str = None
+) -> Dict[str, Any]:
+    """
+    区分高成长股和周期股
+
+    核心逻辑：
+    - 高成长股：原始CV高，但去趋势CV低（波动来自趋势本身）
+    - 周期股：原始CV高，去趋势CV也高（波动来自周期往复）
+    - 稳定股：两个CV都低
+
+    关键指标：detrended_cv_ratio = detrended_cv / raw_cv
+    - ratio < 0.5: 波动主要来自趋势 → 成长特征
+    - ratio > 0.7: 波动主要来自周期/噪音 → 周期特征
+
+    Args:
+        raw_cv: 原始变异系数
+        detrended_cv: 去趋势变异系数
+        log_slope: Log斜率（趋势方向）
+        r_squared: R²拟合优度
+        industry: 行业（用于获取先验）
+
+    Returns:
+        {
+            "classification": "high_growth" | "cyclical" | "stable" | "mixed",
+            "confidence": float,  # 分类置信度 (0-1)
+            "detrended_cv_ratio": float,
+            "reasoning": str,
+        }
+    """
+    # 边界情况处理
+    if raw_cv == 0 or np.isinf(raw_cv) or np.isnan(raw_cv):
+        return {
+            "classification": "unknown",
+            "confidence": 0.0,
+            "detrended_cv_ratio": None,
+            "reasoning": "原始CV无效",
+        }
+
+    if np.isinf(detrended_cv) or np.isnan(detrended_cv):
+        # 去趋势CV无效，只能依赖其他指标
+        detrended_cv_ratio = None
+    else:
+        detrended_cv_ratio = detrended_cv / raw_cv if raw_cv > 0 else None
+
+    # 获取行业阈值
+    category = get_industry_category(industry)
+    thresholds = _CYCLICAL_THRESHOLDS.get(category, _CYCLICAL_THRESHOLDS["default"])
+
+    classification = "mixed"
+    confidence = 0.5
+    reasoning_parts = []
+
+    # === 判断逻辑 ===
+
+    # 1. 低波动 + 高R² → 稳定
+    if raw_cv < 0.20 and r_squared > 0.7:
+        classification = "stable"
+        confidence = 0.85
+        reasoning_parts.append(f"低波动(CV={raw_cv:.2f})+高拟合度(R²={r_squared:.2f})")
+
+    # 2. 去趋势CV比例低 + 正斜率 → 高成长
+    elif detrended_cv_ratio is not None and detrended_cv_ratio < 0.5 and log_slope > 0.05:
+        classification = "high_growth"
+        confidence = 0.75 + 0.15 * (1 - detrended_cv_ratio)  # 比例越低，置信度越高
+        reasoning_parts.append(
+            f"去趋势CV比例低({detrended_cv_ratio:.2f})+正趋势(slope={log_slope:.2f})"
+        )
+
+    # 3. 去趋势CV比例高 + 低R² → 周期
+    elif detrended_cv_ratio is not None and detrended_cv_ratio > 0.7 and r_squared < 0.6:
+        classification = "cyclical"
+        confidence = 0.70 + 0.20 * (detrended_cv_ratio - 0.7)
+        reasoning_parts.append(
+            f"去趋势CV比例高({detrended_cv_ratio:.2f})+低拟合度(R²={r_squared:.2f})"
+        )
+
+    # 4. 高原始CV + 负斜率 → 周期下行或恶化
+    elif raw_cv > 0.4 and log_slope < -0.10:
+        classification = "cyclical"
+        confidence = 0.65
+        reasoning_parts.append(f"高波动(CV={raw_cv:.2f})+负趋势(slope={log_slope:.2f})")
+
+    # 5. 高原始CV + 正斜率 + 中等R² → 需要看去趋势CV
+    elif raw_cv > 0.3 and log_slope > 0.05:
+        if detrended_cv_ratio is not None:
+            if detrended_cv_ratio < 0.6:
+                classification = "high_growth"
+                confidence = 0.60
+                reasoning_parts.append(f"高波动但去趋势CV较低({detrended_cv_ratio:.2f})")
+            else:
+                classification = "cyclical"
+                confidence = 0.55
+                reasoning_parts.append(f"高波动且去趋势CV较高({detrended_cv_ratio:.2f})")
+        else:
+            classification = "mixed"
+            confidence = 0.40
+            reasoning_parts.append("高波动+正趋势，无法确定")
+
+    else:
+        classification = "mixed"
+        confidence = 0.40
+        reasoning_parts.append("特征不明显，介于成长和周期之间")
+
+    # 行业先验调整
+    if category == "cyclical" and classification == "high_growth":
+        confidence *= 0.8  # 周期行业被判为成长，置信度打折
+        reasoning_parts.append(f"行业({industry})为周期性，置信度下调")
+    elif category == "growth" and classification == "cyclical":
+        confidence *= 0.8
+        reasoning_parts.append(f"行业({industry})为成长性，置信度下调")
+
+    return {
+        "classification": classification,
+        "confidence": min(confidence, 0.95),  # 置信度上限
+        "detrended_cv_ratio": detrended_cv_ratio,
+        "reasoning": "; ".join(reasoning_parts),
+    }
+
+
 def get_metric_filter_config(metric_name: str) -> Dict[str, Any]:
     """
     获取指标专属过滤配置
@@ -557,10 +880,18 @@ __all__ = [
     'get_decline_thresholds',
     'get_filter_config',
     'get_roiic_filter_config',
-    # 指标专属配置（新增）
+    # 指标专属配置
     'get_metric_filter_config',
     'METRIC_FILTER_CONFIGS',
     'DEFAULT_METRIC_CONFIG',
+    # v2.0新增: 扣非利润配置
+    'get_deducted_profit_config',
+    'DEDUCTED_PROFIT_CONFIG',
+    # v2.0新增: 周期性置信度配置
+    'get_cyclicality_confidence_ceiling',
+    'CYCLICALITY_CONFIDENCE_CONFIG',
+    # v2.0新增: 成长vs周期区分
+    'classify_growth_vs_cyclical',
     # 配置常量（向后兼容）
     'INDUSTRY_FILTER_CONFIGS',
     'DEFAULT_FILTER_CONFIG',

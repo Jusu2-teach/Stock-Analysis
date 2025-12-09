@@ -40,6 +40,19 @@ try:
 except ImportError:
     HAS_ADAPTIVE_ENGINE = False
 
+# 导入数据驱动质量筛选器
+try:
+    from ..analyzers.trend.data_driven_filter import (
+        DataDrivenQualityFilter,
+        CompanyPattern,
+        DataDrivenProfile,
+        DATA_THRESHOLDS,
+    )
+    HAS_DATA_DRIVEN_FILTER = True
+except ImportError:
+    HAS_DATA_DRIVEN_FILTER = False
+    CompanyPattern = None  # 占位
+
 logger = logging.getLogger(__name__)
 
 # 规模分类标签
@@ -84,6 +97,11 @@ class ComprehensiveReportGenerator:
         if not HAS_ADAPTIVE_ENGINE:
             logger.warning("行业自适应阈值引擎不可用，将使用统一阈值")
 
+        # v4.0: 初始化数据驱动筛选器
+        self.data_driven_filter = None  # 延迟初始化，需要数据
+        if not HAS_DATA_DRIVEN_FILTER:
+            logger.warning("数据驱动筛选器不可用，将跳过公司模式识别")
+
     def _get_col(self, metric_key: str, field: str) -> str:
         """获取特定指标的列名"""
         prefix = self.metrics_config[metric_key]["prefix"]
@@ -123,6 +141,12 @@ class ComprehensiveReportGenerator:
             logger.info(f"规模分布: {merged['size_class'].value_counts().to_dict()}")
 
         self.df_merged = merged
+
+        # v4.0: 初始化数据驱动筛选器（需要数据来计算行业统计）
+        if HAS_DATA_DRIVEN_FILTER and merged is not None:
+            self.data_driven_filter = DataDrivenQualityFilter(industry_data=merged)
+            logger.info("✅ 数据驱动筛选器已初始化")
+
         return merged
 
     # =========================================================================
@@ -376,17 +400,42 @@ class ComprehensiveReportGenerator:
             if gm_slope > -0.02 and nm_slope < -0.05:
                 risks.append("费用失控")
 
-        # 5. 【新增】连续下跌检测
+        # 5. 【v4.0新增】ROIC vs ROIIC 一致性检测（增量资本效率）
+        roiic_val = self._safe_get(row, self._get_col('roiic', 'latest'), np.nan)
+        if not np.isnan(roic_val) and not np.isnan(roiic_val):
+            # 如果ROIC好但ROIIC差，说明新投资效率在下降
+            if roic_val > 12 and roiic_val < 5:
+                risks.append("增量效率下降")
+            # 如果ROIIC显著低于ROIC的50%，也是警告信号
+            elif roic_val > 10 and roiic_val < roic_val * 0.5:
+                risks.append("新投资回报不足")
+
+        # 6. 【v4.0新增】营收 vs 利润一致性（增收是否增利）
+        rev_cagr = self._safe_get(row, self._get_col('revenue', 'cagr'), np.nan)
+        prof_cagr = self._safe_get(row, self._get_col('profit', 'cagr'), np.nan)
+        if not np.isnan(rev_cagr) and not np.isnan(prof_cagr):
+            # 营收增长但利润下降，说明增收不增利
+            if rev_cagr > 0.05 and prof_cagr < -0.05:
+                risks.append("增收不增利")
+
+        # 7. 连续下跌检测
         consecutive_decline = self._safe_get(row, self._get_col('roic', 'consecutive_decline_years'), 0)
         if consecutive_decline >= 3:
             risks.append(f"连续{int(consecutive_decline)}年下跌")
 
-        # 6. 【新增】恶化加速检测
+        # 8. 恶化加速检测
         det_acceleration = self._safe_get(row, self._get_col('roic', 'deterioration_acceleration'), 0)
         if det_acceleration > 0.3:
             risks.append("恶化加速")
 
-        # 7. 【新增】趋势与稳健趋势背离
+        # 9. 【v4.0新增】最新值 vs 历史趋势一致性
+        roic_weighted = self._safe_get(row, self._get_col('roic', 'weighted'), np.nan)
+        if not np.isnan(roic_val) and not np.isnan(roic_weighted) and roic_weighted != 0:
+            # 最新值显著偏离历史趋势（偏差超过50%）
+            if abs(roic_val - roic_weighted) > abs(roic_weighted) * 0.5:
+                risks.append("数据异常(偏离历史趋势)")
+
+        # 10. 趋势与稳健趋势背离
         log_slope = self._safe_get(row, self._get_col('roic', 'log_slope'), np.nan)
         robust_slope = self._safe_get(row, self._get_col('roic', 'robust_slope'), np.nan)
         if not np.isnan(log_slope) and not np.isnan(robust_slope):
@@ -394,7 +443,7 @@ class ComprehensiveReportGenerator:
             if log_slope > 0.05 and robust_slope < -0.02:
                 risks.append("趋势异常(稳健检验不通过)")
 
-        # 8. 【修复v2.1】异方差检测 - 使用fused_slope和heteroscedasticity_detected验证
+        # 11. 异方差检测 - 使用fused_slope和heteroscedasticity_detected验证
         fused_slope = self._safe_get(row, self._get_col('roic', 'fused_slope'), np.nan)
         hetero_detected = row.get(self._get_col('roic', 'heteroscedasticity_detected'), False)
         if not np.isnan(log_slope) and not np.isnan(fused_slope):
@@ -416,6 +465,90 @@ class ComprehensiveReportGenerator:
 
         is_valid = len(risks) == 0
         return is_valid, risks
+
+    # =========================================================================
+    # v4.0: 公司模式识别（集成 DataDrivenQualityFilter）
+    # =========================================================================
+
+    def _identify_company_pattern(self, row: pd.Series) -> str:
+        """
+        识别公司的数据模式
+
+        使用 DataDrivenQualityFilter 的模式识别逻辑
+        """
+        if not HAS_DATA_DRIVEN_FILTER:
+            return "unknown"
+
+        # 提取关键数据特征
+        roic_latest = self._safe_get(row, self._get_col('roic', 'latest'), np.nan)
+        roic_weighted = self._safe_get(row, self._get_col('roic', 'weighted'), roic_latest)
+        roic_log_slope = self._safe_get(row, self._get_col('roic', 'log_slope'), 0)
+        roic_r_squared = self._safe_get(row, self._get_col('roic', 'r_squared'), 0)
+        roic_cv = self._safe_get(row, self._get_col('roic', 'cv'), 1.0)
+        roic_recent_slope = self._safe_get(row, self._get_col('roic', 'recent_3y_slope'), roic_log_slope)
+
+        # 恶化相关
+        deterioration_prob = self._safe_get(row, self._get_col('roic', 'deterioration_probability'), 0)
+        consecutive_decline = int(self._safe_get(row, self._get_col('roic', 'consecutive_decline_years'), 0))
+
+        # 周期相关
+        is_cyclical = row.get(self._get_col('roic', 'is_cyclical'), False)
+        cyclical_confidence = self._safe_get(row, self._get_col('roic', 'cyclical_confidence'), 0)
+
+        # 成长相关
+        revenue_cagr = self._safe_get(row, self._get_col('revenue', 'cagr'), 0)
+        profit_cagr = self._safe_get(row, self._get_col('profit', 'cagr'), 0)
+        ocf_slope = self._safe_get(row, self._get_col('ocf', 'log_slope'), 0)
+
+        # 使用 DATA_THRESHOLDS
+        roic_mean = roic_weighted if not np.isnan(roic_weighted) else roic_latest
+        roic_min = roic_latest - roic_cv * abs(roic_latest) if roic_cv < 1 else roic_latest * 0.5
+
+        # === 模式识别逻辑（简化版，来自 data_driven_filter.py）===
+
+        # 模式1：一直优秀
+        if (roic_mean >= 15 and roic_min > 8 and roic_cv < 0.3 and
+            roic_log_slope >= -0.02 and consecutive_decline == 0):
+            return "consistently_excellent"
+
+        # 模式2：高速成长
+        if (roic_log_slope > 0.08 and roic_r_squared > 0.5 and
+            (revenue_cagr > 0.15 or profit_cagr > 0.20)):
+            return "high_growth"
+
+        # 模式3：稳健增长
+        if (roic_log_slope >= 0 and roic_r_squared > 0.6 and roic_cv < 0.25 and roic_mean > 6):
+            return "steady_growth"
+
+        # 模式4：周期波动
+        if (is_cyclical and cyclical_confidence > 0.6) or (roic_cv > 0.4 and roic_r_squared < 0.5):
+            return "cyclical"
+
+        # 模式5：持续恶化
+        if (consecutive_decline >= 3 or deterioration_prob > 0.7 or
+            (roic_log_slope < -0.1 and roic_r_squared > 0.5)):
+            return "deteriorating"
+
+        # 模式6：波动不稳定
+        if roic_cv > 0.5 and roic_r_squared < 0.4:
+            return "volatile_unstable"
+
+        # 默认：普通
+        return "average"
+
+    def _get_pattern_label(self, pattern: str) -> str:
+        """获取模式的中文标签"""
+        labels = {
+            "consistently_excellent": "🌟一直优秀",
+            "high_growth": "🚀高速成长",
+            "steady_growth": "📈稳健增长",
+            "cyclical": "🔄周期波动",
+            "deteriorating": "📉持续恶化",
+            "volatile_unstable": "⚡波动不稳",
+            "average": "➖普通",
+            "unknown": "❓未知",
+        }
+        return labels.get(pattern, "❓未知")
 
     # =========================================================================
     # 第3层：拐点检测
@@ -727,6 +860,14 @@ class ComprehensiveReportGenerator:
         df['score_quality'] = self._calc_quality_score(df)
         df['score_safety'] = self._calc_safety_score(df)
 
+        # v4.0: 识别公司模式
+        if HAS_DATA_DRIVEN_FILTER and self.data_driven_filter is not None:
+            df['company_pattern'] = df.apply(
+                lambda row: self._identify_company_pattern(row), axis=1
+            )
+            df['pattern_label'] = df['company_pattern'].apply(self._get_pattern_label)
+            logger.info(f"✅ 公司模式识别完成，分布: {df['company_pattern'].value_counts().to_dict()}")
+
         lines = []
 
         # === 标题 ===
@@ -803,13 +944,14 @@ class ComprehensiveReportGenerator:
 
             lines.append(f"### {size_name} GARP精选")
             lines.append("")
-            lines.append("| 代码 | 名称 | 行业 | 营收CAGR | 利润CAGR | ROIC | 综合评分 | 核心亮点 |")
-            lines.append("|---|---|---|---|---|---|---|---|")
+            lines.append("| 代码 | 名称 | 行业 | 模式 | 营收CAGR | 利润CAGR | ROIC | 综合评分 | 核心亮点 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
 
             for _, row in top_picks.iterrows():
                 rev_cagr = row.get(self._get_col('revenue', 'cagr'), 0)
                 prof_cagr = row.get(self._get_col('profit', 'cagr'), 0)
                 roic = row.get(self._get_col('roic', 'latest'), 0)
+                pattern_label = row.get('pattern_label', '-')
 
                 # 生成亮点
                 highlights = []
@@ -818,7 +960,7 @@ class ComprehensiveReportGenerator:
                 if roic > 15: highlights.append("资本高效")
                 if not highlights: highlights.append("综合优质")
 
-                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {rev_cagr:.1%} | {prof_cagr:.1%} | {roic:.1f}% | **{row['composite']:.0f}** | {', '.join(highlights)} |")
+                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {pattern_label} | {rev_cagr:.1%} | {prof_cagr:.1%} | {roic:.1f}% | **{row['composite']:.0f}** | {', '.join(highlights)} |")
 
             lines.append("")
 
@@ -853,13 +995,14 @@ class ComprehensiveReportGenerator:
 
             lines.append(f"### {size_name}")
             lines.append("")
-            lines.append("| 代码 | 名称 | 行业 | ROE | ROIC | 毛利率 | 护城河分 | 护城河特征 |")
-            lines.append("|---|---|---|---|---|---|---|---|")
+            lines.append("| 代码 | 名称 | 行业 | 模式 | ROE | ROIC | 毛利率 | 护城河分 | 护城河特征 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
 
             for _, row in top_picks.iterrows():
                 roe = row.get(self._get_col('roe', 'latest'), 0)
                 roic = row.get(self._get_col('roic', 'latest'), 0)
                 gm = row.get(self._get_col('gross_margin', 'latest'), 0)
+                pattern_label = row.get('pattern_label', '-')
 
                 # 护城河特征分析
                 moat_chars = []
@@ -868,7 +1011,7 @@ class ComprehensiveReportGenerator:
                 if roe > 20 and roic > 15: moat_chars.append("盈利稳健")
                 if not moat_chars: moat_chars.append("综合优质")
 
-                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {roe:.1f}% | {roic:.1f}% | {gm:.1f}% | **{row['moat_score']:.0f}** | {', '.join(moat_chars)} |")
+                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {pattern_label} | {roe:.1f}% | {roic:.1f}% | {gm:.1f}% | **{row['moat_score']:.0f}** | {', '.join(moat_chars)} |")
 
             lines.append("")
 
@@ -896,13 +1039,14 @@ class ComprehensiveReportGenerator:
 
         top_picks = candidates.head(15)
 
-        lines.append("| 代码 | 名称 | 行业 | 规模 | 近3年利润斜率 | 毛利率趋势 | 反转信号 | 投资建议 |")
+        lines.append("| 代码 | 名称 | 行业 | 模式 | 近3年利润斜率 | 毛利率趋势 | 反转信号 | 投资建议 |")
         lines.append("|---|---|---|---|---|---|---|---|")
 
         for _, row in top_picks.iterrows():
             recent_slope = row.get(col_recent, 0)
             gm_slope = row.get(self._get_col('gross_margin', 'log_slope'), 0)
             has_break = row.get(self._get_col('roic', 'has_break'), 0)
+            pattern_label = row.get('pattern_label', '-')
 
             # 反转信号强度
             if has_break == 1 and recent_slope > 0.1:
@@ -917,7 +1061,7 @@ class ComprehensiveReportGenerator:
 
             gm_trend = "↑" if gm_slope > 0 else ("→" if gm_slope > -0.02 else "↓")
 
-            lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {row.get('size_label', '-')} | {recent_slope:+.2f} | {gm_trend} | {signal} | {advice} |")
+            lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {pattern_label} | {recent_slope:+.2f} | {gm_trend} | {signal} | {advice} |")
 
         lines.append("")
         return lines
