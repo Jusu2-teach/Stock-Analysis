@@ -300,23 +300,44 @@ pipeline:
         data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
 
     # ========== 综合报告生成 (Cross-Analysis Report) ==========
-    # 依赖所有 store 步骤完成后才执行
+    # 直接使用探针分析结果，无需读取CSV文件
+
+    # 🔵 规则驱动报告（基于预设阈值）
     - name: "Generate_Comprehensive_Report"
       component: "business_engine"
       engine: "reporting"
       method: ["report_comprehensive"]
       parameters:
-        data_dir: "data/filter_middle"
+        # 直接接收探针分析结果
+        roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+        roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+        gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+        net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+        revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+        profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+        ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
         output_path: "data/comprehensive_analysis_report.md"
-      depends_on:
-        - "store_ROIC_Trend"
-        - "store_ROIIC_Trend"
-        - "store_Revenue_Trend"
-        - "store_Profit_Trend"
-        - "store_GrossMargin_Trend"
-        - "store_NetMargin_Trend"
-        - "store_ROE_Trend"
-        - "store_OCF_Trend"
       outputs:
         parameters:
           - name: Comprehensive_Report_Path
+
+    # 🟢 T.R.U.T.H. 数据驱动报告（无预设阈值，数据说话）
+    - name: "Generate_Truth_Report"
+      component: "business_engine"
+      engine: "reporting"
+      method: ["report_truth"]
+      parameters:
+        # 直接接收探针分析结果
+        roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+        roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+        gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+        net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+        revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+        profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+        ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+        output_path: "data/truth_analysis_report.md"
+      outputs:
+        parameters:
+          - name: Truth_Report_Path

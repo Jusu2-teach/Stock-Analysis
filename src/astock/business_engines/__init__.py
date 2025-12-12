@@ -1,5 +1,5 @@
 """
-业务引擎模块（重构版 v2）
+业务引擎模块（重构版 v2.1）
 ========================
 
 提供业务分析功能：
@@ -7,7 +7,10 @@
 - analyzers/quality: 质量分析 (预留)
 - analyzers/valuation: 估值分析 (预留)
 - scorers: 评分器 (Generic Scorer)
-- reporters: 报告生成 (Generic Reporter)
+- reporters: 报告生成 (包含两套系统)
+  - report_comprehensive: 规则驱动报告（有阈值）
+  - report_truth: T.R.U.T.H.数据驱动报告（无阈值）
+- truth: T.R.U.T.H. 计算引擎（六大基因+三大求解器）
 - analysis: 通用分析 (DuckDB Engine)
 """
 
@@ -41,12 +44,12 @@ Registry.get().scan(
     tags=("scoring", "quality")
 )
 
-# Scan Reporting
+# Scan Reporting (包含规则驱动和T.R.U.T.H.数据驱动两套系统)
 Registry.get().scan(
     module=reporting_engine,
     component_type="business_engine",
     engine_type="reporting",
-    tags=("reporting", "generic")
+    tags=("reporting", "comprehensive", "truth", "data-driven")
 )
 
 # 简单的注册表，供Orchestrator使用

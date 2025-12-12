@@ -18,6 +18,10 @@
 - 多元化公司处理：识别并特殊处理多元化集团
 - 行业相对排名：使用行业内百分位而非绝对阈值
 
+数据输入：直接接收探针分析结果 DataFrame
+
+注：T.R.U.T.H.系统已独立到 truth_report_generator.py
+
 作者: AStock Analysis System
 日期: 2025-12-08
 """
@@ -25,7 +29,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Tuple
 from datetime import datetime
 import logging
 
@@ -76,19 +80,30 @@ class ComprehensiveReportGenerator:
     - 行业自适应阈值引擎集成
     - 多元化公司识别
     - 行业相对排名计算
+
+    数据输入：直接接收探针DataFrame
     """
 
-    def __init__(self, data_dir: str = "data/filter_middle"):
-        self.data_dir = Path(data_dir)
+    def __init__(self, probe_data: Dict[str, pd.DataFrame]):
+        """
+        初始化报告生成器
+
+        Args:
+            probe_data: 探针数据字典，格式: {'roic': df, 'roe': df, ...}
+        """
+        if not probe_data or not any(v is not None for v in probe_data.values()):
+            raise ValueError("必须提供探针数据 probe_data")
+
+        self._probe_data = probe_data
         self.metrics_config = {
-            "revenue": {"file": "revenue_trend_analysis.csv", "prefix": "total_revenue_ps", "name": "营收"},
-            "profit": {"file": "profit_trend_analysis.csv", "prefix": "eps", "name": "利润"},
-            "roe": {"file": "roe_trend_analysis.csv", "prefix": "roe", "name": "ROE"},
-            "ocf": {"file": "ocf_trend_analysis.csv", "prefix": "ocfps", "name": "经营现金流"},
-            "gross_margin": {"file": "gross_margin_trend_analysis.csv", "prefix": "grossprofit_margin", "name": "毛利率"},
-            "net_margin": {"file": "net_margin_trend_analysis.csv", "prefix": "netprofit_margin", "name": "净利率"},
-            "roic": {"file": "roic_trend_analysis.csv", "prefix": "roic", "name": "ROIC"},
-            "roiic": {"file": "roiic_trend_analysis.csv", "prefix": "roiic", "name": "ROIIC"},
+            "revenue": {"prefix": "total_revenue_ps", "name": "营收"},
+            "profit": {"prefix": "eps", "name": "利润"},
+            "roe": {"prefix": "roe", "name": "ROE"},
+            "ocf": {"prefix": "ocfps", "name": "经营现金流"},
+            "gross_margin": {"prefix": "grossprofit_margin", "name": "毛利率"},
+            "net_margin": {"prefix": "netprofit_margin", "name": "净利率"},
+            "roic": {"prefix": "roic", "name": "ROIC"},
+            "roiic": {"prefix": "roiic", "name": "ROIIC"},
         }
         self.df_merged = pd.DataFrame()
 
@@ -97,7 +112,7 @@ class ComprehensiveReportGenerator:
         if not HAS_ADAPTIVE_ENGINE:
             logger.warning("行业自适应阈值引擎不可用，将使用统一阈值")
 
-        # v4.0: 初始化数据驱动筛选器
+        # v3.0: 初始化数据驱动筛选器
         self.data_driven_filter = None  # 延迟初始化，需要数据
         if not HAS_DATA_DRIVEN_FILTER:
             logger.warning("数据驱动筛选器不可用，将跳过公司模式识别")
@@ -107,45 +122,81 @@ class ComprehensiveReportGenerator:
         prefix = self.metrics_config[metric_key]["prefix"]
         return f"{prefix}_{field}"
 
-    def load_and_merge_data(self) -> pd.DataFrame:
-        """加载并合并所有指标数据"""
+    def _classify_size(self, invest_capital: float) -> str:
+        """
+        根据投入资本计算公司规模分类
+
+        规模分类标准 (按投入资本，单位：亿元):
+        - micro: < 10亿 (微型)
+        - small: 10-50亿 (小型)
+        - mid: 50-200亿 (中型)
+        - large: 200-1000亿 (大型)
+        - mega: > 1000亿 (超大型)
+        """
+        if pd.isna(invest_capital):
+            return 'micro'
+
+        # 转换为亿元
+        capital_yi = invest_capital / 1e8
+
+        if capital_yi < 10:
+            return 'micro'
+        elif capital_yi < 50:
+            return 'small'
+        elif capital_yi < 200:
+            return 'mid'
+        elif capital_yi < 1000:
+            return 'large'
+        else:
+            return 'mega'
+
+    def _load_from_probe_data(self) -> pd.DataFrame:
+        """从探针数据字典加载并合并数据"""
+        logger.info("直接使用探针分析结果（无需读取文件）")
+
         merged = None
         shared_cols = {'ts_code', 'name', 'industry', 'size_class', 'invest_capital'}
 
-        logger.info(f"正在加载数据目录: {self.data_dir.absolute()}")
-
-        for key, config in self.metrics_config.items():
-            file_path = self.data_dir / config["file"]
-            if not file_path.exists():
-                logger.warning(f"文件不存在 {file_path}, 跳过指标 {key}")
+        for key, df in self._probe_data.items():
+            if df is None or df.empty:
                 continue
 
-            try:
-                df = pd.read_csv(file_path)
-                cols_data = [c for c in df.columns if c not in shared_cols]
+            # 确保 ts_code 是列而不是索引
+            if 'ts_code' not in df.columns and df.index.name == 'ts_code':
+                df = df.reset_index()
 
-                if merged is None:
-                    cols_first = [c for c in df.columns if c in shared_cols] + cols_data
-                    merged = df[cols_first]
-                else:
-                    merged = pd.merge(merged, df[['ts_code'] + cols_data], on='ts_code', how='outer')
+            cols_data = [c for c in df.columns if c not in shared_cols]
+            logger.info(f"  ✓ {self.metrics_config.get(key, {}).get('name', key)}: {len(df)} 公司")
 
-            except Exception as e:
-                logger.error(f"加载 {key} 失败: {e}")
+            if merged is None:
+                cols_first = [c for c in df.columns if c in shared_cols] + cols_data
+                merged = df[cols_first].copy()
+            else:
+                merged = pd.merge(merged, df[['ts_code'] + cols_data], on='ts_code', how='outer')
 
-        # 添加规模标签
-        if merged is not None and 'size_class' in merged.columns:
-            merged['size_label'] = merged['size_class'].map(SIZE_LABELS)
+        return merged
+
+    def load_and_merge_data(self) -> pd.DataFrame:
+        """加载并合并所有指标数据"""
+        merged = self._load_from_probe_data()
+
+        if merged is not None and not merged.empty:
+            # 添加规模标签
             if 'invest_capital' in merged.columns:
-                merged['invest_capital_yi'] = merged['invest_capital'] / 1e8
-            logger.info(f"规模分布: {merged['size_class'].value_counts().to_dict()}")
+                merged['size_class'] = merged['invest_capital'].apply(self._classify_size)
 
-        self.df_merged = merged
+            if 'size_class' in merged.columns:
+                merged['size_label'] = merged['size_class'].map(SIZE_LABELS)
+                if 'invest_capital' in merged.columns:
+                    merged['invest_capital_yi'] = merged['invest_capital'] / 1e8
+                logger.info(f"规模分布: {merged['size_class'].value_counts().to_dict()}")
 
-        # v4.0: 初始化数据驱动筛选器（需要数据来计算行业统计）
-        if HAS_DATA_DRIVEN_FILTER and merged is not None:
-            self.data_driven_filter = DataDrivenQualityFilter(industry_data=merged)
-            logger.info("✅ 数据驱动筛选器已初始化")
+            self.df_merged = merged
+
+            # v4.0: 初始化数据驱动筛选器
+            if HAS_DATA_DRIVEN_FILTER:
+                self.data_driven_filter = DataDrivenQualityFilter(industry_data=merged)
+                logger.info("✅ 数据驱动筛选器已初始化")
 
         return merged
 
@@ -846,7 +897,11 @@ class ComprehensiveReportGenerator:
     # =========================================================================
 
     def generate_report(self, output_path: str = "data/comprehensive_analysis_report.md") -> str:
-        """生成综合分析报告"""
+        """
+        生成综合分析报告（规则驱动，基于预设阈值）
+
+        注：T.R.U.T.H.系统报告已独立到 truth_report_generator.py
+        """
         if self.df_merged is None or self.df_merged.empty:
             self.load_and_merge_data()
 
@@ -860,7 +915,7 @@ class ComprehensiveReportGenerator:
         df['score_quality'] = self._calc_quality_score(df)
         df['score_safety'] = self._calc_safety_score(df)
 
-        # v4.0: 识别公司模式
+        # 识别公司模式
         if HAS_DATA_DRIVEN_FILTER and self.data_driven_filter is not None:
             df['company_pattern'] = df.apply(
                 lambda row: self._identify_company_pattern(row), axis=1
@@ -877,6 +932,7 @@ class ComprehensiveReportGenerator:
         if 'size_class' in df.columns:
             size_counts = df['size_class'].value_counts()
             lines.append(f"> 📊 规模分布: 超大型 {size_counts.get('mega', 0)} | 大型 {size_counts.get('large', 0)} | 中型 {size_counts.get('mid', 0)} | 小型 {size_counts.get('small', 0)} | 微型 {size_counts.get('micro', 0)}")
+        lines.append("> 📋 报告类型: **规则驱动** (基于预设阈值)")
         lines.append("")
 
         lines.append("---")
@@ -1138,10 +1194,10 @@ class ComprehensiveReportGenerator:
         return lines
 
     def _section_methodology(self) -> List[str]:
-        """方法论说明（专业增强版）"""
+        """方法论说明（规则驱动版）"""
         lines = ["## 📖 方法论说明", ""]
 
-        lines.append("### 4层过滤体系 (v2.0)")
+        lines.append("### 4层过滤体系")
         lines.append("")
         lines.append("```")
         lines.append("第1层：基础质量过滤（整合趋势引擎评分）")
@@ -1151,7 +1207,7 @@ class ComprehensiveReportGenerator:
         lines.append("  ├─ 趋势评分（trend_score）：规则引擎综合评分")
         lines.append("  └─ Mann-Kendall检验：非参数趋势检验")
         lines.append("")
-        lines.append("第2层：交叉验证（NaN安全处理 v2.1）")
+        lines.append("第2层：交叉验证（NaN安全处理）")
         lines.append("  ├─ 利润 vs 现金流 → 剔除纸面富贵")
         lines.append("  ├─ 营收 vs ROE → 剔除低效扩张")
         lines.append("  ├─ ROE vs ROIC → 剔除杠杆驱动")
@@ -1162,7 +1218,7 @@ class ComprehensiveReportGenerator:
         lines.append("  ├─ fused_slope异方差 → 斜率稳定性验证")
         lines.append("  └─ FFT周期底部 → 周期公司错杀保护")
         lines.append("")
-        lines.append("第3层：拐点检测（多维度恶化检测 v2.1）")
+        lines.append("第3层：拐点检测（多维度恶化检测）")
         lines.append("  ├─ 贝叶斯恶化概率 → 综合多信号量化风险")
         lines.append("  ├─ Mann-Kendall趋势检验 → 统计显著性验证")
         lines.append("  ├─ 结构断点检测 → 识别公司质变点")
@@ -1219,13 +1275,27 @@ class ComprehensiveReportGenerator:
         lines.append("---")
         lines.append("")
         lines.append("> **免责声明**：本报告仅供投资参考，不构成投资建议。投资有风险，决策需谨慎。")
+        lines.append(">")
+        lines.append("> 如需T.R.U.T.H.数据驱动报告（无预设阈值），请使用 `report_truth` 方法。")
         lines.append("")
 
         return lines
 
 
 # 保持向后兼容的入口函数
-def report_comprehensive(data_dir: str = "data/filter_middle", output_path: str = "data/comprehensive_analysis_report.md", **kwargs) -> str:
-    """生成综合分析报告"""
+def report_comprehensive(
+    data_dir: str = "data/filter_middle",
+    output_path: str = "data/comprehensive_analysis_report.md",
+    **kwargs
+) -> str:
+    """
+    生成综合分析报告（规则驱动，基于预设阈值）
+
+    Args:
+        data_dir: 数据目录
+        output_path: 输出报告路径
+
+    注：如需T.R.U.T.H.数据驱动报告，请使用 report_truth 方法
+    """
     generator = ComprehensiveReportGenerator(data_dir)
     return generator.generate_report(output_path)
