@@ -27,7 +27,7 @@ from .rules import (
 from .strategies import TrendStrategy, StrategyResult, get_default_strategies
 
 if TYPE_CHECKING:
-    from ...analyzers.trend.models import TrendVector
+    from ...trend.models import TrendVector
 
 logger = logging.getLogger(__name__)
 

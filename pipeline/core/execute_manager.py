@@ -7,24 +7,29 @@
 2. 构建自动 Kedro 风格节点配置（延迟引擎绑定由 MethodHandle 负责）
 3. 调用混合执行 FlowExecutor (Prefect 包装 Kedro)
 4. 汇总输出 / 缓存 / 血缘 / 指标
+
+架构升级 (v2.2.0):
+- 完全基于 EventBus 架构
+- Orchestrator 仍为必需依赖
 """
 import sys
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import logging
 
 # 路径注入
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
-# orchestrator 已移至根目录,添加到搜索路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-try:
-    # 使用新版 v4.0 orchestrator facade (已移至根目录)
-    from orchestrator import AStockOrchestrator
-except ImportError as e:  # pragma: no cover
-    print(f"❌ 导入新版 orchestrator 失败: {e}")
-    raise
 
+# Orchestrator 依赖
+from orchestrator import AStockOrchestrator
+
+# 统一事件总线
+from shared import EventBus, PipelineStartedEvent, PipelineCompletedEvent, SystemReadyEvent
+
+if TYPE_CHECKING:
+    from shared.protocols import OrchestratorProtocol
 
 from pipeline.core.context import PipelineContext
 from pipeline.core.services.config_service import ConfigService
@@ -32,6 +37,7 @@ from pipeline.core.services.result_assembler import ResultAssembler
 from pipeline.core.services.runtime_param_service import RuntimeParamService
 from pipeline.core.services.flow_executor import FlowExecutor
 from pipeline.core.services.cache_stats_service import CacheStatsService
+
 
 class ExecuteManager:
     """Pipeline 执行管理器（Hybrid 模式）
@@ -41,9 +47,17 @@ class ExecuteManager:
     - 解析跨步引用 (steps.<step>.outputs.parameters.<name>)
     - 通过 PrefectEngine (内部封装 KedroEngine) 执行
     - 提供缓存/软失败/血缘/指标结果
+
+    统一 EventBus 架构：
+    - 所有事件通过 EventBus 发布
+    - 插件通过 EventBus 订阅事件
     """
 
-    def __init__(self, config_path: Optional[str] = None, orchestrator: 'AStockOrchestrator' = None):
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        orchestrator: Optional['OrchestratorProtocol'] = None
+    ):
         self.logger = logging.getLogger("AStockExecuteManager")
         if not self.logger.handlers:
             handler = logging.StreamHandler()
@@ -52,7 +66,15 @@ class ExecuteManager:
         self.logger.setLevel(logging.INFO)
 
         self.config_path = config_path
-        self.orchestrator = orchestrator if orchestrator is not None else AStockOrchestrator()
+
+        # Orchestrator 依赖
+        if orchestrator is not None:
+            self.orchestrator = orchestrator
+        else:
+            self.orchestrator = AStockOrchestrator()
+
+        # EventBus 实例
+        self._event_bus = EventBus.get()
 
         # Pipeline 执行上下文（共享状态）
         self.ctx = PipelineContext()
@@ -76,7 +98,6 @@ class ExecuteManager:
     # ------------------------------------------------------------------
     def _load_plugins(self):
         """加载 pipeline/plugins 目录下的插件"""
-        from pipeline.core.services.hook_manager import HookManager
         import importlib
         import pkgutil
 
@@ -99,8 +120,10 @@ class ExecuteManager:
             try:
                 mod = importlib.import_module(f'pipeline.plugins.{module_info.name}')
                 if hasattr(mod, 'register'):
-                    mod.register(HookManager.get())
+                    mod.register()  # 新接口：无参数，插件自己获取 EventBus
                     self.logger.info(f"🔌 已加载插件: {module_info.name}")
+            except Exception as e:
+                self.logger.warning(f"插件加载失败 {module_info.name}: {e}")
             except Exception as e:
                 self.logger.warning(f"插件加载失败 {module_info.name}: {e}")
 

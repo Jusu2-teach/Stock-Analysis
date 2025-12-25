@@ -7,9 +7,8 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Iterable, Protocol
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Iterable, Protocol
 import pandas as pd
 
 # ============================================================================
@@ -192,21 +191,10 @@ class LinearTrendResult(SerializableResult):
 
 
 # ============================================================================
-# 规则与上下文模型
+# 规则上下文模型 (被 evaluators 层使用)
 # ============================================================================
-
-RuleKind = Literal["veto", "penalty", "bonus"]
-
-
-@dataclass
-class TrendThresholds:
-    min_latest_value: Optional[float]
-    severe_decline: float
-    mild_decline: float
-    latest_threshold: Optional[float]
-    trend_significance: float
-    is_auxiliary: bool = False  # 辅助指标标记，若为True则否决规则变为警告
-
+# 注意: 具体的规则实现已迁移到 evaluators/threshold/ 模块
+# 此处只保留被共享的数据模型
 
 @dataclass
 class TrendContext:
@@ -323,133 +311,11 @@ class TrendContext:
         )
 
 
-@dataclass
-class TrendRuleParameters:
-    penalty_factor: float
-    max_penalty: float
-    severe_single_year_decline_pct: float
-    severe_single_year_penalty: float
-    relative_decline_ratio_60: float
-    relative_decline_penalty_60: float
-    relative_decline_ratio_70: float
-    relative_decline_penalty_70: float
-    sustained_decline_threshold: float
-    sustained_decline_penalty: float
-    roiic_veto_weighted_threshold: float
-    roiic_veto_latest_threshold: float
-    roiic_negative_penalty_buffer: float
-    roiic_negative_penalty_scale: float
-    roiic_negative_penalty_cap: float
-    roiic_divergence_slope_gap: float
-    roiic_positive_bonus_threshold: float
-    # 交叉验证阈值
-    cross_val_profit_ocf_divergence: float  # 利润增速 vs 现金流增速的差距阈值
-    cross_val_profit_positive_threshold: float  # 利润增速为正的阈值
-    cross_val_ocf_negative_threshold: float  # 现金流增速为负的阈值
-    cross_val_profit_ocf_gap: float  # 利润-现金流增速差距阈值
-
-    @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "TrendRuleParameters":
-        return cls(
-            penalty_factor=float(config.get("penalty_factor", 20)),
-            max_penalty=float(config.get("max_penalty", 20)),
-            severe_single_year_decline_pct=float(config.get("severe_single_year_decline_pct", -30.0)),
-            severe_single_year_penalty=float(config.get("severe_single_year_penalty", 15)),
-            relative_decline_ratio_60=float(config.get("relative_decline_ratio_60", 0.60)),
-            relative_decline_penalty_60=float(config.get("relative_decline_penalty_60", 15)),
-            relative_decline_ratio_70=float(config.get("relative_decline_ratio_70", 0.70)),
-            relative_decline_penalty_70=float(config.get("relative_decline_penalty_70", 10)),
-            sustained_decline_threshold=float(config.get("sustained_decline_threshold", -0.15)),
-            sustained_decline_penalty=float(config.get("sustained_decline_penalty", 10)),
-            roiic_veto_weighted_threshold=float(config.get("roiic_veto_weighted_threshold", -20.0)),
-            roiic_veto_latest_threshold=float(config.get("roiic_veto_latest_threshold", -10.0)),
-            roiic_negative_penalty_buffer=float(config.get("roiic_negative_penalty_buffer", 0.0)),
-            roiic_negative_penalty_scale=float(config.get("roiic_negative_penalty_scale", 8.0)),
-            roiic_negative_penalty_cap=float(config.get("roiic_negative_penalty_cap", 12.0)),
-            roiic_divergence_slope_gap=float(config.get("roiic_divergence_slope_gap", 0.12)),
-            roiic_positive_bonus_threshold=float(config.get("roiic_positive_bonus_threshold", 8.0)),
-            cross_val_profit_ocf_divergence=float(config.get("cross_val_profit_ocf_divergence", 0.20)),
-            cross_val_profit_positive_threshold=float(config.get("cross_val_profit_positive_threshold", 0.10)),
-            cross_val_ocf_negative_threshold=float(config.get("cross_val_ocf_negative_threshold", -0.05)),
-            cross_val_profit_ocf_gap=float(config.get("cross_val_profit_ocf_gap", 0.20)),
-        )
-
-
-@dataclass
-class RuleResult:
-    rule_name: str
-    kind: RuleKind
-    message: str
-    value: float = 0.0
-    log_level: int = logging.DEBUG
-    log_prefix: str = "过滤淘汰"
-
-
-@dataclass
-class TrendRuleOutcome:
-    passes: bool
-    elimination_reason: str
-    penalty: float
-    penalty_details: List[str]
-    bonus_details: List[str]
-    auxiliary_notes: List[str] = field(default_factory=list)
-
-
-TrendRuleEvaluator = Callable[[TrendContext, TrendRuleParameters, TrendThresholds], Optional[RuleResult]]
-
-
-@dataclass
-class TrendRuleConfig:
-    thresholds: TrendThresholds
-    parameters: TrendRuleParameters
-
-    @classmethod
-    def from_dict(cls, config: Dict[str, Any]) -> "TrendRuleConfig":
-        severe_decline = float(
-            config.get(
-                "log_severe_decline_slope",
-                config.get("severe_decline_slope", -0.30),
-            )
-        )
-        mild_decline = float(
-            config.get(
-                "log_mild_decline_slope",
-                config.get("mild_decline_slope", -0.15),
-            )
-        )
-        latest_threshold = config.get("latest_threshold", config.get("min_latest_value"))
-        trend_significance = float(config.get("trend_significance", 0.4))
-        is_auxiliary = bool(config.get("is_auxiliary", False))
-
-        thresholds = TrendThresholds(
-            min_latest_value=config.get("min_latest_value"),
-            severe_decline=severe_decline,
-            mild_decline=mild_decline,
-            latest_threshold=latest_threshold,
-            trend_significance=trend_significance,
-            is_auxiliary=is_auxiliary,
-        )
-
-        parameters = TrendRuleParameters.from_config(config)
-        return cls(thresholds=thresholds, parameters=parameters)
-
-    def with_thresholds(self, thresholds: TrendThresholds) -> "TrendRuleConfig":
-        return TrendRuleConfig(thresholds=thresholds, parameters=self.parameters)
-
-
-@dataclass
-class TrendRule:
-    name: str
-    evaluator: TrendRuleEvaluator
-
-    def evaluate(
-        self,
-        context: TrendContext,
-        params: TrendRuleParameters,
-        thresholds: TrendThresholds
-    ) -> Optional[RuleResult]:
-        return self.evaluator(context, params, thresholds)
-
+# ============================================================================
+# 评估结果模型 (被 evaluators 层使用)
+# ============================================================================
+# 注意: TrendRuleParameters, TrendRuleConfig, TrendRule 等规则相关类
+#       已迁移到 evaluators/threshold/ 模块，此处只保留共享的结果模型
 
 @dataclass
 class TrendEvaluationResult:

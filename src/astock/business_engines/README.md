@@ -34,7 +34,7 @@ Business Engines 是 AStock Analysis 系统的**业务逻辑层**，负责实现
 
 | 能力 | 描述 | 实现模块 |
 |------|------|----------|
-| **多维趋势识别** | OLS + Theil-Sen + Mann-Kendall 组合分析 | `analyzers/trend/probes/` |
+| **多维趋势识别** | OLS + Theil-Sen + Mann-Kendall 组合分析 | `trend/probes/` |
 | **三表交叉验证** | 利润表 × 现金流量表 × 资产负债表 | `evaluators/threshold/rules/validation.py` |
 | **双向决策机制** | 规则引擎(排雷) + 策略引擎(选优) | `evaluators/threshold/rules/` + `strategies.py` |
 | **行业差异化阈值** | 周期/成长/防御行业差异化配置 | `evaluators/threshold/industry_config.py` |

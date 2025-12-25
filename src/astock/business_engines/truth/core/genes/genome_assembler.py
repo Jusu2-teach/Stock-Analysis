@@ -82,9 +82,9 @@ def compute_genome_from_probes(
         data_quality_score=data_quality_score,
     )
 
-    # 检查降级情况
+    # 检查降级情况（仅调试级别，避免大量重复警告）
     degradations = genome_input.get_degradation_summary()
     if degradations:
-        logger.warning(f"公司 {genome_input.company_code} 存在降级计算: {degradations}")
+        logger.debug(f"公司 {genome_input.company_code} 存在降级计算: {degradations}")
 
     return genome

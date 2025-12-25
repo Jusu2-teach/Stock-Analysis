@@ -323,64 +323,58 @@ class PrefectEngine:
             混合工作流主函数
 
             Prefect管理整体编排，Kedro处理数据逻辑
+            使用 DependencyGraph.build_execution_plan() 获取层次化执行计划
             """
+            from pipeline.core.dependency_graph import DependencyGraph
+
             logger = get_run_logger()
             logger.info("🎯 启动Prefect-Kedro混合工作流")
 
-            # 确定执行顺序
-            pipeline_configs = self.kedro_engine.parse_pipeline_config(config)
-            execution_order = self.kedro_engine.get_pipeline_execution_order(pipeline_configs)
+            # 构建依赖图获取执行计划（复用统一的 DependencyGraph）
+            dependencies = {p: hybrid_tasks[p].depends_on or [] for p in hybrid_tasks}
+            node_configs = {
+                name: {'depends_on': deps}
+                for name, deps in dependencies.items()
+            }
+            dep_graph = DependencyGraph.from_node_configs(node_configs)
+            execution_plan = dep_graph.build_execution_plan()
 
             # 任务结果存储
             task_results = {}
             pipeline_outputs = {}
-
-            # 依赖层级并行执行：同层（无相互依赖）任务可并行
-            # 构建依赖映射
-            dependencies = {p: hybrid_tasks[p].depends_on or [] for p in hybrid_tasks}
-            remaining = set(execution_order)
-            scheduled = {}
             completed = set()
 
-            def ready(pname):
-                return all(dep in completed for dep in dependencies.get(pname, []))
+            import time as _time
+            layer_metrics = []
 
-            layer_idx = 0
-            layer_metrics = []  # 记录每层耗时与任务数量
-            while remaining:
-                # 当前层：所有依赖已完成且未调度
-                current_layer = [p for p in list(remaining) if ready(p)]
-                if not current_layer:
-                    raise ValueError(f"无法解析依赖（可能循环）: 剩余 {remaining}")
-                layer_idx += 1
-                logger.info(f"🧩 并行层 {layer_idx}: {current_layer}")
-
-                import time as _time
+            # 按层执行（每层内可并行）
+            for layer in execution_plan.layers:
                 layer_start = _time.time()
+                logger.info(f"🧩 并行层 {layer.index + 1}: {layer.nodes}")
 
                 # 调度本层所有任务
                 layer_futures = {}
-                for pipeline_name in current_layer:
+                for pipeline_name in layer.nodes:
                     if pipeline_name not in task_functions:
                         logger.warning(f"跳过未知管道: {pipeline_name}")
-                        remaining.remove(pipeline_name)
                         completed.add(pipeline_name)
                         continue
+
                     # 如果依赖中有 failed 且开启 soft_fail，则跳过此任务
                     dep_failed = any(
                         (dep in task_results and task_results[dep].get('status') == 'failed')
                         for dep in dependencies.get(pipeline_name, [])
                     )
                     if dep_failed and soft_fail:
-                        logger.warning(f"⏭️ 软跳过任务 {pipeline_name} 因依赖失败: {dependencies.get(pipeline_name, [])}")
+                        logger.warning(f"⏭️ 软跳过任务 {pipeline_name} 因依赖失败")
                         task_results[pipeline_name] = {
                             'status': 'skipped',
                             'reason': 'dependency_failed',
                             'dependencies': dependencies.get(pipeline_name, [])
                         }
-                        remaining.remove(pipeline_name)
                         completed.add(pipeline_name)
                         continue
+
                     logger.info(f"📋 调度Kedro管道任务: {pipeline_name}")
                     task_inputs = {}
                     # 准备依赖输出作为输入
@@ -390,14 +384,11 @@ class PrefectEngine:
                             task_inputs[oname] = odata
                     task_func = task_functions[pipeline_name]
                     future = task_func(**task_inputs)
-                    scheduled[pipeline_name] = future
                     layer_futures[pipeline_name] = future
-                    remaining.remove(pipeline_name)
 
-                # Prefect 3.x 任务调用返回的对象本身就是最终结果(同步执行 task_runner=Concurrent/1)
-                # 这里直接使用返回值；如未来切换异步执行可再判断 .result 可用性
+                # 收集本层结果
                 for pipeline_name, fut in layer_futures.items():
-                    res = fut  # fut 已是结果字典或普通对象
+                    res = fut  # Prefect 3.x 同步返回结果
                     if isinstance(res, dict):
                         status = res.get('status')
                         if status == 'completed':
@@ -407,7 +398,7 @@ class PrefectEngine:
                         elif status == 'failed':
                             task_results[pipeline_name] = res
                             if soft_fail:
-                                logger.warning(f"⚠️ Kedro管道任务失败(soft_fail保留继续) : {pipeline_name}")
+                                logger.warning(f"⚠️ Kedro管道任务失败(soft_fail保留继续): {pipeline_name}")
                             else:
                                 logger.error(f"❌ Kedro管道任务失败: {pipeline_name}")
                         elif status == 'skipped':
@@ -415,22 +406,22 @@ class PrefectEngine:
                             logger.warning(f"⚠️ Kedro管道任务跳过: {pipeline_name}")
                         else:
                             task_results[pipeline_name] = {'status': 'completed', 'raw': res}
-                            logger.info(f"✅ Kedro管道任务完成(未知状态包装): {pipeline_name}")
+                            logger.info(f"✅ Kedro管道任务完成: {pipeline_name}")
                     else:
                         task_results[pipeline_name] = {'status': 'completed', 'raw': res}
-                        logger.info(f"✅ Kedro管道任务完成(非字典返回包装): {pipeline_name}")
+                        logger.info(f"✅ Kedro管道任务完成: {pipeline_name}")
                     completed.add(pipeline_name)
 
                 layer_elapsed = _time.time() - layer_start
                 layer_metrics.append({
-                    'layer': layer_idx,
-                    'tasks': current_layer,
-                    'task_count': len(current_layer),
+                    'layer': layer.index + 1,
+                    'tasks': layer.nodes,
+                    'task_count': len(layer),
                     'elapsed_sec': round(layer_elapsed, 4)
                 })
-                logger.info(f"⏱️ 层 {layer_idx} 耗时 {layer_elapsed:.3f}s (任务数: {len(current_layer)})")
+                logger.info(f"⏱️ 层 {layer.index + 1} 耗时 {layer_elapsed:.3f}s (任务数: {len(layer)})")
 
-            logger.info("🎉 混合工作流执行完成 (并行层数: %d)" % layer_idx)
+            logger.info(f"🎉 混合工作流执行完成 (并行层数: {execution_plan.depth})")
             # 汇总失败/跳过统计
             failed_count = sum(1 for v in task_results.values() if v.get('status') == 'failed')
             skipped_count = sum(1 for v in task_results.values() if v.get('status') == 'skipped')
@@ -444,10 +435,11 @@ class PrefectEngine:
                 'status': 'completed',
                 'engine': 'prefect-kedro-hybrid',
                 'task_results': task_results,
-                'execution_order': execution_order,
-                'total_pipelines': len(execution_order),
-                'layers': layer_idx,
+                'execution_order': execution_plan.flatten(),
+                'total_pipelines': execution_plan.total_nodes,
+                'layers': execution_plan.depth,
                 'layer_metrics': layer_metrics,
+                'critical_path': execution_plan.critical_path,
                 'failed_count': failed_count,
                 'skipped_count': skipped_count,
                 'overall_status': overall_status,

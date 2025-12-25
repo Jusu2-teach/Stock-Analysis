@@ -134,3 +134,18 @@ class AStockOrchestrator:
             'registry': stats,
             'components': list(self.registry.index.by_component.keys())
         }
+
+    # --------- hooks interface ---------
+    def on_event(self, event: str, callback: Callable):
+        """订阅 Registry 事件
+
+        支持的事件:
+        - 'after_method_registered': 方法注册后触发
+        - 'after_registry_refresh': Registry 刷新后触发
+
+        Args:
+            event: 事件名称
+            callback: 回调函数
+        """
+        self.registry.hooks.on(event, callback)
+        return callback  # 支持装饰器用法

@@ -2,6 +2,8 @@
 多时间窗口分析探针 (Multi-Horizon Analysis Probe)
 ===================================================
 
+**整合版本 v2.0** - 合并 MultiHorizonProbe + ProfessionalDataWindowStrategy
+
 解决核心问题:
     - 5年太短: 无法可靠检测3-7年商业周期
     - 10年太长: 公司可能发生结构性变化，稀释近期信号
@@ -10,6 +12,19 @@
     1. 近期窗口 (Recent Horizon, 5年): 计算趋势、增长率、质量评分
     2. 扩展窗口 (Extended Horizon, 10年): 周期性检测、结构断点、长期均值
     3. 结构断点检测: 识别公司本质变化点，自动选择有效数据窗口
+    4. 指标智能分类: 根据指标类型自动调整窗口权重和策略
+    5. 周期位置分析: 判断当前处于周期高点/低点/上升/下降
+
+核心能力:
+    ┌────────────────┬──────────────────┬──────────────────────────────┐
+    │  指标类型      │  主窗口权重      │  扩展窗口用途                 │
+    ├────────────────┼──────────────────┼──────────────────────────────┤
+    │  效率类(ROE)   │  75%近5年        │  周期位置判断、长期中枢       │
+    │  增长类(营收)  │  70%近5年        │  周期性检测、增长持续性       │
+    │  杠杆类(负债)  │  80%近5年        │  长期风险演变                 │
+    │  周转类(周转)  │  65%近5年        │  长期趋势、行业周期           │
+    │  质量类(现金)  │  70%近5年        │  现金流质量趋势               │
+    └────────────────┴──────────────────┴──────────────────────────────┘
 
 学术参考:
     - Bai, J., & Perron, P. (1998). Estimating and Testing Linear Models with Multiple
@@ -24,6 +39,7 @@
 
 作者: AStock Analysis System
 日期: 2025-12-07
+更新: 2025-12-25 - 整合 ProfessionalDataWindowStrategy，增强指标分类和策略能力
 """
 
 from __future__ import annotations
@@ -35,6 +51,140 @@ from enum import Enum
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# 指标分类与策略配置
+# =============================================================================
+
+class MetricCategory(Enum):
+    """指标类别
+
+    不同类型的财务指标具有不同的特性，需要采用不同的分析策略:
+    - 效率类: 受周期影响，关注长期中枢
+    - 增长类: 关注持续性，需要更多历史数据验证
+    - 杠杆类: 风险指标，重点关注近期变化
+    - 周转类: 周期性强，需要周期分析
+    - 质量类: 关注现金流真实性
+    """
+    EFFICIENCY = "efficiency"      # 效率类: ROE, ROIC, 利润率
+    GROWTH = "growth"              # 增长类: 营收增长, 利润增长
+    LEVERAGE = "leverage"          # 杠杆类: 资产负债率
+    TURNOVER = "turnover"          # 周转类: 资产周转率
+    QUALITY = "quality"            # 质量类: 现金流覆盖率
+
+
+@dataclass(frozen=True)
+class WindowStrategy:
+    """窗口策略配置
+
+    定义不同指标类别使用的分析策略参数。
+
+    Attributes:
+        primary_window: 主窗口年数（用于趋势计算）
+        extended_window: 扩展窗口年数（用于辅助分析）
+        primary_weight: 主窗口权重 (0-1)
+        use_break_detection: 是否启用断点检测
+        use_cyclical_analysis: 是否启用周期分析
+        description: 策略说明
+    """
+    primary_window: int
+    extended_window: int
+    primary_weight: float
+    use_break_detection: bool
+    use_cyclical_analysis: bool
+    description: str
+
+
+# 各类指标的默认策略配置
+METRIC_STRATEGIES: Dict[MetricCategory, WindowStrategy] = {
+    MetricCategory.EFFICIENCY: WindowStrategy(
+        primary_window=5,
+        extended_window=10,
+        primary_weight=0.75,
+        use_break_detection=True,
+        use_cyclical_analysis=True,
+        description="效率指标：近5年为主(75%)，10年用于周期判断和断点检测"
+    ),
+    MetricCategory.GROWTH: WindowStrategy(
+        primary_window=5,
+        extended_window=10,
+        primary_weight=0.70,
+        use_break_detection=True,
+        use_cyclical_analysis=True,
+        description="增长指标：近5年为主(70%)，10年用于增长持续性验证"
+    ),
+    MetricCategory.LEVERAGE: WindowStrategy(
+        primary_window=5,
+        extended_window=10,
+        primary_weight=0.80,
+        use_break_detection=True,
+        use_cyclical_analysis=False,  # 杠杆不需要周期分析
+        description="杠杆指标：重点关注近期(80%)，警惕长期趋势恶化"
+    ),
+    MetricCategory.TURNOVER: WindowStrategy(
+        primary_window=5,
+        extended_window=10,
+        primary_weight=0.65,
+        use_break_detection=True,
+        use_cyclical_analysis=True,
+        description="周转指标：周期性较强，扩展窗口权重略高(35%)"
+    ),
+    MetricCategory.QUALITY: WindowStrategy(
+        primary_window=5,
+        extended_window=10,
+        primary_weight=0.70,
+        use_break_detection=True,
+        use_cyclical_analysis=False,
+        description="质量指标：关注近期现金流质量(70%)"
+    ),
+}
+
+
+def classify_metric(metric_name: str) -> MetricCategory:
+    """
+    智能指标分类
+
+    根据指标名称自动识别指标类别，用于选择合适的分析策略。
+
+    Args:
+        metric_name: 指标名称（支持中英文）
+
+    Returns:
+        MetricCategory: 指标类别
+
+    Examples:
+        >>> classify_metric("roe")
+        MetricCategory.EFFICIENCY
+        >>> classify_metric("revenue_growth")
+        MetricCategory.GROWTH
+        >>> classify_metric("debt_ratio")
+        MetricCategory.LEVERAGE
+    """
+    name = metric_name.lower()
+
+    # 质量类 (优先匹配，因为 ocf_ratio 应该是质量类)
+    if any(k in name for k in ["cash", "fcf", "ocf", "现金", "经营", "quality"]):
+        return MetricCategory.QUALITY
+
+    # 杠杆类 (优先匹配 debt_ratio)
+    if any(k in name for k in ["debt", "liability", "leverage", "负债", "杠杆"]):
+        return MetricCategory.LEVERAGE
+
+    # 周转类
+    if any(k in name for k in ["turn", "周转"]):
+        return MetricCategory.TURNOVER
+
+    # 增长类
+    if any(k in name for k in ["revenue", "profit", "growth", "sales", "income", "营收", "利润", "增长"]):
+        return MetricCategory.GROWTH
+
+    # 效率类 (默认兜底，包含 roe, roic, margin, rate, ratio 等)
+    if any(k in name for k in ["roe", "roic", "margin", "rate", "ratio", "净利率", "毛利率", "efficiency", "效率"]):
+        return MetricCategory.EFFICIENCY
+
+    # 默认为效率类
+    return MetricCategory.EFFICIENCY
 
 
 # =============================================================================
@@ -125,9 +275,14 @@ class HorizonAnalysis:
 
 @dataclass
 class MultiHorizonResult:
-    """多时间窗口综合分析结果
+    """多时间窗口综合分析结果 (增强版 v2.0)
 
-    这是本模块的核心输出，整合多个时间窗口的分析。
+    这是本模块的核心输出，整合多个时间窗口的分析，包含:
+    - 多窗口统计分析
+    - 结构断点检测
+    - 指标分类与策略
+    - 周期位置分析
+    - 智能建议生成
 
     Attributes:
         recent_analysis: 近5年分析（主要判断依据）
@@ -139,11 +294,25 @@ class MultiHorizonResult:
         # 综合指标
         effective_slope: 综合加权斜率
         effective_cagr: 综合加权CAGR
+        effective_cv: 变异系数
+        effective_latest: 最新值
         data_regime: 数据体制 ("stable", "broken", "transitional")
 
         # 权重分配
         recent_weight: 近期数据权重 (0-1)
         extended_weight: 扩展数据权重 (0-1)
+
+        # 指标分类与策略 (v2.0 新增)
+        metric_category: 指标类别
+        applied_strategy: 应用的窗口策略
+
+        # 周期分析 (v2.0 新增)
+        cyclical_confidence: 周期性置信度 (0-1)
+        cycle_position: 周期位置 (top/bottom/mid_up/mid_down/unknown)
+
+        # 质量评估 (v2.0 新增)
+        analysis_confidence: 综合分析置信度 (0-1)
+        data_quality_grade: 数据质量等级 (A-F)
 
         # 建议
         recommendation: 分析建议
@@ -158,14 +327,28 @@ class MultiHorizonResult:
     # 综合指标
     effective_slope: float
     effective_cagr: float
-    data_regime: str  # stable, broken, transitional
+    effective_cv: float = 0.0
+    effective_latest: float = 0.0
+    data_regime: str = "stable"  # stable, broken, transitional
 
     # 权重分配
-    recent_weight: float
-    extended_weight: float
+    recent_weight: float = 0.7
+    extended_weight: float = 0.3
+
+    # 指标分类与策略 (v2.0)
+    metric_category: Optional[MetricCategory] = None
+    applied_strategy: Optional[WindowStrategy] = None
+
+    # 周期分析 (v2.0)
+    cyclical_confidence: float = 0.0
+    cycle_position: str = "unknown"
+
+    # 质量评估 (v2.0)
+    analysis_confidence: float = 0.5
+    data_quality_grade: str = "C"
 
     # 建议
-    recommendation: str
+    recommendation: str = ""
     warnings: List[str] = field(default_factory=list)
 
 
@@ -490,29 +673,40 @@ class StructuralBreakDetector:
 
 
 # =============================================================================
-# 多时间窗口分析器
+# 多时间窗口分析器 (增强版 v2.0)
 # =============================================================================
 
 class MultiHorizonProbe:
     """
-    多时间窗口分析探针
+    多时间窗口分析探针 (增强版 v2.0)
+
+    整合了原 ProfessionalDataWindowStrategy 的所有能力:
+    - 智能指标分类
+    - 策略驱动的窗口权重
+    - 周期位置分析
+    - 专业级建议生成
 
     Unified interface following ProbeProtocol:
     - compute(values, **kwargs) -> MultiHorizonResult
     - default() -> MultiHorizonResult
 
     核心设计理念:
-    - 近5年 (Recent): 70%权重，反映当前经营状态
-    - 全10年 (Extended): 30%权重，用于周期检测和断点识别
+    - 近5年 (Recent): 默认70%权重，反映当前经营状态
+    - 全10年 (Extended): 默认30%权重，用于周期检测和断点识别
     - 断点后 (Effective): 如检测到断点，使用断点后数据
+    - 智能策略: 根据指标类型自动调整权重
 
     使用场景:
     1. 有10年数据: 自动检测断点，智能选择有效窗口
     2. 只有5年数据: 仅使用recent分析，降低置信度
+    3. 不同指标: 自动识别类型，应用最佳策略
 
-    输出说明:
-    - effective_slope: 根据数据情况加权计算的综合斜率
-    - recommendation: 基于分析的投资建议
+    使用示例:
+        >>> probe = MultiHorizonProbe(auto_classify=True)
+        >>> result = probe.compute([12, 13, 14, 15, 16, 18, 17, 16, 15, 14], "roe")
+        >>> print(result.metric_category)  # MetricCategory.EFFICIENCY
+        >>> print(result.cycle_position)   # "mid_down"
+        >>> print(result.recommendation)
     """
 
     def __init__(
@@ -520,19 +714,29 @@ class MultiHorizonProbe:
         recent_years: int = 5,
         recent_weight: float = 0.70,
         extended_weight: float = 0.30,
-        break_threshold: float = 0.30,  # 断点效应量阈值
+        break_threshold: float = 0.30,
+        auto_classify: bool = True,
+        custom_strategies: Optional[Dict[MetricCategory, WindowStrategy]] = None,
     ):
         """
         Args:
             recent_years: 近期窗口年数
-            recent_weight: 近期窗口默认权重
-            extended_weight: 扩展窗口默认权重
+            recent_weight: 近期窗口默认权重 (auto_classify=False时使用)
+            extended_weight: 扩展窗口默认权重 (auto_classify=False时使用)
             break_threshold: 断点效应量阈值
+            auto_classify: 是否根据指标名称自动分类并应用策略
+            custom_strategies: 自定义策略配置（覆盖默认）
         """
         self.recent_years = recent_years
         self.default_recent_weight = recent_weight
         self.default_extended_weight = extended_weight
         self.break_threshold = break_threshold
+        self.auto_classify = auto_classify
+
+        # 策略配置
+        self.strategies = METRIC_STRATEGIES.copy()
+        if custom_strategies:
+            self.strategies.update(custom_strategies)
 
         self.break_detector = StructuralBreakDetector(
             min_segment_years=3,
@@ -543,14 +747,16 @@ class MultiHorizonProbe:
     def compute(
         self,
         values: List[float],
-        metric_name: str = "unknown"
+        metric_name: str = "unknown",
+        category_override: Optional[MetricCategory] = None,
     ) -> MultiHorizonResult:
         """
-        执行多时间窗口分析
+        执行多时间窗口分析 (增强版)
 
         Args:
             values: 时间序列数据（按时间顺序，旧→新）
-            metric_name: 指标名称（用于日志和报告）
+            metric_name: 指标名称（用于自动分类和报告）
+            category_override: 手动指定指标类别（覆盖自动分类）
 
         Returns:
             MultiHorizonResult: 综合分析结果
@@ -558,6 +764,18 @@ class MultiHorizonProbe:
         n = len(values)
         arr = np.array(values, dtype=float)
         warnings = []
+
+        # 0. 智能指标分类与策略选择
+        if self.auto_classify:
+            category = category_override or classify_metric(metric_name)
+            strategy = self.strategies.get(category, METRIC_STRATEGIES[MetricCategory.EFFICIENCY])
+            base_recent_weight = strategy.primary_weight
+            base_extended_weight = 1.0 - strategy.primary_weight
+        else:
+            category = category_override
+            strategy = None
+            base_recent_weight = self.default_recent_weight
+            base_extended_weight = self.default_extended_weight
 
         # 1. 计算近5年分析（始终执行）
         recent_start = max(0, n - self.recent_years)
@@ -582,7 +800,8 @@ class MultiHorizonProbe:
             )
 
         # 3. 结构断点检测
-        if n >= 6:  # 至少6年才能做断点检测
+        use_break_detection = strategy.use_break_detection if strategy else True
+        if use_break_detection and n >= 6:
             structural_break = self.break_detector.detect(values)
         else:
             structural_break = StructuralBreakResult(
@@ -615,7 +834,8 @@ class MultiHorizonProbe:
 
         # 5. 计算权重和综合指标
         weights = self._compute_weights(
-            n, structural_break, recent_analysis, extended_analysis
+            n, structural_break, recent_analysis, extended_analysis,
+            base_recent_weight, base_extended_weight
         )
 
         effective_slope, effective_cagr = self._compute_effective_metrics(
@@ -625,19 +845,39 @@ class MultiHorizonProbe:
             weights
         )
 
+        # 提取近期 CV 和最新值
+        effective_cv = recent_analysis.cv
+        effective_latest = recent_analysis.latest_value
+
         # 6. 确定数据体制
         data_regime = self._determine_regime(
             structural_break, recent_analysis, extended_analysis
         )
 
-        # 7. 生成建议
-        recommendation = self._generate_recommendation(
-            recent_analysis,
-            extended_analysis,
-            effective_analysis,
-            structural_break,
-            data_regime,
-            metric_name
+        # 7. 周期性分析 (v2.0 新增)
+        use_cyclical = strategy.use_cyclical_analysis if strategy else True
+        if use_cyclical and n >= 7:
+            cyclical_confidence, cycle_position = self._analyze_cyclical(arr)
+        else:
+            cyclical_confidence, cycle_position = 0.0, "unknown"
+
+        # 8. 计算综合分析置信度 (v2.0 新增)
+        analysis_confidence = self._compute_analysis_confidence(
+            recent_analysis, structural_break.has_break, cyclical_confidence
+        )
+        data_quality_grade = recent_analysis.reliability_grade
+
+        # 9. 生成专业建议 (v2.0 增强)
+        recommendation = self._generate_professional_recommendation(
+            metric_name=metric_name,
+            category=category,
+            recent=recent_analysis,
+            extended=extended_analysis,
+            effective=effective_analysis,
+            break_result=structural_break,
+            regime=data_regime,
+            cyclical_confidence=cyclical_confidence,
+            cycle_position=cycle_position,
         )
 
         return MultiHorizonResult(
@@ -645,14 +885,164 @@ class MultiHorizonProbe:
             extended_analysis=extended_analysis,
             effective_analysis=effective_analysis,
             structural_break=structural_break,
+            # 综合指标
             effective_slope=effective_slope,
             effective_cagr=effective_cagr,
+            effective_cv=effective_cv,
+            effective_latest=effective_latest,
             data_regime=data_regime,
+            # 权重
             recent_weight=weights[0],
             extended_weight=weights[1],
+            # 策略 (v2.0)
+            metric_category=category,
+            applied_strategy=strategy,
+            # 周期 (v2.0)
+            cyclical_confidence=cyclical_confidence,
+            cycle_position=cycle_position,
+            # 质量 (v2.0)
+            analysis_confidence=analysis_confidence,
+            data_quality_grade=data_quality_grade,
+            # 建议
             recommendation=recommendation,
             warnings=warnings
         )
+
+    def _analyze_cyclical(self, arr: np.ndarray) -> Tuple[float, str]:
+        """
+        周期性分析
+
+        快速判断数据是否具有周期性，以及当前所处位置。
+
+        Args:
+            arr: 时间序列数据
+
+        Returns:
+            (cyclical_confidence, cycle_position): 周期置信度和位置
+        """
+        n = len(arr)
+        if n < 5:
+            return 0.0, "unknown"
+
+        mean_val = np.mean(arr)
+        std_val = np.std(arr)
+        cv = std_val / abs(mean_val) if abs(mean_val) > 0.01 else 0
+
+        # 检查峰谷
+        max_idx = np.argmax(arr)
+        min_idx = np.argmin(arr)
+
+        # 峰谷比
+        if arr[min_idx] > 0:
+            peak_trough_ratio = arr[max_idx] / arr[min_idx]
+        else:
+            peak_trough_ratio = 1.0
+
+        # 周期性判断
+        if cv > 0.25 and peak_trough_ratio > 1.5:
+            cyclical_conf = min(0.8, cv + (peak_trough_ratio - 1) * 0.2)
+
+            # 确定当前位置
+            latest = arr[-1]
+            if latest > mean_val + 0.5 * std_val:
+                position = "top"
+            elif latest < mean_val - 0.5 * std_val:
+                position = "bottom"
+            elif len(arr) >= 2 and arr[-1] > arr[-2]:
+                position = "mid_up"
+            else:
+                position = "mid_down"
+
+            return cyclical_conf, position
+
+        return 0.2, "unknown"
+
+    def _compute_analysis_confidence(
+        self,
+        recent: HorizonAnalysis,
+        has_break: bool,
+        cyclical_confidence: float
+    ) -> float:
+        """计算综合分析置信度"""
+        base_conf = recent.confidence_ceiling
+
+        # 有断点会降低置信度
+        if has_break:
+            base_conf *= 0.85
+
+        # 强周期性增加不确定性
+        if cyclical_confidence > 0.5:
+            base_conf *= 0.90
+
+        return base_conf
+
+    def _generate_professional_recommendation(
+        self,
+        metric_name: str,
+        category: Optional[MetricCategory],
+        recent: HorizonAnalysis,
+        extended: Optional[HorizonAnalysis],
+        effective: Optional[HorizonAnalysis],
+        break_result: StructuralBreakResult,
+        regime: str,
+        cyclical_confidence: float,
+        cycle_position: str,
+    ) -> str:
+        """生成专业级分析建议"""
+        parts = []
+
+        # 指标类别标签
+        category_labels = {
+            MetricCategory.EFFICIENCY: "📊效率",
+            MetricCategory.GROWTH: "📈增长",
+            MetricCategory.LEVERAGE: "⚖️杠杆",
+            MetricCategory.TURNOVER: "🔄周转",
+            MetricCategory.QUALITY: "💎质量",
+        }
+        cat_label = category_labels.get(category, "📊") if category else "📊"
+
+        # 趋势判断
+        slope = effective.slope if effective else recent.slope
+        if slope > 0.10:
+            parts.append(f"{cat_label} 强势向好 (斜率{slope:.1%})")
+        elif slope > 0.03:
+            parts.append(f"{cat_label} 稳步上升 (斜率{slope:.1%})")
+        elif slope > -0.03:
+            parts.append(f"{cat_label} 走势平稳")
+        elif slope > -0.10:
+            parts.append(f"{cat_label} 小幅下滑 (斜率{slope:.1%})")
+        else:
+            parts.append(f"{cat_label} 显著下滑 (斜率{slope:.1%})")
+
+        # 断点信息
+        if regime == "broken":
+            parts.append(f"⚠️断点后数据({effective.years if effective else '?'}年)")
+        elif regime == "transitional":
+            if extended:
+                parts.append(f"📊转换期: 近{recent.slope:.2%} vs 长{extended.slope:.2%}")
+
+        # 周期信息
+        if cyclical_confidence > 0.5:
+            pos_labels = {
+                "top": "🔝周期高位",
+                "bottom": "🔻周期低位",
+                "mid_up": "⬆️上升期",
+                "mid_down": "⬇️下降期",
+            }
+            pos_label = pos_labels.get(cycle_position, "")
+            if pos_label:
+                parts.append(pos_label)
+
+                # 周期位置警告
+                if cycle_position == "top":
+                    parts.append("💡注意均值回归")
+                elif cycle_position == "bottom":
+                    parts.append("💡关注反转机会")
+
+        # 数据可靠性
+        parts.append(f"可靠性:{recent.reliability_grade}")
+
+        return " | ".join(parts)
 
     def _analyze_horizon(
         self,
@@ -747,42 +1137,46 @@ class MultiHorizonProbe:
         n: int,
         break_result: StructuralBreakResult,
         recent: HorizonAnalysis,
-        extended: Optional[HorizonAnalysis]
+        extended: Optional[HorizonAnalysis],
+        base_recent_weight: float = 0.70,
+        base_extended_weight: float = 0.30,
     ) -> Tuple[float, float]:
         """
-        计算动态权重
+        计算动态权重 (增强版)
 
-        规则:
-        1. 存在断点: 增加近期权重
-        2. 近期波动大: 增加扩展权重（平滑噪音）
-        3. 趋势一致: 平均权重
+        基于策略配置和数据特征动态调整权重:
+        1. 基础权重来自策略配置（不同指标类别不同）
+        2. 存在断点: 增加近期权重
+        3. 近期高波动: 增加扩展权重（平滑噪音）
         4. 趋势分歧: 增加近期权重
+
+        Args:
+            base_recent_weight: 策略配置的基础近期权重
+            base_extended_weight: 策略配置的基础扩展权重
         """
-        recent_w = self.default_recent_weight
-        extended_w = self.default_extended_weight
+        recent_w = base_recent_weight
+        extended_w = base_extended_weight
 
         # 只有近期数据
         if extended is None:
             return (1.0, 0.0)
 
-        # 存在断点
+        # 存在断点: 大幅提高近期权重
         if break_result.has_break:
-            # 断点后权重更高
-            recent_w = 0.85
-            extended_w = 0.15
+            recent_w = max(recent_w, 0.85)
+            extended_w = 1.0 - recent_w
 
-        # 近期高波动
+        # 近期高波动: 增加扩展权重平滑噪音
         elif recent.cv > 0.30:
-            # 使用更多扩展数据来平滑
-            recent_w = 0.60
-            extended_w = 0.40
+            # 但不能低于策略配置的60%
+            recent_w = max(0.60, recent_w - 0.10)
+            extended_w = 1.0 - recent_w
 
-        # 趋势方向分歧
+        # 趋势方向分歧: 可能是转折，更信任近期
         elif (recent.slope > 0 and extended.slope < 0) or \
              (recent.slope < 0 and extended.slope > 0):
-            # 可能是转折，更信任近期
-            recent_w = 0.80
-            extended_w = 0.20
+            recent_w = max(recent_w, 0.80)
+            extended_w = 1.0 - recent_w
 
         return (recent_w, extended_w)
 
@@ -898,14 +1292,16 @@ class MultiHorizonProbe:
 
 def analyze_multi_horizon(
     values: List[float],
-    metric_name: str = "unknown"
+    metric_name: str = "unknown",
+    auto_classify: bool = True,
 ) -> MultiHorizonResult:
     """
-    便捷函数: 执行多时间窗口分析
+    便捷函数: 执行多时间窗口分析 (增强版)
 
     Args:
         values: 时间序列数据
-        metric_name: 指标名称
+        metric_name: 指标名称（用于自动分类）
+        auto_classify: 是否自动分类指标
 
     Returns:
         MultiHorizonResult: 分析结果
@@ -913,9 +1309,11 @@ def analyze_multi_horizon(
     Example:
         >>> data = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28]
         >>> result = analyze_multi_horizon(data, "revenue")
+        >>> print(result.metric_category)  # MetricCategory.GROWTH
+        >>> print(result.cycle_position)
         >>> print(result.recommendation)
     """
-    analyzer = MultiHorizonProbe()
+    analyzer = MultiHorizonProbe(auto_classify=auto_classify)
     return analyzer.compute(values, metric_name)
 
 
@@ -939,48 +1337,64 @@ def detect_structural_break(values: List[float]) -> StructuralBreakResult:
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("多时间窗口分析探针测试")
+    print("多时间窗口分析探针测试 (增强版 v2.0)")
     print("=" * 70)
 
-    # 测试1: 稳定增长数据（无断点）
-    print("\n1. 稳定增长数据:")
-    stable_data = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28]
-    result = analyze_multi_horizon(stable_data, "revenue")
-    print(f"   数据体制: {result.data_regime}")
+    # 测试1: ROE数据（效率类 - 自动分类）
+    print("\n1. ROE数据（自动分类为效率类）:")
+    roe_data = [12, 13, 14, 15, 16, 18, 17, 16, 15, 14]
+    result = analyze_multi_horizon(roe_data, "roe")
+    print(f"   指标类别: {result.metric_category.value if result.metric_category else 'N/A'}")
+    print(f"   策略权重: 近期{result.recent_weight:.0%} / 扩展{result.extended_weight:.0%}")
     print(f"   有效斜率: {result.effective_slope:.4f}")
-    print(f"   断点: {result.structural_break.has_break}")
+    print(f"   周期置信: {result.cyclical_confidence:.1%}")
+    print(f"   周期位置: {result.cycle_position}")
+    print(f"   分析置信: {result.analysis_confidence:.1%}")
     print(f"   建议: {result.recommendation}")
 
-    # 测试2: 有断点数据（前5年低，后5年高）
-    print("\n2. 有断点数据 (前低后高):")
-    break_data = [10, 11, 12, 11, 10, 25, 28, 30, 32, 35]
-    result = analyze_multi_horizon(break_data, "profit")
+    # 测试2: 营收数据（增长类 - 有断点）
+    print("\n2. 营收数据（增长类，有断点）:")
+    revenue_data = [100, 105, 110, 108, 105, 200, 220, 250, 280, 300]
+    result = analyze_multi_horizon(revenue_data, "revenue")
+    print(f"   指标类别: {result.metric_category.value if result.metric_category else 'N/A'}")
     print(f"   数据体制: {result.data_regime}")
-    print(f"   断点: {result.structural_break.has_break}")
+    print(f"   有断点: {result.structural_break.has_break}")
     if result.structural_break.has_break:
         print(f"   断点位置: 第{result.structural_break.break_year_index+1}年后")
-        print(f"   断点类型: {result.structural_break.break_type.value}")
     print(f"   有效斜率: {result.effective_slope:.4f}")
     print(f"   建议: {result.recommendation}")
 
-    # 测试3: 近期下滑数据
-    print("\n3. 近期下滑数据:")
-    decline_data = [10, 15, 20, 25, 30, 28, 25, 22, 20, 18]
-    result = analyze_multi_horizon(decline_data, "roe")
-    print(f"   数据体制: {result.data_regime}")
-    print(f"   近期斜率: {result.recent_analysis.slope:.4f}")
-    print(f"   扩展斜率: {result.extended_analysis.slope:.4f}")
+    # 测试3: 资产负债率（杠杆类 - 高权重近期）
+    print("\n3. 资产负债率（杠杆类）:")
+    debt_data = [45, 48, 50, 52, 55, 58, 60, 63, 65, 68]
+    result = analyze_multi_horizon(debt_data, "debt_ratio")
+    print(f"   指标类别: {result.metric_category.value if result.metric_category else 'N/A'}")
+    print(f"   策略权重: 近期{result.recent_weight:.0%} / 扩展{result.extended_weight:.0%}")
+    print(f"   策略说明: {result.applied_strategy.description if result.applied_strategy else 'N/A'}")
     print(f"   有效斜率: {result.effective_slope:.4f}")
-    print(f"   权重分配: 近期{result.recent_weight:.0%} / 扩展{result.extended_weight:.0%}")
     print(f"   建议: {result.recommendation}")
 
-    # 测试4: 只有5年数据
-    print("\n4. 只有5年数据:")
-    short_data = [10, 12, 14, 16, 18]
+    # 测试4: 现金流（质量类）
+    print("\n4. 现金流（质量类）:")
+    ocf_data = [50, 55, 60, 58, 65, 70, 68, 75, 80, 85]
+    result = analyze_multi_horizon(ocf_data, "ocf_ratio")
+    print(f"   指标类别: {result.metric_category.value if result.metric_category else 'N/A'}")
+    print(f"   有效斜率: {result.effective_slope:.4f}")
+    print(f"   有效CV: {result.effective_cv:.2f}")
+    print(f"   最新值: {result.effective_latest:.1f}")
+    print(f"   建议: {result.recommendation}")
+
+    # 测试5: 只有5年数据
+    print("\n5. 只有5年数据:")
+    short_data = [15, 16, 17, 18, 19]
     result = analyze_multi_horizon(short_data, "roic")
-    print(f"   数据体制: {result.data_regime}")
+    print(f"   数据年数: 5")
+    print(f"   指标类别: {result.metric_category.value if result.metric_category else 'N/A'}")
+    print(f"   数据质量: {result.data_quality_grade}")
+    print(f"   分析置信: {result.analysis_confidence:.1%}")
     print(f"   有效斜率: {result.effective_slope:.4f}")
-    print(f"   可靠性: {result.recent_analysis.reliability_grade}")
     print(f"   警告: {result.warnings}")
 
-    print("\n✓ 测试完成")
+    print("\n" + "=" * 70)
+    print("✓ 增强版测试完成!")
+    print("=" * 70)

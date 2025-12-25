@@ -5,7 +5,6 @@
 from __future__ import annotations
 from typing import Any, Dict
 import logging
-import hashlib
 
 from ..context import PipelineContext
 
@@ -32,16 +31,8 @@ class ResultAssembler:
             if '__' in ds_name:
                 step, out = ds_name.split('__', 1)
                 ref = f"steps.{step}.outputs.parameters.{out}"
-                h = self._hash_reference(ref)
-                if h not in self.ctx.global_registry:
-                    self.ctx.reference_to_hash.setdefault(ref, h)
-                    self.ctx.reference_values[ref] = obj
-                    self.ctx.global_registry[h] = obj
-
-    @staticmethod
-    def _hash_reference(ref: str) -> str:
-        """生成引用的哈希值"""
-        return hashlib.sha256(ref.encode()).hexdigest()[:16]
+                # 使用统一的注册 API
+                self.ctx.register_reference(ref, obj)
 
     def assemble(
         self,

@@ -27,7 +27,7 @@ import numpy as np
 import logging
 
 # 导入现有探针的输出模型
-from ..analyzers.trend.models import (
+from ..trend.models import (
     LogTrendResult,
     VolatilityResult,
     CyclicalPatternResult,
@@ -455,6 +455,11 @@ class ProbeAdapter:
         来源：
         - 主要来自财务数据直接计算
         - 未来可以新增 fraud_detection_probe
+
+        数据提取策略（优先级）：
+        1. raw_values[-1] - 原始数据序列的最新值
+        2. log_trend.metadata.get('latest_value') - 如果探针结果包含
+        3. 默认值 0.0 - 允许降级运行
         """
         delta = DeltaFraudInput()
 
@@ -465,28 +470,55 @@ class ProbeAdapter:
         delta.receivables = outputs.receivables
         delta.related_party_transactions = outputs.related_party_transactions
 
-        # 从 OCF 和 net_profit 探针提取最新值
-        if outputs.ocf and outputs.ocf.raw_values is not None and len(outputs.ocf.raw_values) > 0:
-            delta.operating_cashflow = float(outputs.ocf.raw_values[-1])
+        # 从 OCF 探针提取最新值（带备用策略）
+        ocf_value = self._extract_latest_value(outputs.ocf, 'OCF')
+        if ocf_value is not None:
+            delta.operating_cashflow = ocf_value
         else:
             delta.is_degraded = True
             delta.degradation_reason = "缺失OCF数据"
 
-        if outputs.net_profit and outputs.net_profit.raw_values is not None and len(outputs.net_profit.raw_values) > 0:
-            delta.net_profit = float(outputs.net_profit.raw_values[-1])
-        else:
-            if not delta.is_degraded:
-                delta.is_degraded = True
-                delta.degradation_reason = "缺失净利润数据"
+        # 从 net_profit 探针提取最新值
+        profit_value = self._extract_latest_value(outputs.net_profit, '净利润')
+        if profit_value is not None:
+            delta.net_profit = profit_value
+        elif not delta.is_degraded:
+            delta.is_degraded = True
+            delta.degradation_reason = "缺失净利润数据"
 
-        if outputs.revenue and outputs.revenue.raw_values is not None and len(outputs.revenue.raw_values) > 0:
-            delta.revenue = float(outputs.revenue.raw_values[-1])
-        else:
-            if not delta.is_degraded:
-                delta.is_degraded = True
-                delta.degradation_reason = "缺失营收数据"
+        # 从 revenue 探针提取最新值
+        revenue_value = self._extract_latest_value(outputs.revenue, '营收')
+        if revenue_value is not None:
+            delta.revenue = revenue_value
+        elif not delta.is_degraded:
+            delta.is_degraded = True
+            delta.degradation_reason = "缺失营收数据"
 
         return delta
+
+    def _extract_latest_value(self, probe_outputs, indicator_name: str) -> float | None:
+        """
+        从 ProbeOutputs 提取最新值
+
+        优先级：
+        1. raw_values[-1]
+        2. log_trend.metadata['latest_value']（如果存在）
+        3. None（降级）
+        """
+        if probe_outputs is None:
+            return None
+
+        # 方案1: 从 raw_values 提取
+        if probe_outputs.raw_values is not None and len(probe_outputs.raw_values) > 0:
+            return float(probe_outputs.raw_values[-1])
+
+        # 方案2: 从 log_trend.metadata 提取（部分探针会存储）
+        if probe_outputs.log_trend and hasattr(probe_outputs.log_trend, 'metadata'):
+            metadata = probe_outputs.log_trend.metadata
+            if isinstance(metadata, dict) and 'latest_value' in metadata:
+                return float(metadata['latest_value'])
+
+        return None
 
     def _extract_delta_decay_input(self, outputs: MultiIndicatorProbeOutputs) -> DeltaDecayInput:
         """

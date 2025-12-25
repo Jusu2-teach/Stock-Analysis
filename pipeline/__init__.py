@@ -28,13 +28,13 @@ Usage Example:
     print(graph.to_mermaid())
 
 Author: AStock Team
-Version: 2.0.0
+Version: 2.1.0
 """
 from __future__ import annotations
 
 # Core Components
 from .core.execute_manager import ExecuteManager
-from .core.context import PipelineContext, StepSpec, StepOutput
+from .core.context import PipelineContext, StepSpec, StepOutput, REF_PATTERN
 from .core.dependency_graph import (
     DependencyGraph,
     DependencyType,
@@ -53,7 +53,7 @@ from .core.services.hook_manager import HookManager
 
 PREFECT_AVAILABLE = True  # always true in trimmed hybrid mode
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "AStock Team"
 
 # Export main classes and functions
@@ -63,6 +63,7 @@ __all__ = [
     'PipelineContext',
     'StepSpec',
     'StepOutput',
+    'REF_PATTERN',
     # Dependency Graph
     'DependencyGraph',
     'DependencyType',

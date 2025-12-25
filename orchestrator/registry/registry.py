@@ -1,6 +1,6 @@
 from __future__ import annotations
-import inspect
 import threading
+import logging
 from typing import Any, Dict, Optional
 from ..models import MethodRegistration
 from ..errors import (
@@ -11,9 +11,12 @@ from .index import RegistryIndex
 from .strategies import resolve_strategy
 from .metrics import MetricsService
 from .executor import MethodExecutor
-from .hooks import HookBus
-from .loader import ModuleLoader
-from .scanner import Scanner
+from .discovery import ModuleLoader, Scanner
+
+# 统一事件总线（必需依赖）
+from shared import EventBus, MethodRegisteredEvent, RegistryRefreshedEvent
+
+logger = logging.getLogger(__name__)
 
 
 class Registry:
@@ -34,9 +37,9 @@ class Registry:
         self.index = RegistryIndex()
         self.metrics = MetricsService()
         self.executor = MethodExecutor(self.metrics)
-        self.hooks = HookBus()
         self.loader = ModuleLoader(self.index, self.config)
         self.scanner = Scanner(self)
+        self._event_bus = EventBus.get()
 
     # ---------------- Singleton (Thread-Safe) -----------------
     @classmethod
@@ -66,8 +69,18 @@ class Registry:
                 return False
             # warn: 覆盖
         self.index.add(reg)
-        self.hooks.emit('after_method_registered', full_key=full_key, component=reg.component_type,
-                        engine_type=reg.engine_type, engine_name=reg.engine_name, version=reg.version)
+
+        # 发布方法注册事件
+        self._event_bus.emit(MethodRegisteredEvent(
+            component=reg.component_type,
+            method=reg.engine_name,
+            engine_type=reg.engine_type,
+            engine_name=reg.engine_name,
+            version=reg.version,
+            priority=reg.priority,
+            full_key=full_key,
+            source='orchestrator.registry'
+        ))
         return True
 
     def scan(self, module: Any, component_type: str, engine_type: str, **kwargs) -> int:
@@ -79,10 +92,15 @@ class Registry:
         return self.loader.load_all(hot_reload=hot_reload)
 
     def refresh(self, hot_reload: bool = True):
-        # 简化：全量重载 (清空索引 -> 重新加载)。装饰器再次执行完成重建。
+        """刷新注册表（清空索引 -> 重新加载）"""
         self.index.clear()
         self.auto_load(hot_reload=hot_reload)
-        self.hooks.emit('after_registry_refresh', mode='full')
+        # 发布刷新事件
+        self._event_bus.emit(RegistryRefreshedEvent(
+            mode='full',
+            method_count=len(self.index.by_full_key),
+            source='orchestrator.registry'
+        ))
 
     # ---------------- Selection -----------------
     def select(self, component_type: str, method_name: str, *, strategy: str = 'default', preferred_engine: Optional[str] = None) -> MethodRegistration:
@@ -114,12 +132,25 @@ class Registry:
 
     # ---------------- Introspection -------------
     def list_methods(self, component_type: Optional[str] = None, engine_type: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
-        if component_type:
-            bucket = self.index.by_component.get(component_type, {})
-        else:
-            bucket = self.index.by_component
+        """列出注册的方法
+
+        Args:
+            component_type: 可选，过滤指定组件类型
+            engine_type: 可选，过滤指定引擎类型
+
+        Returns:
+            以 full_key 为键的方法信息字典
+        """
         result: Dict[str, Dict[str, Any]] = {}
-        for comp, meth_map in bucket.items():
+
+        # 确定要遍历的组件列表
+        if component_type:
+            components = [component_type] if component_type in self.index.by_component else []
+        else:
+            components = list(self.index.by_component.keys())
+
+        for comp in components:
+            meth_map = self.index.by_component.get(comp, {})
             for meth, engs in meth_map.items():
                 for eng, reg in engs.items():
                     if engine_type and eng != engine_type:

@@ -63,19 +63,34 @@ def trend_field_schema() -> List[TrendField]:
     """返回默认的趋势分析字段 schema
 
     定义输出 DataFrame 中需要的字段及其来源路径。
+
+    注意: 字段路径必须与 TrendSnapshot 的实际属性名称匹配:
+    - trend: LogTrendResult (不是 trend_result)
+    - volatility: VolatilityResult (不是 volatility_result)
+    - inflection: InflectionResult
+    - deterioration: RecentDeteriorationResult
+    - cyclical: CyclicalPatternResult
+    - rolling: RollingTrendResult
+    - robust: RobustTrendResult
     """
     return [
-        # 核心趋势指标
-        TrendField("slope", "trend_result.slope", "趋势斜率", "", "core"),
-        TrendField("r_squared", "trend_result.r_squared", "R²拟合优度", "", "core"),
-        TrendField("p_value", "trend_result.p_value", "统计显著性", "", "core"),
-        TrendField("cagr", "trend_result.cagr", "复合增长率", "%", "core"),
-        TrendField("trend_direction", "trend_result.trend_direction", "趋势方向", "", "core"),
+        # 核心趋势指标 (来自 LogTrendResult)
+        TrendField("slope", "trend.slope", "趋势斜率", "", "core"),
+        TrendField("log_slope", "trend.log_slope", "对数斜率", "", "core"),
+        TrendField("r_squared", "trend.r_squared", "R²拟合优度", "", "core"),
+        TrendField("p_value", "trend.p_value", "统计显著性", "", "core"),
+        TrendField("cagr", "trend.cagr_approx", "复合增长率", "%", "core"),
+        TrendField("std_err", "trend.std_err", "标准误差", "", "core"),
 
-        # 波动性指标
-        TrendField("cv", "volatility_result.cv", "变异系数", "", "volatility"),
-        TrendField("volatility", "volatility_result.volatility", "波动率", "", "volatility"),
-        TrendField("zscore", "volatility_result.zscore", "Z分数", "", "volatility"),
+        # 波动性指标 (来自 VolatilityResult)
+        TrendField("cv", "volatility.cv", "变异系数", "", "volatility"),
+        TrendField("std_dev", "volatility.std_dev", "标准差", "", "volatility"),
+        TrendField("detrended_cv", "volatility.detrended_cv", "去趋势CV", "", "volatility"),
+        TrendField("volatility_type", "volatility.volatility_type", "波动类型", "", "volatility"),
+
+        # 稳健趋势指标 (来自 RobustTrendResult)
+        TrendField("robust_slope", "robust.robust_slope", "稳健斜率", "", "robust"),
+        TrendField("mann_kendall_tau", "robust.mann_kendall_tau", "MK系数", "", "robust"),
 
         # 加权平均
         TrendField("weighted_avg", "weighted_avg", "加权平均值", "", "core"),

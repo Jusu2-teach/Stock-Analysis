@@ -1,3 +1,15 @@
+"""IOManager - 集中式 I/O 解析与绑定管理器
+
+职责：
+1. 输入解析：从上游传入构造 ResolvedInputs
+2. 参数绑定：根据函数签名绑定调用参数
+3. 输出捕获：规范化 raw_result (dict/tuple/单值)
+4. Schema 校验：输入列和输出键校验
+
+注意：
+- 缓存策略已统一到 KedroEngine，此处不再维护独立缓存逻辑
+- CacheStrategy Protocol 保留供未来扩展（如分布式缓存）
+"""
 import inspect
 import time
 from dataclasses import dataclass, field
@@ -6,18 +18,18 @@ from typing import Any, Dict, List, Optional, Callable, Tuple, Union, Protocol
 import pandas as pd
 
 
+# ============================================================================
+# 缓存策略接口（预留扩展点，当前由 KedroEngine 统一管理）
+# ============================================================================
+
 class CacheStrategy(Protocol):
+    """缓存策略协议（预留接口）
+
+    当前缓存由 KedroEngine 的指纹签名机制统一管理。
+    此协议保留供未来扩展：如 Redis 分布式缓存、S3 持久化等。
+    """
     def hit(self, outputs: List[str], global_catalog: Dict[str, Any]) -> bool: ...
     def record(self, outputs: List[str], produced: Dict[str, Any], global_catalog: Dict[str, Any]): ...
-
-
-class SimplePresenceCache:
-    """最简单缓存：所有计划输出存在即视为命中"""
-    def hit(self, outputs: List[str], global_catalog: Dict[str, Any]) -> bool:
-        return bool(outputs) and all(o in global_catalog for o in outputs)
-    def record(self, outputs: List[str], produced: Dict[str, Any], global_catalog: Dict[str, Any]):
-        for k, v in produced.items():
-            global_catalog[k] = v
 
 
 @dataclass
@@ -38,12 +50,14 @@ class OutputSpec:
 
 @dataclass
 class NodeIOConfig:
+    """节点 I/O 配置"""
     step_name: str
     inputs: List[InputSpec] = field(default_factory=list)
     outputs: List[OutputSpec] = field(default_factory=list)
     primary_output: Optional[str] = None
     strict_schema: bool = False
-    cache_strategy: CacheStrategy = field(default_factory=SimplePresenceCache)
+    # 注意：缓存策略已统一到 KedroEngine，此字段保留供未来扩展
+    cache_strategy: Optional[CacheStrategy] = None
 
 
 @dataclass

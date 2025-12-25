@@ -145,12 +145,12 @@ pipeline:
       parameters:
         data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
         group_cols: 'ts_code'
-        metric_name: 'total_revenue_ps'
+        metric_name: 'revenue'  # 标准业务键 -> source_column: total_revenue_ps
         prefix: ""
         suffix: ""
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
-        reference_metrics: ["roe", "eps"]
+        reference_metrics: ["roe", "profit"]  # 交叉验证（使用标准业务键）
       outputs:
         parameters:
           - name: Revenue_Trend_Result
@@ -173,12 +173,12 @@ pipeline:
       parameters:
         data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
         group_cols: 'ts_code'
-        metric_name: 'eps'
+        metric_name: 'profit'  # 标准业务键 -> source_column: eps
         prefix: ""
         suffix: ""
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
-        reference_metrics: ["ocfps"]
+        reference_metrics: ["ocf"]  # 交叉验证（使用标准业务键）
       outputs:
         parameters:
           - name: Profit_Trend_Result
@@ -203,13 +203,13 @@ pipeline:
       parameters:
         data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
         group_cols: 'ts_code'
-        metric_name: 'grossprofit_margin'
+        metric_name: 'gross_margin'  # 标准业务键 -> source_column: grossprofit_margin
         prefix: ""
         suffix: ""
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
         enable_multi_horizon: true  # 启用断点检测
-        reference_metrics: ["netprofit_margin"]  # 交叉验证
+        reference_metrics: ["net_margin"]  # 交叉验证（使用标准业务键）
       outputs:
         parameters:
           - name: GrossMargin_Trend_Result
@@ -234,12 +234,12 @@ pipeline:
       parameters:
         data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
         group_cols: 'ts_code'
-        metric_name: 'netprofit_margin'
+        metric_name: 'net_margin'  # 标准业务键 -> source_column: netprofit_margin
         prefix: ""
         suffix: ""
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
-        reference_metrics: ["grossprofit_margin", "ocfps"]  # 交叉验证
+        reference_metrics: ["gross_margin", "ocf"]  # 交叉验证（使用标准业务键）
       outputs:
         parameters:
           - name: NetMargin_Trend_Result
@@ -270,7 +270,7 @@ pipeline:
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
         enable_multi_horizon: true  # 启用断点检测
-        reference_metrics: ["netprofit_margin", "roic"]  # 杜邦分解验证
+        reference_metrics: ["net_margin", "roic"]  # 杠邦分解验证（使用标准业务键）
       outputs:
         parameters:
           - name: ROE_Trend_Result
@@ -295,12 +295,12 @@ pipeline:
       parameters:
         data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
         group_cols: 'ts_code'
-        metric_name: 'ocfps'
+        metric_name: 'ocf'  # 标准业务键 -> source_column: ocfps
         prefix: ""
         suffix: ""
         min_periods: 5              # 最低5年数据要求
         window_size: 5            # 不配置=使用全部数据
-        reference_metrics: ["eps"]  # 现金流与利润交叉验证
+        reference_metrics: ["profit"]  # 现金流与利润交叉验证（使用标准业务键）
       outputs:
         parameters:
           - name: OCF_Trend_Result

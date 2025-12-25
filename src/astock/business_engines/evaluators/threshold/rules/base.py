@@ -9,8 +9,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Callable
 
-# 从 analyzers/trend 导入数据模型 (统一使用 TrendContext)
-from ....analyzers.trend.models import TrendContext
+# 从 trend 导入数据模型 (统一使用 TrendContext)
+from ....trend.models import TrendContext
 
 # 从 rule_config 导入配置
 from ..rule_config import RuleConfig, DEFAULT_CONFIG, RuleCategory

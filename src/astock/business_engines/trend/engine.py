@@ -6,6 +6,7 @@
 
 作者: AStock Analysis System
 日期: 2025-12-19
+更新: 2025-12-25 - 集成统一命名规范系统
 """
 
 from __future__ import annotations
@@ -27,6 +28,15 @@ except ImportError:
 # orchestrator path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
+
+# 🌟 集成统一命名规范系统
+try:
+    from shared.naming_convention import MetricRegistry, ColumnBuilder
+    HAS_NAMING_CONVENTION = True
+except ImportError:
+    HAS_NAMING_CONVENTION = False
+    MetricRegistry = None
+    ColumnBuilder = None
 
 from .core import (
     TrendAnalyzer,
@@ -58,19 +68,31 @@ def _snapshot_to_row(
     snapshot: TrendSnapshot,
     group_df: pd.DataFrame,
     keep_cols: List[str],
+    canonical_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     将 TrendSnapshot 转换为扁平的字典行
 
     提取核心趋势分析指标，适合输出到 DataFrame。
+    所有分析字段使用 {prefix}_{field} 格式，避免合并时列名冲突。
+
+    Args:
+        snapshot: 趋势快照对象
+        group_df: 分组数据
+        keep_cols: 保留的额外列
+        canonical_name: 可选的标准业务键名 (用于 metric_name 列)
     """
     row: Dict[str, Any] = {}
 
-    # 基本标识
+    # 基本标识（不加前缀）
     row['ts_code'] = snapshot.group_key
-    row['metric_name'] = snapshot.metric_name
+    # 🌟 metric_name 使用 canonical_name (如果提供)，否则使用 snapshot.metric_name
+    row['metric_name'] = canonical_name if canonical_name else snapshot.metric_name
 
-    # 从 group_df 提取保留列
+    # 指标前缀 (仍使用 snapshot.metric_name 作为列名前缀，保持与原始数据一致)
+    prefix = snapshot.metric_name
+
+    # 从 group_df 提取保留列（不加前缀）
     if not group_df.empty:
         latest_row = group_df.iloc[-1]
         for col in keep_cols:
@@ -79,60 +101,61 @@ def _snapshot_to_row(
 
     # 核心趋势指标
     trend = snapshot.trend
-    row['slope'] = trend.slope
-    row['log_slope'] = trend.log_slope
-    row['r_squared'] = trend.r_squared
-    row['p_value'] = trend.p_value
-    row['cagr_approx'] = trend.cagr_approx
-    row['trend_direction'] = "up" if trend.log_slope > 0 else ("down" if trend.log_slope < 0 else "flat")
+    row[f'{prefix}_slope'] = trend.slope
+    row[f'{prefix}_log_slope'] = trend.log_slope
+    row[f'{prefix}_r_squared'] = trend.r_squared
+    row[f'{prefix}_p_value'] = trend.p_value
+    row[f'{prefix}_cagr_approx'] = trend.cagr_approx
+    row[f'{prefix}_cagr'] = trend.cagr_approx  # 🌟 标准别名，保持与 FieldRegistry 一致
+    row[f'{prefix}_trend_direction'] = "up" if trend.log_slope > 0 else ("down" if trend.log_slope < 0 else "flat")
 
     # 波动性指标
     vol = snapshot.volatility
-    row['cv'] = vol.cv
-    row['std_dev'] = vol.std_dev
-    row['volatility_type'] = vol.volatility_type
-    row['volatility_regime'] = vol.volatility_regime
+    row[f'{prefix}_cv'] = vol.cv
+    row[f'{prefix}_std_dev'] = vol.std_dev
+    row[f'{prefix}_volatility_type'] = vol.volatility_type
+    row[f'{prefix}_volatility_regime'] = vol.volatility_regime
 
     # 退化检测
     det = snapshot.deterioration
-    row['has_deterioration'] = det.has_deterioration
-    row['deterioration_severity'] = det.severity
-    row['total_decline_pct'] = det.total_decline_pct
+    row[f'{prefix}_has_deterioration'] = det.has_deterioration
+    row[f'{prefix}_deterioration_severity'] = det.severity
+    row[f'{prefix}_total_decline_pct'] = det.total_decline_pct
 
     # 拐点检测
     infl = snapshot.inflection
-    row['has_inflection'] = infl.has_inflection
-    row['inflection_type'] = infl.inflection_type
+    row[f'{prefix}_has_inflection'] = infl.has_inflection
+    row[f'{prefix}_inflection_type'] = infl.inflection_type
 
     # 周期性
     cyc = snapshot.cyclical
-    row['is_cyclical'] = cyc.is_cyclical
-    row['current_phase'] = cyc.current_phase
-    row['cycle_position'] = cyc.cycle_position
+    row[f'{prefix}_is_cyclical'] = cyc.is_cyclical
+    row[f'{prefix}_current_phase'] = cyc.current_phase
+    row[f'{prefix}_cycle_position'] = cyc.cycle_position
 
     # 滚动趋势
     roll = snapshot.rolling
-    row['is_accelerating'] = roll.is_accelerating
-    row['is_decelerating'] = roll.is_decelerating
-    row['recent_3y_slope'] = roll.recent_3y_slope
+    row[f'{prefix}_is_accelerating'] = roll.is_accelerating
+    row[f'{prefix}_is_decelerating'] = roll.is_decelerating
+    row[f'{prefix}_recent_3y_slope'] = roll.recent_3y_slope
 
     # 稳健趋势
     robust = snapshot.robust
-    row['robust_slope'] = robust.robust_slope
-    row['mk_tau'] = robust.mann_kendall_tau
-    row['mk_p_value'] = robust.mann_kendall_p_value
+    row[f'{prefix}_robust_slope'] = robust.robust_slope
+    row[f'{prefix}_mk_tau'] = robust.mann_kendall_tau
+    row[f'{prefix}_mk_p_value'] = robust.mann_kendall_p_value
 
     # 加权平均与最新值
-    row['weighted_avg'] = snapshot.weighted_avg
-    row['latest_value'] = snapshot.latest_value
-    row['latest_vs_weighted_ratio'] = snapshot.latest_vs_weighted_ratio
+    row[f'{prefix}_weighted_avg'] = snapshot.weighted_avg
+    row[f'{prefix}_latest_value'] = snapshot.latest_value
+    row[f'{prefix}_latest_vs_weighted_ratio'] = snapshot.latest_vs_weighted_ratio
 
     # 多时间窗口分析
-    row['full_data_years'] = snapshot.full_data_years
-    row['trend_window_years'] = snapshot.trend_window_years
-    row['has_structural_break'] = snapshot.has_structural_break
-    row['break_year_index'] = snapshot.break_year_index
-    row['data_regime'] = snapshot.data_regime
+    row[f'{prefix}_full_data_years'] = snapshot.full_data_years
+    row[f'{prefix}_trend_window_years'] = snapshot.trend_window_years
+    row[f'{prefix}_has_structural_break'] = snapshot.has_structural_break
+    row[f'{prefix}_break_year_index'] = snapshot.break_year_index
+    row[f'{prefix}_data_regime'] = snapshot.data_regime
 
     return row
 
@@ -389,13 +412,53 @@ def analyze_metric_trend(
     else:
         raise ValueError(f"不支持的数据类型: {type(data)}")
 
-    logger.info(f"analyze_metric_trend: 加载数据 {len(df)} 行, 指标={metric_name}")
+    # =========================================================================
+    # 🌟 统一命名规范处理 (核心改进)
+    # =========================================================================
+    # 支持输入: business_key ('revenue') 或 source_column ('total_revenue_ps')
+    # 统一输出: 使用 source_column 读取数据, output_prefix 生成列名
+
+    source_column = metric_name  # 默认: metric_name 就是数据列名
+    output_prefix = metric_name  # 默认: metric_name 就是输出前缀
+    canonical_name = metric_name  # 默认: metric_name 就是标准名
+
+    if HAS_NAMING_CONVENTION and MetricRegistry is not None:
+        try:
+            # 尝试解析为标准指标
+            metric_config = MetricRegistry.resolve(metric_name)
+            source_column = metric_config.source_column  # 数据列名
+            output_prefix = metric_config.output_prefix  # 输出前缀
+            canonical_name = metric_config.business_key  # 标准业务键名
+
+            logger.info(
+                f"📋 命名规范解析: '{metric_name}' -> "
+                f"source='{source_column}', prefix='{output_prefix}', canonical='{canonical_name}'"
+            )
+
+            # 验证并给出建议
+            if metric_name != canonical_name:
+                logger.warning(
+                    f"⚠️ 建议: 在 YAML 中使用 business_key '{canonical_name}' "
+                    f"替代 '{metric_name}' 以保持配置统一"
+                )
+        except ValueError:
+            # 未注册的指标，使用原始 metric_name
+            logger.info(f"📋 未注册指标 '{metric_name}'，使用原始名称")
+    else:
+        logger.debug("命名规范系统不可用，使用原始 metric_name")
+
+    logger.info(f"analyze_metric_trend: 加载数据 {len(df)} 行, 指标={metric_name} (source={source_column})")
 
     # 2. 验证必要列
     if group_cols not in df.columns:
         raise ValueError(f"缺少分组列: {group_cols}")
-    if metric_name not in df.columns:
-        raise ValueError(f"缺少指标列: {metric_name}")
+    if source_column not in df.columns:
+        # 尝试给出有用的错误信息
+        available_cols = [c for c in df.columns if not c.startswith('_')]
+        raise ValueError(
+            f"缺少指标列: '{source_column}' (请求的 metric_name: '{metric_name}')\n"
+            f"可用列: {available_cols[:20]}..."
+        )
 
     # 3. 构建配置
     series_config = TrendSeriesConfig(
@@ -449,10 +512,11 @@ def analyze_metric_trend(
             )
 
             # 创建分析器
+            # 🌟 使用 source_column 读取数据，output_prefix 生成列名
             analyzer = TrendAnalyzer(
                 group_key=str(group_key),
                 group_df=group_df,
-                metric_name=metric_name,
+                metric_name=source_column,  # 使用 source_column 读取数据列
                 group_column=group_cols,
                 prefix=prefix,
                 suffix=suffix,
@@ -461,6 +525,11 @@ def analyze_metric_trend(
                 logger=logger,
                 config=config,
             )
+
+            # 🌟 覆盖输出前缀 (确保使用统一的 output_prefix)
+            # 注意: TrendAnalyzer 内部会使用 metric_name 作为前缀
+            # 如果 output_prefix 与 source_column 不同，需要特殊处理
+            # 当前设计: output_prefix == source_column，所以无需额外处理
 
             if not analyzer.valid:
                 failed += 1
@@ -484,7 +553,8 @@ def analyze_metric_trend(
             snapshot = analyzer.build_snapshot(default_evaluation, vector)
 
             # 将快照转换为扁平行
-            row = _snapshot_to_row(snapshot, analyzer.group_df, keep_cols)
+            # 🌟 传入 canonical_name，使 metric_name 列记录标准业务键名
+            row = _snapshot_to_row(snapshot, analyzer.group_df, keep_cols, canonical_name)
             collector.add(row)
             processed += 1
 

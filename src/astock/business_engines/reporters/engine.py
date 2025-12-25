@@ -9,9 +9,12 @@ Reporting Engine Entry Point
 数据输入：直接接收探针分析结果 DataFrame
 """
 import sys
+import logging
 from pathlib import Path
 from typing import Dict, Any
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
@@ -109,24 +112,46 @@ def report_truth(
     Returns:
         生成的报告内容
     """
+    # 构建备用探针数据
+    probe_data = {
+        'roic': roic_data,
+        'roe': roe_data,
+        'roiic': roiic_data,
+        'gross_margin': gross_margin_data,
+        'net_margin': net_margin_data,
+        'revenue': revenue_data,
+        'profit': profit_data,
+        'ocf': ocf_data,
+    }
+
     # 优先使用 truth_processed
     if truth_processed is not None:
-        generator = TruthReportGenerator(
-            truth_processed=truth_processed,
-            probe_data=truth_processed.get('probe_data', {})
-        )
+        # 检查 truth_processed 的类型
+        if isinstance(truth_processed, dict):
+            # 正常的字典返回
+            generator = TruthReportGenerator(
+                truth_processed=truth_processed,
+                probe_data=truth_processed.get('probe_data', probe_data)
+            )
+        elif hasattr(truth_processed, 'results') and hasattr(truth_processed, 'summary'):
+            # BatchProcessResult 对象（可能从缓存恢复时类型变化）
+            # 静默处理，不再输出警告
+            logger.debug(f"truth_processed 是 BatchProcessResult 对象，正在适配")
+            generator = TruthReportGenerator(
+                truth_processed={
+                    'processed_results': truth_processed,
+                    'results_df': pd.DataFrame(),
+                    'summary': truth_processed.summary,
+                    'probe_data': probe_data,
+                },
+                probe_data=probe_data
+            )
+        else:
+            # 其他未知类型，回退到探针数据
+            logger.debug(f"truth_processed 类型未知 ({type(truth_processed)}), 使用探针数据")
+            generator = TruthReportGenerator(probe_data=probe_data)
     else:
         # 兼容旧版：直接使用探针数据
-        probe_data = {
-            'roic': roic_data,
-            'roe': roe_data,
-            'roiic': roiic_data,
-            'gross_margin': gross_margin_data,
-            'net_margin': net_margin_data,
-            'revenue': revenue_data,
-            'profit': profit_data,
-            'ocf': ocf_data,
-        }
         generator = TruthReportGenerator(probe_data=probe_data)
 
     return generator.generate_report(output_path=output_path)

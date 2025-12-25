@@ -21,20 +21,20 @@ import numpy as np
 from .unified import ProbeSpec, UnifiedProbeEngine
 
 # 导入探针类 (新统一名称)
-from ...analyzers.trend.probes.log_trend_probe import LogTrendProbe
-from ...analyzers.trend.probes.volatility_probe import VolatilityProbe
-from ...analyzers.trend.probes.cyclical_probe import CyclicalProbe
-from ...analyzers.trend.probes.deterioration_probe import DeteriorationProbe
-from ...analyzers.trend.probes.rolling_probe import RollingProbe
-from ...analyzers.trend.probes.robust_probe import RobustTrendProbe
-from ...analyzers.trend.probes.inflection_probe import InflectionProbe
-from ...analyzers.trend.probes.multi_horizon_probe import (
+from ...trend.probes.log_trend_probe import LogTrendProbe
+from ...trend.probes.volatility_probe import VolatilityProbe
+from ...trend.probes.cyclical_probe import CyclicalProbe
+from ...trend.probes.deterioration_probe import DeteriorationProbe
+from ...trend.probes.rolling_probe import RollingProbe
+from ...trend.probes.robust_probe import RobustTrendProbe
+from ...trend.probes.inflection_probe import InflectionProbe
+from ...trend.probes.multi_horizon_probe import (
     MultiHorizonProbe,
     StructuralBreakDetector,
 )
 
 # 导入结果模型
-from ...analyzers.trend.models import (
+from ...trend.models import (
     LogTrendResult,
     VolatilityResult,
     CyclicalPatternResult,

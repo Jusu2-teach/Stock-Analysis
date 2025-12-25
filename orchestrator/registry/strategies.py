@@ -1,8 +1,36 @@
 from __future__ import annotations
-from typing import List, Protocol, Optional
+from typing import List, Protocol, Optional, Tuple
+
+
+# =============================================================================
+# Version Parsing (merged from utils_version.py)
+# =============================================================================
+
+def parse_version(v: str) -> Tuple[int, int, int]:
+    """Parse semantic version string to tuple for comparison.
+
+    Args:
+        v: Version string like "1.2.3"
+
+    Returns:
+        Tuple of (major, minor, patch) as integers
+    """
+    parts = (v or '0.0.0').split('.')
+    nums = []
+    for i in range(3):
+        try:
+            nums.append(int(parts[i]) if i < len(parts) else 0)
+        except ValueError:
+            nums.append(0)
+    return tuple(nums)  # type: ignore
+
+
+# =============================================================================
+# Imports (after parse_version is defined)
+# =============================================================================
+
 from ..models import MethodRegistration
 from ..errors import RegistryMethodNotFound, RegistryStrategyError
-from ..utils_version import parse_version
 
 
 class SelectionStrategy(Protocol):

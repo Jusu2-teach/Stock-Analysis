@@ -1,9 +1,9 @@
 """
-业务引擎模块（重构版 v2.2）
+业务引擎模块（重构版 v3.0）
 ========================
 
 提供业务分析功能：
-- analyzers/trend: 趋势分析探针（纯数学计算）
+- trend: 趋势分析探针（纯数学计算）
 - evaluators/threshold: 阈值评估（规则驱动）
 - reporters: 报告生成（综合报告 + T.R.U.T.H. 报告）
 - truth: T.R.U.T.H. 计算引擎（六大基因+三大求解器）
@@ -16,8 +16,8 @@
 
 from orchestrator import Registry
 from .reporters import engine as reporting_engine
-from .analysis import duckdb_engine as analysis_engine
-from .analyzers.trend import duckdb_engine as trend_engine
+from .analysis import engine as analysis_engine
+from .trend import engine as trend_engine
 from .truth import truth_engine  # T.R.U.T.H. 处理引擎
 
 # Scan Analysis (General)

@@ -15,10 +15,12 @@
     - DeteriorationProbe: 恶化检测
     - CyclicalProbe: 周期性检测（HP滤波、ACF、Hurst指数）
 
-多时间窗口分析:
-    - MultiHorizonProbe: 多时间窗口分析器
+多时间窗口分析 (增强版 v2.0):
+    - MultiHorizonProbe: 多时间窗口分析器（整合指标分类、策略配置、周期分析）
     - StructuralBreakDetector: 结构断点检测
-    - ProfessionalDataWindowStrategy: 专业数据窗口策略
+    - MetricCategory: 指标类别枚举
+    - WindowStrategy: 窗口策略配置
+    - classify_metric: 指标自动分类函数
 
 所有探针遵循统一协议 (ProbeProtocol):
     - compute(values, **kwargs) -> Result
@@ -42,15 +44,16 @@ from .multi_horizon_probe import (
     StructuralBreakResult,
     HorizonAnalysis,
     BreakType,
-)
-from .data_window_strategy import (
-    ProfessionalDataWindowStrategy,
-    analyze_with_professional_strategy,
-    classify_metric,
+    # v2.0 新增导出
     MetricCategory,
     WindowStrategy,
-    ProfessionalAnalysisResult,
+    METRIC_STRATEGIES,
+    classify_metric,
 )
+
+# 保持向后兼容: ProfessionalDataWindowStrategy 已整合到 MultiHorizonProbe
+# 使用 MultiHorizonProbe(auto_classify=True) 获得相同功能
+ProfessionalDataWindowStrategy = MultiHorizonProbe  # 别名，向后兼容
 
 __all__ = [
     # 基础工具
@@ -80,11 +83,12 @@ __all__ = [
     "HorizonAnalysis",
     "BreakType",
 
-    # 专业数据窗口策略
-    "ProfessionalDataWindowStrategy",
-    "analyze_with_professional_strategy",
-    "classify_metric",
+    # v2.0 指标分类与策略
     "MetricCategory",
     "WindowStrategy",
-    "ProfessionalAnalysisResult",
+    "METRIC_STRATEGIES",
+    "classify_metric",
+
+    # 向后兼容别名
+    "ProfessionalDataWindowStrategy",
 ]

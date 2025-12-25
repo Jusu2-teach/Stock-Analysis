@@ -1,14 +1,19 @@
 from __future__ import annotations
-from typing import Any, Iterable
+from typing import Any
 import os
+import time
 from ..errors import RegistryExecutionError
 from ..models import MethodRegistration
 from .metrics import MetricsService
+
+# 统一事件总线（必需依赖）
+from shared import EventBus, MethodExecutedEvent
 
 
 class MethodExecutor:
     def __init__(self, metrics: MetricsService):
         self.metrics = metrics
+        self._event_bus = EventBus.get()
 
     def _validate_input_style(self, reg: MethodRegistration, args: tuple, kwargs: dict):
         """统一输入风格强制校验。
@@ -59,7 +64,22 @@ class MethodExecutor:
             raise RegistryExecutionError(f"callable not bound for {reg.full_key}")
         # 输入风格校验
         self._validate_input_style(reg, args, kwargs)
+
+        start_time = time.perf_counter()
         result, dt, err = self.metrics.wrap_execute(reg.full_key, reg.engine_name, reg.callable, *args, **kwargs)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        # 发布执行事件
+        self._event_bus.emit(MethodExecutedEvent(
+            component=reg.component_type,
+            method=reg.engine_name,
+            engine=reg.engine_type,
+            duration_ms=duration_ms,
+            success=(err is None),
+            error=str(err) if err else None,
+            source='orchestrator.executor'
+        ))
+
         if err:
             raise RegistryExecutionError(str(err)) from err
         return result

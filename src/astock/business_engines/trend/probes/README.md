@@ -38,7 +38,7 @@
 
 ## 🔬 探针详解
 
-### 1. LogTrendCalculator（对数趋势计算器）
+### 1. LogTrendProbe（对数趋势探针）
 
 **文件**: `log_trend_probe.py`
 
@@ -71,11 +71,11 @@
 #### 使用示例
 
 ```python
-from probes import LogTrendCalculator
+from .probes import LogTrendProbe
 
 roic_series = [0.15, 0.16, 0.18, 0.17, 0.19]  # 5年ROIC
-calculator = LogTrendCalculator()
-result = calculator.calculate(roic_series)
+probe = LogTrendProbe()
+result = probe.compute(roic_series)
 
 print(f"CAGR: {result.cagr_approx:.1%}")  # 如 "CAGR: 6.2%"
 print(f"趋势强度: {result.r_squared:.2f}")  # 如 "趋势强度: 0.85"
@@ -83,7 +83,7 @@ print(f"趋势强度: {result.r_squared:.2f}")  # 如 "趋势强度: 0.85"
 
 ---
 
-### 2. VolatilityCalculator（波动率分析器）
+### 2. VolatilityProbe（波动率探针）
 
 **文件**: `volatility_probe.py`
 
@@ -125,7 +125,7 @@ print(f"趋势强度: {result.r_squared:.2f}")  # 如 "趋势强度: 0.85"
 
 ---
 
-### 3. CyclicalPatternDetector（周期性检测器）
+### 3. CyclicalProbe（周期性探针）
 
 **文件**: `cyclical_probe.py`
 
@@ -174,7 +174,7 @@ print(f"趋势强度: {result.r_squared:.2f}")  # 如 "趋势强度: 0.85"
 
 ---
 
-### 4. DeteriorationDetector（恶化检测器）
+### 4. DeteriorationProbe（恶化检测探针）
 
 **文件**: `deterioration_probe.py`
 
@@ -217,7 +217,7 @@ print(f"趋势强度: {result.r_squared:.2f}")  # 如 "趋势强度: 0.85"
 
 ---
 
-### 5. InflectionDetector（拐点检测器）
+### 5. InflectionProbe（拐点检测探针）
 
 **文件**: `inflection_probe.py`
 
@@ -291,7 +291,7 @@ Theil-Sen斜率: 1.5%（忽略异常值，反映真实趋势）
 
 ---
 
-### 7. RollingTrendCalculator（滚动趋势探针）
+### 7. RollingProbe（滚动趋势探针）
 
 **文件**: `rolling_probe.py`
 
@@ -324,7 +324,7 @@ Theil-Sen斜率: 1.5%（忽略异常值，反映真实趋势）
 
 ---
 
-### 8. MultiHorizonAnalyzer（多时间窗口分析器）
+### 8. MultiHorizonProbe（多时间窗口探针）
 
 **文件**: `multi_horizon_probe.py`
 
@@ -500,41 +500,41 @@ Probes 探针的输出直接用于 T.R.U.T.H. 系统的**六维基因测序**：
 ### 完整分析流程
 
 ```python
-from probes import (
-    LogTrendCalculator,
-    VolatilityCalculator,
-    CyclicalPatternDetector,
-    DeteriorationDetector,
-    InflectionDetector,
+from .probes import (
+    LogTrendProbe,
+    VolatilityProbe,
+    CyclicalProbe,
+    DeteriorationProbe,
+    InflectionProbe,
     RobustTrendProbe,
-    RollingTrendCalculator,
+    RollingProbe,
 )
 
 # 示例数据：5年ROIC
 roic = [0.15, 0.14, 0.12, 0.10, 0.08]
 
 # 1. 趋势分析
-log_result = LogTrendCalculator().calculate(roic)
+log_result = LogTrendProbe().compute(roic)
 print(f"CAGR: {log_result.cagr_approx:.1%}")
 print(f"R²: {log_result.r_squared:.2f}")
 
 # 2. 波动分析
-vol_result = VolatilityCalculator().calculate(roic)
+vol_result = VolatilityProbe().compute(roic)
 print(f"CV: {vol_result.cv:.2f}")
 print(f"波动类型: {vol_result.volatility_type}")
 
 # 3. 周期性分析
-cyc_result = CyclicalPatternDetector().analyze(roic, industry="制造业")
+cyc_result = CyclicalProbe().compute(roic)
 print(f"周期性: {cyc_result.is_cyclical}")
 print(f"周期位置: {cyc_result.cycle_position}")
 
 # 4. 恶化检测
-det_result = DeteriorationDetector().detect(roic)
+det_result = DeteriorationProbe().compute(roic)
 print(f"恶化概率: {det_result.deterioration_probability:.1%}")
 print(f"恶化模式: {det_result.deterioration_pattern}")
 
 # 5. 拐点检测
-inf_result = InflectionDetector().detect(roic)
+inf_result = InflectionProbe().compute(roic)
 print(f"有拐点: {inf_result.has_inflection}")
 print(f"拐点类型: {inf_result.inflection_type}")
 
@@ -544,7 +544,7 @@ print(f"稳健斜率: {rob_result.robust_slope:.4f}")
 print(f"Mann-Kendall τ: {rob_result.mann_kendall_tau:.2f}")
 
 # 7. 滚动趋势
-roll_result = RollingTrendCalculator().calculate(roic)
+roll_result = RollingProbe().compute(roic)
 print(f"趋势加速度: {roll_result.trend_acceleration:.4f}")
 print(f"加速中: {roll_result.is_accelerating}")
 ```
@@ -563,6 +563,12 @@ print(f"加速中: {roll_result.is_accelerating}")
 ---
 
 ## 📝 版本历史
+
+- **v3.0** (2025-12-25): 文档规范化
+  - 统一类名为 `*Probe` 后缀
+  - 统一方法名为 `compute()`
+  - 修正使用示例代码
+  - 与实际代码完全对齐
 
 - **v2.0** (2025-12): 专业增强版
   - 新增多时间窗口分析

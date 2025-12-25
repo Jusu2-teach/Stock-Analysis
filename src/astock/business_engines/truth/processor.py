@@ -49,8 +49,8 @@ import logging
 
 from .config import TruthConfig, get_default_truth_config
 from .models import CompanyGenome, TruthResult
-# 导入探针结果模型（从analyzers/trend/models.py）
-from ..analyzers.trend.models import (
+# 导入探针结果模型（从trend/models.py）
+from ..trend.models import (
     LogTrendResult,
     VolatilityResult,
     CyclicalPatternResult,
@@ -190,7 +190,8 @@ class DataFrameToProbeConverter:
     - 探针结果对象: LogTrendResult, VolatilityResult, CyclicalPatternResult 等
     """
 
-    # 指标名到 DataFrame 前缀的映射
+    # 指标名到 DataFrame 前缀的映射 - 使用统一命名规范
+    # 从 shared.naming_convention 导入时会自动使用，这里作为回退
     METRIC_PREFIX_MAP = {
         'roic': 'roic',
         'roe': 'roe',
@@ -201,6 +202,14 @@ class DataFrameToProbeConverter:
         'profit': 'eps',
         'ocf': 'ocfps',
     }
+
+    def __init__(self):
+        """初始化转换器，尝试加载统一命名规范"""
+        try:
+            from shared.naming_convention import METRIC_PREFIX_MAP as UNIFIED_MAP
+            self.METRIC_PREFIX_MAP = UNIFIED_MAP
+        except ImportError:
+            pass  # 使用类级别的默认映射
 
     def convert_row_to_probe_outputs(
         self,
@@ -228,6 +237,13 @@ class DataFrameToProbeConverter:
         robust = self._build_robust(row, prefix)
         inflection = self._build_inflection(row, prefix)
 
+        # 提取 raw_values（用于 delta_fraud 等需要最新值的场景）
+        # 优先使用 latest_value 列构建单元素数组
+        raw_values = None
+        latest_value = self._safe_get(row, f'{prefix}_latest_value', None)
+        if latest_value is not None and not pd.isna(latest_value):
+            raw_values = np.array([float(latest_value)])
+
         return ProbeOutputs(
             indicator_name=metric_key,
             log_trend=log_trend,
@@ -237,6 +253,7 @@ class DataFrameToProbeConverter:
             rolling=rolling,
             robust=robust,
             inflection=inflection,
+            raw_values=raw_values,
         )
 
     def _safe_get(self, row: pd.Series, col: str, default: Any = 0.0) -> Any:
@@ -398,10 +415,34 @@ class DataFrameToProbeConverter:
 class IndicatorExtractor:
     """
     从探针 DataFrame 中提取单个指标的数据
+
+    使用统一命名规范系统获取列名前缀
     """
 
-    @staticmethod
+    def __init__(self):
+        """初始化提取器，加载统一命名规范"""
+        try:
+            from shared.naming_convention import METRIC_PREFIX_MAP
+            self._prefix_map = METRIC_PREFIX_MAP
+        except ImportError:
+            # 回退到默认映射
+            self._prefix_map = {
+                'roic': 'roic',
+                'roe': 'roe',
+                'roiic': 'roiic',
+                'gross_margin': 'grossprofit_margin',
+                'net_margin': 'netprofit_margin',
+                'revenue': 'total_revenue_ps',
+                'profit': 'eps',
+                'ocf': 'ocfps',
+            }
+
+    def _get_prefix(self, metric_name: str) -> str:
+        """获取指标对应的列名前缀"""
+        return self._prefix_map.get(metric_name, metric_name)
+
     def extract_for_company(
+        self,
         df: pd.DataFrame,
         ts_code: str,
         metric_name: str
@@ -421,29 +462,32 @@ class IndicatorExtractor:
 
         row = row.iloc[0]
 
+        # 🌟 使用统一命名规范获取前缀
+        prefix = self._get_prefix(metric_name)
+
         return {
             'metric_name': metric_name,
             'ts_code': ts_code,
-            # 趋势信息
-            'log_slope': row.get('log_slope', 0.0),
-            'r_squared': row.get('r_squared', 0.0),
-            'cagr': row.get('cagr', 0.0),
+            # 趋势信息 (使用前缀化列名)
+            'log_slope': row.get(f'{prefix}_log_slope', 0.0),
+            'r_squared': row.get(f'{prefix}_r_squared', 0.0),
+            'cagr': row.get(f'{prefix}_cagr', row.get(f'{prefix}_cagr_approx', 0.0)),
             # 波动性信息
-            'cv': row.get('cv', 0.0),
-            'detrended_cv': row.get('detrended_cv', 0.0),
+            'cv': row.get(f'{prefix}_cv', 0.0),
+            'detrended_cv': row.get(f'{prefix}_detrended_cv', 0.0),
             # 周期性信息
-            'is_cyclical': row.get('is_cyclical', False),
-            'cyclical_confidence': row.get('cyclical_confidence', 0.0),
-            'peak_trough_ratio': row.get('peak_trough_ratio', 1.0),
+            'is_cyclical': row.get(f'{prefix}_is_cyclical', False),
+            'cyclical_confidence': row.get(f'{prefix}_cyclical_confidence', 0.0),
+            'peak_trough_ratio': row.get(f'{prefix}_peak_trough_ratio', 1.0),
             # 衰退信息
-            'deterioration_prob': row.get('deterioration_probability', 0.0),
-            'has_deterioration': row.get('has_deterioration', False),
+            'deterioration_prob': row.get(f'{prefix}_deterioration_probability', 0.0),
+            'has_deterioration': row.get(f'{prefix}_has_deterioration', False),
             # 近期动态
-            'recent_trend': row.get('recent_3y_slope', 0.0),
-            'momentum': row.get('trend_acceleration', 0.0),
-            # 原始值（如果有）
-            'mean_value': row.get('mean_value', 0.0),
-            'latest_value': row.get('latest_value', 0.0),
+            'recent_trend': row.get(f'{prefix}_recent_3y_slope', 0.0),
+            'momentum': row.get(f'{prefix}_trend_acceleration', 0.0),
+            # 原始值
+            'mean_value': row.get(f'{prefix}_mean_value', 0.0),
+            'latest_value': row.get(f'{prefix}_latest_value', 0.0),
         }
 
 
@@ -1502,12 +1546,16 @@ class TruthProcessor:
 
         results = []
         stats = {'total': len(all_codes), 'success': 0, 'failed': 0}
+        degradation_count = 0  # 统计有降级的公司数
 
         for ts_code in all_codes:
             try:
                 result = self.process_company(ts_code, probe_data)
                 results.append(result)
                 stats['success'] += 1
+                # 统计降级（通过warnings中包含降级相关信息判断）
+                if result.genome and result.genome.data_quality_score < 1.0:
+                    degradation_count += 1
             except Exception as e:
                 logger.error(f"处理公司 {ts_code} 失败: {e}")
                 stats['failed'] += 1
@@ -1518,6 +1566,7 @@ class TruthProcessor:
             'signal_distribution': {},
             'grade_distribution': {},
             'avg_score': np.mean([r.final_score for r in results]) if results else 0,
+            'degradation_count': degradation_count,
         }
 
         for result in results:
@@ -1525,6 +1574,14 @@ class TruthProcessor:
             grade = result.grade
             summary['signal_distribution'][signal] = summary['signal_distribution'].get(signal, 0) + 1
             summary['grade_distribution'][grade] = summary['grade_distribution'].get(grade, 0) + 1
+
+        # 汇总日志（避免逐个公司输出）
+        if degradation_count > 0:
+            logger.info(
+                f"📊 批量处理完成: 共 {stats['total']} 家公司, "
+                f"成功 {stats['success']}, 失败 {stats['failed']}, "
+                f"存在数据降级 {degradation_count} 家"
+            )
 
         return BatchProcessResult(
             results=results,

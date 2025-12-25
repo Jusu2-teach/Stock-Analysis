@@ -6,13 +6,20 @@
 - 封装配置解析和执行过程中的共享状态
 - 存储和管理 DependencyGraph（单一构建，多处复用）
 - 提供运行时状态存储
+- 提供统一的引用注册和解析 API
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
+import re
 
 if TYPE_CHECKING:
     from .dependency_graph import DependencyGraph, ExecutionPlan
+
+
+# 步骤引用模式：steps.<step_name>.outputs.parameters.<param_name>
+# 作为模块级常量，供多处复用
+REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
 
 
 @dataclass
@@ -21,7 +28,6 @@ class StepOutput:
     name: str
     source_key: str | None = None
     global_key: str | None = None
-
 
 @dataclass
 class StepSpec:
@@ -103,6 +109,54 @@ class PipelineContext:
         """清空步骤相关数据"""
         self.steps.clear()
         self.execution_order.clear()
+
+    # ================== 引用注册 API ==================
+
+    @staticmethod
+    def _hash_reference(ref: str) -> str:
+        """生成引用的哈希值（统一实现）"""
+        import hashlib
+        return hashlib.md5(ref.encode('utf-8')).hexdigest()[:16]
+
+    def register_reference(self, ref: str, value: Any) -> str:
+        """注册引用值到上下文
+
+        统一的引用注册入口，避免外部直接访问内部字典。
+
+        Args:
+            ref: 引用路径 (如 steps.step1.outputs.parameters.result)
+            value: 引用值
+
+        Returns:
+            生成的哈希键
+        """
+        h = self._hash_reference(ref)
+        self.reference_to_hash.setdefault(ref, h)
+        self.reference_values[ref] = value
+        self.global_registry[h] = value
+        return h
+
+    def get_reference(self, ref: str) -> Optional[Any]:
+        """获取引用值
+
+        Args:
+            ref: 引用路径
+
+        Returns:
+            引用值，如果不存在返回 None
+        """
+        return self.reference_values.get(ref)
+
+    def get_by_hash(self, h: str) -> Optional[Any]:
+        """通过哈希获取引用值
+
+        Args:
+            h: 引用哈希
+
+        Returns:
+            引用值，如果不存在返回 None
+        """
+        return self.global_registry.get(h)
 
     def set_runtime_value(self, key: str, value: Any):
         """设置运行时状态值"""

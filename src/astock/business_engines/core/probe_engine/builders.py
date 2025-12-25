@@ -41,7 +41,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     # 避免循环导入
-    from ...analyzers.trend.models import (
+    from ...trend.models import (
         LogTrendResult,
         VolatilityResult,
         CyclicalPatternResult,

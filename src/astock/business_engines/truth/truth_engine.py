@@ -7,11 +7,16 @@ T.R.U.T.H. Processing Engine Entry Point
 数据流：
     8个探针分析结果 → process_truth → 处理后的基因组数据 → 报告生成
 
+架构升级 (v5.0):
+- 完全基于 EventBus 架构
+- 发布数据处理事件
+
 作者: AStock Analysis System
 日期: 2025-01
 """
 
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
@@ -21,10 +26,22 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
 
+# 统一事件总线
+from shared import EventBus, DataLoadedEvent, DataTransformedEvent
+
 from .processor import TruthProcessor, TruthProcessResult, BatchProcessResult
 from .config import get_default_truth_config
 
 logger = logging.getLogger(__name__)
+_event_bus = EventBus.get()
+
+
+def _emit_data_event(event_class, **kwargs):
+    """发布数据事件"""
+    try:
+        _event_bus.emit(event_class(**kwargs, source='truth_engine'))
+    except Exception as e:
+        logger.debug(f"EventBus emit failed: {e}")
 
 
 @register_method(
@@ -96,7 +113,18 @@ def process_truth(
             'summary': {'error': 'No valid probe data'},
         }
 
+    # 发布数据加载事件
+    total_rows = sum(len(v) for v in probe_data.values())
+    _emit_data_event(
+        DataLoadedEvent,
+        dataset_name='truth_probe_data',
+        source='probe_analysis',
+        row_count=total_rows,
+        column_count=len(probe_data)
+    )
+
     # 创建处理器
+    start_time = time.perf_counter()
     processor = TruthProcessor()
 
     # 批量处理
@@ -104,6 +132,17 @@ def process_truth(
 
     # 转换为DataFrame
     results_df = processor.get_results_dataframe(batch_result)
+    duration_ms = (time.perf_counter() - start_time) * 1000
+
+    # 发布数据转换事件
+    _emit_data_event(
+        DataTransformedEvent,
+        dataset_name='truth_results',
+        transformation='process_truth',
+        input_rows=total_rows,
+        output_rows=len(results_df),
+        duration_ms=duration_ms
+    )
 
     logger.info(
         f"T.R.U.T.H. processing complete: "

@@ -18,10 +18,9 @@ from typing import Any, Dict, List, Set
 from collections import defaultdict
 import yaml
 import hashlib
-import re
 import logging
 
-from ..context import PipelineContext, StepSpec, StepOutput
+from ..context import PipelineContext, StepSpec, StepOutput, REF_PATTERN
 from ..dependency_graph import (
     DependencyGraph,
     DependencyType,
@@ -40,7 +39,7 @@ from ..dependency_graph import (
 # StepDataDependencySource 和 StepExplicitDependencySource 已移除。
 # 现在直接使用 dependency_graph.py 中的 DataDependencySource 和
 # ExplicitDependencySource，它们的实现是完全等价的。
-# 这消除了代码重复，遵循 DRY 原则。
+# REF_PATTERN 已移至 context.py 模块级常量，统一复用。
 # ============================================================================
 
 
@@ -57,9 +56,6 @@ class ConfigService:
     """
 
     __slots__ = ('ctx', 'logger', '_dependency_graph')
-
-    # 步骤引用模式：steps.<step_name>.outputs.parameters.<param_name>
-    REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
 
     def __init__(self, context: PipelineContext, logger: logging.Logger | None = None):
         self.ctx = context
@@ -117,7 +113,7 @@ class ConfigService:
 
         def collect_refs(val: Any):
             if isinstance(val, str):
-                m = self.REF_PATTERN.match(val.strip())
+                m = REF_PATTERN.match(val.strip())
                 if m:
                     referenced_map[m.group('step')].add(m.group('param'))
             elif isinstance(val, list):
@@ -193,7 +189,7 @@ class ConfigService:
         """标记参数中的引用"""
         def walk(val):
             if isinstance(val, str):
-                m = self.REF_PATTERN.match(val.strip())
+                m = REF_PATTERN.match(val.strip())
                 if m:
                     ref = val.strip()
                     ghash = self._hash_reference(ref)
@@ -226,7 +222,7 @@ class ConfigService:
             inputs = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
-                    m = self.REF_PATTERN.match(ref)
+                    m = REF_PATTERN.match(ref)
                     if m:
                         ds_name = self.ctx.dataset_name(m.group('step'), m.group('param'))
                         inputs.append(ds_name)
@@ -351,7 +347,7 @@ class ConfigService:
             inputs = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
-                    m = self.REF_PATTERN.match(ref)
+                    m = REF_PATTERN.match(ref)
                     if m:
                         ds_in = self.ctx.dataset_name(m.group('step'), m.group('param'))
                         if ds_in not in inputs:

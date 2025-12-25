@@ -32,10 +32,36 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple
 from datetime import datetime
 import logging
+import sys
+
+# 添加项目根路径
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
+
+# 导入统一命名规范
+try:
+    from shared.naming_convention import (
+        MetricRegistry,
+        FieldRegistry,
+        ColumnBuilder,
+        METRIC_PREFIX_MAP,
+    )
+    HAS_NAMING_CONVENTION = True
+except ImportError:
+    HAS_NAMING_CONVENTION = False
+    METRIC_PREFIX_MAP = {
+        "roic": "roic",
+        "roe": "roe",
+        "roiic": "roiic",
+        "gross_margin": "grossprofit_margin",
+        "net_margin": "netprofit_margin",
+        "revenue": "total_revenue_ps",
+        "profit": "eps",
+        "ocf": "ocfps",
+    }
 
 # 导入行业自适应阈值引擎
 try:
-    from ..analyzers.trend.industry_adaptive import (
+    from ..trend.industry_adaptive import (
         get_adaptive_engine,
         get_company_thresholds,
         AdaptiveThresholds,
@@ -46,7 +72,7 @@ except ImportError:
 
 # 导入数据驱动质量筛选器
 try:
-    from ..analyzers.trend.data_driven_filter import (
+    from ..trend.data_driven_filter import (
         DataDrivenQualityFilter,
         CompanyPattern,
         DataDrivenProfile,
@@ -95,16 +121,28 @@ class ComprehensiveReportGenerator:
             raise ValueError("必须提供探针数据 probe_data")
 
         self._probe_data = probe_data
-        self.metrics_config = {
-            "revenue": {"prefix": "total_revenue_ps", "name": "营收"},
-            "profit": {"prefix": "eps", "name": "利润"},
-            "roe": {"prefix": "roe", "name": "ROE"},
-            "ocf": {"prefix": "ocfps", "name": "经营现金流"},
-            "gross_margin": {"prefix": "grossprofit_margin", "name": "毛利率"},
-            "net_margin": {"prefix": "netprofit_margin", "name": "净利率"},
-            "roic": {"prefix": "roic", "name": "ROIC"},
-            "roiic": {"prefix": "roiic", "name": "ROIIC"},
-        }
+
+        # 使用统一命名规范 (如果可用)
+        if HAS_NAMING_CONVENTION:
+            self.metrics_config = {
+                key: {
+                    "prefix": MetricRegistry.get_output_prefix(key),
+                    "name": MetricRegistry.get_display_name(key)
+                }
+                for key in MetricRegistry.all_keys()
+            }
+        else:
+            # 回退到硬编码配置
+            self.metrics_config = {
+                "revenue": {"prefix": "total_revenue_ps", "name": "营收"},
+                "profit": {"prefix": "eps", "name": "利润"},
+                "roe": {"prefix": "roe", "name": "ROE"},
+                "ocf": {"prefix": "ocfps", "name": "经营现金流"},
+                "gross_margin": {"prefix": "grossprofit_margin", "name": "毛利率"},
+                "net_margin": {"prefix": "netprofit_margin", "name": "净利率"},
+                "roic": {"prefix": "roic", "name": "ROIC"},
+                "roiic": {"prefix": "roiic", "name": "ROIIC"},
+            }
         self.df_merged = pd.DataFrame()
 
         # v3.0: 初始化自适应阈值引擎
@@ -155,7 +193,11 @@ class ComprehensiveReportGenerator:
         logger.info("直接使用探针分析结果（无需读取文件）")
 
         merged = None
-        shared_cols = {'ts_code', 'name', 'industry', 'size_class', 'invest_capital'}
+        # 扩展 shared_cols 包含所有公共元数据列
+        shared_cols = {
+            'ts_code', 'name', 'industry', 'size_class', 'invest_capital',
+            'ann_date', 'end_date', 'metric_name',  # 元数据列
+        }
 
         for key, df in self._probe_data.items():
             if df is None or df.empty:
@@ -165,14 +207,23 @@ class ComprehensiveReportGenerator:
             if 'ts_code' not in df.columns and df.index.name == 'ts_code':
                 df = df.reset_index()
 
-            cols_data = [c for c in df.columns if c not in shared_cols]
-            logger.info(f"  ✓ {self.metrics_config.get(key, {}).get('name', key)}: {len(df)} 公司")
+            # 排除公共列，只保留该指标特有的数据列
+            cols_data = [c for c in df.columns if c not in shared_cols and c != 'ts_code']
+            logger.info(f"  ✓ {self.metrics_config.get(key, {}).get('name', key)}: {len(df)} 公司, {len(cols_data)} 列")
 
             if merged is None:
-                cols_first = [c for c in df.columns if c in shared_cols] + cols_data
+                # 第一个 DataFrame: 包含公共列 + 数据列
+                cols_first = [c for c in df.columns if c in shared_cols and c in df.columns] + cols_data
+                # 确保 ts_code 在最前面
+                if 'ts_code' in df.columns and 'ts_code' not in cols_first:
+                    cols_first = ['ts_code'] + cols_first
                 merged = df[cols_first].copy()
             else:
-                merged = pd.merge(merged, df[['ts_code'] + cols_data], on='ts_code', how='outer')
+                # 后续 DataFrame: 只合并 ts_code + 数据列
+                merge_cols = ['ts_code'] + cols_data
+                # 确保只选择存在的列
+                merge_cols = [c for c in merge_cols if c in df.columns]
+                merged = pd.merge(merged, df[merge_cols], on='ts_code', how='outer')
 
         return merged
 
@@ -970,6 +1021,30 @@ class ComprehensiveReportGenerator:
         logger.info(f"✅ 报告已生成: {output_path}")
         return report_content
 
+    def _render_garp_table(self, lines: List[str], section_name: str, picks: pd.DataFrame) -> None:
+        """渲染 GARP 表格的辅助方法"""
+        lines.append(f"### {section_name} GARP精选")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 行业 | 模式 | 营收CAGR | 利润CAGR | ROIC | 综合评分 | 核心亮点 |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+
+        for _, row in picks.iterrows():
+            rev_cagr = row.get(self._get_col('revenue', 'cagr'), 0)
+            prof_cagr = row.get(self._get_col('profit', 'cagr'), 0)
+            roic = row.get(self._get_col('roic', 'latest'), 0)
+            pattern_label = row.get('pattern_label', '-')
+
+            # 生成亮点
+            highlights = []
+            if rev_cagr > 0.20: highlights.append("营收爆发")
+            if prof_cagr > 0.25: highlights.append("利润高增")
+            if roic > 15: highlights.append("资本高效")
+            if not highlights: highlights.append("综合优质")
+
+            lines.append(f"| {row['ts_code']} | {row.get('name', '-')} | {row.get('industry', '-')} | {pattern_label} | {rev_cagr:.1%} | {prof_cagr:.1%} | {roic:.1f}% | **{row['composite']:.0f}** | {', '.join(highlights)} |")
+
+        lines.append("")
+
     def _section_garp(self, df: pd.DataFrame) -> List[str]:
         """高成长优质公司板块"""
         lines = ["## 🚀 高成长优质公司 (GARP精选)", ""]
@@ -991,34 +1066,18 @@ class ComprehensiveReportGenerator:
         )
 
         # 按规模分类展示
-        for size_key, size_name in [('mega', '💎 超大型'), ('large', '🔷 大型'), ('mid', '🔶 中型')]:
-            size_df = candidates[candidates['size_class'] == size_key].copy()
-            if size_df.empty:
-                continue
+        if 'size_class' in candidates.columns:
+            for size_key, size_name in [('mega', '💎 超大型'), ('large', '🔷 大型'), ('mid', '🔶 中型')]:
+                size_df = candidates[candidates['size_class'] == size_key].copy()
+                if size_df.empty:
+                    continue
 
-            top_picks = size_df.sort_values('composite', ascending=False).head(10)
-
-            lines.append(f"### {size_name} GARP精选")
-            lines.append("")
-            lines.append("| 代码 | 名称 | 行业 | 模式 | 营收CAGR | 利润CAGR | ROIC | 综合评分 | 核心亮点 |")
-            lines.append("|---|---|---|---|---|---|---|---|---|")
-
-            for _, row in top_picks.iterrows():
-                rev_cagr = row.get(self._get_col('revenue', 'cagr'), 0)
-                prof_cagr = row.get(self._get_col('profit', 'cagr'), 0)
-                roic = row.get(self._get_col('roic', 'latest'), 0)
-                pattern_label = row.get('pattern_label', '-')
-
-                # 生成亮点
-                highlights = []
-                if rev_cagr > 0.20: highlights.append("营收爆发")
-                if prof_cagr > 0.25: highlights.append("利润高增")
-                if roic > 15: highlights.append("资本高效")
-                if not highlights: highlights.append("综合优质")
-
-                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {pattern_label} | {rev_cagr:.1%} | {prof_cagr:.1%} | {roic:.1f}% | **{row['composite']:.0f}** | {', '.join(highlights)} |")
-
-            lines.append("")
+                top_picks = size_df.sort_values('composite', ascending=False).head(10)
+                self._render_garp_table(lines, size_name, top_picks)
+        else:
+            # 无规模分类时，直接展示 top 30
+            top_picks = candidates.sort_values('composite', ascending=False).head(30)
+            self._render_garp_table(lines, "🏆 综合精选", top_picks)
 
         return lines
 
@@ -1042,36 +1101,44 @@ class ComprehensiveReportGenerator:
         )
 
         # 按规模分类展示
-        for size_key, size_name in [('mega', '💎 超大型白马'), ('large', '🔷 大型白马'), ('mid', '🔶 中型白马')]:
-            size_df = candidates[candidates['size_class'] == size_key].copy()
-            if size_df.empty:
-                continue
+        if 'size_class' in candidates.columns:
+            for size_key, size_name in [('mega', '💎 超大型白马'), ('large', '🔷 大型白马'), ('mid', '🔶 中型白马')]:
+                size_df = candidates[candidates['size_class'] == size_key].copy()
+                if size_df.empty:
+                    continue
 
-            top_picks = size_df.sort_values('moat_score', ascending=False).head(10)
-
-            lines.append(f"### {size_name}")
-            lines.append("")
-            lines.append("| 代码 | 名称 | 行业 | 模式 | ROE | ROIC | 毛利率 | 护城河分 | 护城河特征 |")
-            lines.append("|---|---|---|---|---|---|---|---|---|")
-
-            for _, row in top_picks.iterrows():
-                roe = row.get(self._get_col('roe', 'latest'), 0)
-                roic = row.get(self._get_col('roic', 'latest'), 0)
-                gm = row.get(self._get_col('gross_margin', 'latest'), 0)
-                pattern_label = row.get('pattern_label', '-')
-
-                # 护城河特征分析
-                moat_chars = []
-                if gm > 40: moat_chars.append("定价权强")
-                if roic > 20: moat_chars.append("资本壁垒")
-                if roe > 20 and roic > 15: moat_chars.append("盈利稳健")
-                if not moat_chars: moat_chars.append("综合优质")
-
-                lines.append(f"| {row['ts_code']} | {row['name']} | {row.get('industry', '-')} | {pattern_label} | {roe:.1f}% | {roic:.1f}% | {gm:.1f}% | **{row['moat_score']:.0f}** | {', '.join(moat_chars)} |")
-
-            lines.append("")
+                top_picks = size_df.sort_values('moat_score', ascending=False).head(10)
+                self._render_moat_table(lines, size_name, top_picks)
+        else:
+            # 无规模分类时，直接展示 top 30
+            top_picks = candidates.sort_values('moat_score', ascending=False).head(30)
+            self._render_moat_table(lines, "🏆 综合白马精选", top_picks)
 
         return lines
+
+    def _render_moat_table(self, lines: List[str], section_name: str, picks: pd.DataFrame) -> None:
+        """渲染护城河表格的辅助方法"""
+        lines.append(f"### {section_name}")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 行业 | 模式 | ROE | ROIC | 毛利率 | 护城河分 | 护城河特征 |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+
+        for _, row in picks.iterrows():
+            roe = row.get(self._get_col('roe', 'latest'), 0)
+            roic = row.get(self._get_col('roic', 'latest'), 0)
+            gm = row.get(self._get_col('gross_margin', 'latest'), 0)
+            pattern_label = row.get('pattern_label', '-')
+
+            # 护城河特征分析
+            moat_chars = []
+            if gm > 40: moat_chars.append("定价权强")
+            if roic > 20: moat_chars.append("资本壁垒")
+            if roe > 20 and roic > 15: moat_chars.append("盈利稳健")
+            if not moat_chars: moat_chars.append("综合优质")
+
+            lines.append(f"| {row['ts_code']} | {row.get('name', '-')} | {row.get('industry', '-')} | {pattern_label} | {roe:.1f}% | {roic:.1f}% | {gm:.1f}% | **{row['moat_score']:.0f}** | {', '.join(moat_chars)} |")
+
+        lines.append("")
 
     def _section_turnaround(self, df: pd.DataFrame) -> List[str]:
         """困境反转板块"""

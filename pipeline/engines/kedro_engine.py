@@ -12,8 +12,17 @@ from kedro.io import DataCatalog, MemoryDataset
 from kedro.runner import SequentialRunner
 
 from pipeline.io.io_manager import IOManager
-from pipeline.core.services.hook_manager import HookManager
 import traceback
+
+# 统一事件总线
+from shared import (
+    EventBus,
+    NodeStartedEvent,
+    NodeCompletedEvent,
+    CacheHitEvent,
+    PipelineErrorEvent,
+)
+
 
 class KedroEngine:
     def __init__(self, execute_manager):
@@ -28,6 +37,8 @@ class KedroEngine:
             # filled dynamically
         }
         self.dataset_producers: Dict[str, str] = {}  # dataset -> step
+        # EventBus 实例
+        self._event_bus = EventBus.get()
     # primary 输出裁剪相关状态已移除
         # Fingerprint / caching (Phase3 enhancement)
         self.dataset_fingerprints: Dict[str, str] = {}  # dataset -> fingerprint string
@@ -112,9 +123,9 @@ class KedroEngine:
 
                 # --- 基于 KedroEngine 全局 catalog 的引用解析 ---
                 def _resolve_refs_via_catalog(obj):
-                    em = self.execute_manager
-                    # 使用 config_service 的 REF_PATTERN
-                    pattern = getattr(em._config_service, 'REF_PATTERN', None)
+                    # 使用统一的 REF_PATTERN（从 context 模块导入）
+                    from pipeline.core.context import REF_PATTERN
+                    pattern = REF_PATTERN
                     def walk(v):
                         if isinstance(v, dict) and '__ref__' in v:
                             ref = v['__ref__']
@@ -144,10 +155,7 @@ class KedroEngine:
                                         raise ValueError(f"catalog 中未找到数据集: {ds_name} (ref={ref})")
                                 # 注册到 context 引用表，保证后续通用解析可命中
                                 try:
-                                    rhash = em._config_service._hash_reference(ref)
-                                    em.ctx.reference_to_hash.setdefault(ref, rhash)
-                                    em.ctx.reference_values[ref] = val
-                                    em.ctx.global_registry[rhash] = val
+                                    em.ctx.register_reference(ref, val)
                                 except Exception:
                                     pass
                                 return val
@@ -265,10 +273,13 @@ class KedroEngine:
                     }
                     for ds in planned_outputs:
                         self.dataset_producers.setdefault(ds, step_name)
-                    try:
-                        HookManager.get().emit('on_cache_hit', step_name, self.node_metrics[step_name])
-                    except Exception:
-                        pass
+                    # 发布缓存命中事件
+                    self._event_bus.emit(CacheHitEvent(
+                        step_name=step_name,
+                        signature=node_signature,
+                        outputs=planned_outputs,
+                        source='pipeline.kedro'
+                    ))
                     return tuple(self.global_catalog[o] for o in planned_outputs) if len(planned_outputs) > 1 else (self.global_catalog[planned_outputs[0]],)
                 # 由 IOManager 决定绑定策略
 
@@ -290,14 +301,14 @@ class KedroEngine:
                 if ttl_expired:
                     self.logger.info(f"⏰ Cache TTL expired for step={step_name}, 强制重算")
                 self.logger.info(f"🔄 执行方法序列: {method_list}")
-                try:
-                    HookManager.get().emit('before_node', step_name, {
-                        'planned_outputs': planned_outputs,
-                        'inputs': list(upstream_map.keys()),
-                        'signature': node_signature
-                    })
-                except Exception:
-                    pass
+                # 发布节点启动事件
+                self._event_bus.emit(NodeStartedEvent(
+                    step_name=step_name,
+                    inputs=list(upstream_map.keys()),
+                    outputs=planned_outputs,
+                    signature=node_signature,
+                    source='pipeline.kedro'
+                ))
                 result = None
                 for idx, method_name in enumerate(method_list):
                     self.logger.info(f"  ⚡ 执行方法 {idx+1}/{len(method_list)}: {method_name}")
@@ -407,16 +418,12 @@ class KedroEngine:
                         self.dataset_producers[ds] = step_name
                         # 记录输出指纹
                         self.dataset_fingerprints[ds] = self._fingerprint_object(self.global_catalog[ds])
-                        # --- 即时向 ExecuteManager 注册引用 (支持后续节点参数解析) ---
+                        # --- 即时向上下文注册引用 (支持后续节点参数解析) ---
                         if '__' in ds:
                             try:
                                 step_id, out_id = ds.split('__', 1)
                                 ref = f"steps.{step_id}.outputs.parameters.{out_id}"
-                                em = self.execute_manager
-                                rhash = em._hash_reference(ref)
-                                em.reference_to_hash.setdefault(ref, rhash)
-                                em.reference_values[ref] = self.global_catalog[ds]
-                                em.global_registry[rhash] = self.global_catalog[ds]
+                                self.execute_manager.ctx.register_reference(ref, self.global_catalog[ds])
                             except Exception:
                                 pass
                     # parameter 输出同样注册（名称不含 __，但可直接构造引用）
@@ -424,26 +431,22 @@ class KedroEngine:
                         if pn in self.global_catalog:
                             try:
                                 ref = f"steps.{step_name}.outputs.parameters.{pn}"
-                                em = self.execute_manager
-                                rhash = em._hash_reference(ref)
-                                em.reference_to_hash.setdefault(ref, rhash)
-                                em.reference_values[ref] = self.global_catalog[pn]
-                                em.global_registry[rhash] = self.global_catalog[pn]
+                                self.execute_manager.ctx.register_reference(ref, self.global_catalog[pn])
                             except Exception:
                                 pass
                     # 记录节点签名
                     self.node_signatures[step_name] = node_signature
                     # 持久化节点与数据集（增量）
                     self._persist_node_state(produced_dataset_names)
-                    try:
-                        HookManager.get().emit('after_node', step_name, {
-                            'duration_sec': duration,
-                            'produced': produced_dataset_names,
-                            'signature': node_signature,
-                            'cached': False,
-                        }, self.node_metrics[step_name])
-                    except Exception:
-                        pass
+                    # 发布节点完成事件
+                    self._event_bus.emit(NodeCompletedEvent(
+                        step_name=step_name,
+                        status='success',
+                        duration_ms=duration * 1000,
+                        output_count=len(produced_dataset_names),
+                        metrics=self.node_metrics[step_name],
+                        source='pipeline.kedro'
+                    ))
                     return final
                 # 无 outputs（兜底）
                 duration = time.perf_counter() - start_ts
@@ -464,15 +467,15 @@ class KedroEngine:
                 self.node_signatures[step_name] = node_signature
                 self._persist_node_state([])
                 # Kedro 期望无 outputs 的节点返回 None/()，避免 DataFrame 等被误判
-                try:
-                    HookManager.get().emit('after_node', step_name, {
-                        'duration_sec': duration,
-                        'produced': [],
-                        'signature': node_signature,
-                        'cached': False,
-                    }, self.node_metrics[step_name])
-                except Exception:
-                    pass
+                # 发布节点完成事件
+                self._event_bus.emit(NodeCompletedEvent(
+                    step_name=step_name,
+                    status='success',
+                    duration_ms=duration * 1000,
+                    output_count=0,
+                    metrics=self.node_metrics[step_name],
+                    source='pipeline.kedro'
+                ))
                 return None
             except Exception as e:
                 # 失败节点 lineage & metrics 记录（即便 soft-fail 上层吞掉，也保留痕迹）
@@ -521,20 +524,22 @@ class KedroEngine:
                     (fail_dir / f'{step_name}.json').write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
                 except Exception:
                     pass
-                try:
-                    HookManager.get().emit('after_node', step_name, {
-                        'duration_sec': duration,
-                        'produced': [],
-                        'signature': self.node_metrics.get(step_name, {}).get('signature'),
-                        'cached': False,
-                        'error': str(e),
-                        'failed': True,
-                    }, self.node_metrics.get(step_name, {}))
-                    HookManager.get().emit('on_failure', step_name, {
-                        'error': str(e)
-                    })
-                except Exception:
-                    pass
+                # 发布失败事件
+                self._event_bus.emit(NodeCompletedEvent(
+                    step_name=step_name,
+                    status='failed',
+                    duration_ms=(duration or 0) * 1000,
+                    output_count=0,
+                    error=str(e),
+                    metrics=self.node_metrics.get(step_name, {}),
+                    source='pipeline.kedro'
+                ))
+                self._event_bus.emit(PipelineErrorEvent(
+                    step_name=step_name,
+                    error=str(e),
+                    traceback=traceback.format_exc(limit=8),
+                    source='pipeline.kedro'
+                ))
                 self.logger.error(f"节点执行失败: {e}")
                 raise
 
@@ -723,39 +728,30 @@ class KedroEngine:
             raise
 
     def get_pipeline_execution_order(self, pipeline_configs: Dict[str, Any]) -> List[str]:
-        """确定管道执行顺序（拓扑排序）"""
+        """确定管道执行顺序（委托给 DependencyGraph）
+
+        使用统一的 DependencyGraph 实现拓扑排序，避免重复代码。
+        """
+        from pipeline.core.dependency_graph import DependencyGraph, CyclicDependencyError
+
         try:
-            # 构建依赖图
-            dependencies = {}
-            for pipeline_name, config in pipeline_configs.items():
-                dependencies[pipeline_name] = getattr(config, 'depends_on', [])
+            # 构建节点配置（用于 DependencyGraph）
+            node_configs = {
+                name: {'depends_on': getattr(cfg, 'depends_on', [])}
+                for name, cfg in pipeline_configs.items()
+            }
 
-            # 拓扑排序
-            result = []
-            visited = set()
-            temp_visited = set()
+            # 使用统一的 DependencyGraph
+            graph = DependencyGraph.from_node_configs(node_configs, logger=self.logger)
+            plan = graph.build_execution_plan()
+            result = plan.flatten()
 
-            def visit(pipeline_name):
-                if pipeline_name in temp_visited:
-                    raise ValueError(f"检测到循环依赖: {pipeline_name}")
-                if pipeline_name in visited:
-                    return
-
-                temp_visited.add(pipeline_name)
-                for dep in dependencies.get(pipeline_name, []):
-                    if dep in dependencies:  # 确保依赖存在
-                        visit(dep)
-                temp_visited.remove(pipeline_name)
-                visited.add(pipeline_name)
-                result.append(pipeline_name)
-
-            for pipeline_name in dependencies:
-                if pipeline_name not in visited:
-                    visit(pipeline_name)
-
-            self.logger.info(f"✅ 执行顺序确定: {' -> '.join(result)}")
+            self.logger.info(f"✅ 执行顺序确定: {' -> '.join(result)} (层数: {plan.depth})")
             return result
 
+        except CyclicDependencyError as e:
+            self.logger.error(f"❌ 检测到循环依赖: {e.cycle}")
+            raise ValueError(f"循环依赖: {e.cycle}") from e
         except Exception as e:
             self.logger.error(f"❌ 执行顺序确定失败: {e}")
             # 返回简单的按名称排序

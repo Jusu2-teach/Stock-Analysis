@@ -16,3 +16,8 @@ class RegistryConflictError(RegistryError):
 
 class RegistryStrategyError(RegistryError):
     pass
+
+
+class RegistryValidationError(RegistryError):
+    """Raised when method validation fails in strict mode."""
+    pass
