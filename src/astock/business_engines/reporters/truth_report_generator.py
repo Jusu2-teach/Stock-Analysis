@@ -129,19 +129,27 @@ class TruthReportGenerator:
         },
     }
 
-    def __init__(self, probe_data: Dict[str, pd.DataFrame]):
+    def __init__(
+        self,
+        probe_data: Dict[str, pd.DataFrame] = None,
+        truth_processed: Dict[str, Any] = None,
+    ):
         """
         初始化 T.R.U.T.H. 报告生成器
 
+        支持两种模式:
+        1. truth_processed 模式（推荐）: 使用 TruthProcessor 处理后的数据
+        2. probe_data 模式（兼容旧版）: 直接使用探针数据
+
         Args:
             probe_data: 探针数据字典，格式: {'roic': df, 'roe': df, ...}
+            truth_processed: TruthProcessor 处理后的结果
         """
-        if not probe_data or not any(v is not None for v in probe_data.values()):
-            raise ValueError("必须提供探针数据 probe_data")
-
         self.metrics_data: Dict[str, pd.DataFrame] = {}
         self.company_genomes: Dict[str, CompanyGenome] = {}
         self.company_results: Dict[str, Dict[str, Any]] = {}
+        self.truth_processed = truth_processed
+        self.use_professional_mode = truth_processed is not None
 
         if not HAS_TRUTH:
             raise RuntimeError("T.R.U.T.H. 系统不可用")
@@ -150,8 +158,48 @@ class TruthReportGenerator:
         self.truth_config = get_default_truth_config()
         self.probe_adapter = ProbeAdapter()
 
-        # 加载探针数据
-        self._load_from_probe_data(probe_data)
+        # 加载数据
+        if truth_processed is not None:
+            self._load_from_truth_processed(truth_processed)
+            logger.info("🧬 使用专业基因-指标映射模式（来自 TruthProcessor）")
+        elif probe_data and any(v is not None for v in probe_data.values()):
+            self._load_from_probe_data(probe_data)
+            logger.info("📊 使用兼容模式（直接从探针数据提取）")
+        else:
+            raise ValueError("必须提供 truth_processed 或 probe_data")
+
+    def _load_from_truth_processed(self, truth_processed: Dict[str, Any]) -> None:
+        """从 TruthProcessor 处理结果加载数据"""
+        # 提取处理结果
+        batch_result = truth_processed.get('processed_results')
+        results_df = truth_processed.get('results_df')
+        probe_data = truth_processed.get('probe_data', {})
+
+        # 加载探针数据（用于详细报告）
+        if probe_data:
+            for metric_key, df in probe_data.items():
+                if df is not None and not df.empty:
+                    if 'ts_code' in df.columns and df.index.name != 'ts_code':
+                        df = df.set_index('ts_code')
+                    self.metrics_data[metric_key] = df
+
+        # 从处理结果加载基因组
+        if batch_result is not None:
+            for result in batch_result.results:
+                if result.genome:
+                    self.company_genomes[result.ts_code] = result.genome
+                    self.company_results[result.ts_code] = {
+                        'genome': result.genome,
+                        'gene_extractions': result.gene_extractions,
+                        'solver_results': result.solver_results,
+                        'causal_validation': result.causal_validation,
+                        'final_score': result.final_score,
+                        'signal': result.signal,
+                        'grade': result.grade,
+                        'warnings': result.warnings,
+                    }
+
+        logger.info(f"  ✓ 已加载 {len(self.company_genomes)} 家公司的专业基因组数据")
 
     def _load_from_probe_data(self, probe_data: Dict[str, pd.DataFrame]) -> None:
         """从探针数据字典加载数据"""
@@ -341,7 +389,18 @@ class TruthReportGenerator:
         }
 
     def analyze_all_companies(self) -> Dict[str, Dict]:
-        """分析所有公司"""
+        """
+        分析所有公司
+
+        在专业模式下，直接使用 TruthProcessor 的结果
+        在兼容模式下，使用简化的基因提取
+        """
+        # 专业模式：数据已经在 __init__ 中加载
+        if self.use_professional_mode and self.company_results:
+            logger.info(f"🧬 专业模式：使用预处理的 {len(self.company_results)} 家公司数据")
+            return self.company_results
+
+        # 兼容模式：从探针数据计算
         if not self.metrics_data:
             self.load_all_metrics()
 
@@ -350,7 +409,7 @@ class TruthReportGenerator:
         for df in self.metrics_data.values():
             all_codes.update(df.index.tolist())
 
-        logger.info(f"开始分析 {len(all_codes)} 家公司...")
+        logger.info(f"📊 兼容模式：开始分析 {len(all_codes)} 家公司...")
 
         for ts_code in all_codes:
             try:
@@ -375,6 +434,122 @@ class TruthReportGenerator:
 
         logger.info(f"完成分析 {len(self.company_results)} 家公司")
         return self.company_results
+
+    def _build_professional_report_item(
+        self,
+        ts_code: str,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        构建专业模式的报告项
+
+        从 TruthProcessor 的结果构建报告数据
+        """
+        genome = data['genome']
+        solver_results = data.get('solver_results', {})
+        gene_extractions = data.get('gene_extractions', {})
+        causal_validation = data.get('causal_validation')
+
+        # 提取求解器阈值
+        gravity_result = solver_results.get('gravity')
+        velocity_result = solver_results.get('velocity')
+        structure_result = solver_results.get('structure', {})
+
+        # 获取动态阈值
+        t_threshold = 0.08
+        t_growth_bound = 0.05
+        t_slope = 0.0
+
+        if gravity_result and hasattr(gravity_result, 'result'):
+            t_threshold = getattr(gravity_result.result, 'final_threshold', 0.08)
+
+        if velocity_result and hasattr(velocity_result, 'result'):
+            growth_bound = getattr(velocity_result.result, 'growth_bound', None)
+            if growth_bound:
+                t_growth_bound = getattr(growth_bound, 'max_sustainable_growth', 0.05)
+
+        # 构建基因来源信息
+        gene_sources = {}
+        for gene_name, extraction in gene_extractions.items():
+            gene_sources[gene_name] = {
+                'value': round(extraction.value, 3),
+                'sources': extraction.source_indicators,
+                'aggregation': extraction.aggregation_method,
+            }
+
+        # 构建报告项
+        report_item = {
+            'ts_code': ts_code,
+            'company_name': genome.company_name,
+            'genome': {
+                'alpha': round(genome.alpha, 3),
+                'beta': round(genome.beta, 3),
+                'gamma': round(genome.gamma, 3),
+                'delta_fraud': round(genome.delta_fraud, 3),
+                'delta_decay': round(genome.delta_decay, 3),
+                'verification': round(genome.verification, 3),
+            },
+            'gene_sources': gene_sources,  # 专业模式独有：基因来源追溯
+            'dynamic_thresholds': {
+                'T_threshold': round(t_threshold, 4),
+                'T_growth_bound': round(t_growth_bound, 4),
+                'T_slope': round(t_slope, 4),
+            },
+            'gates': {
+                'v_gate_passed': genome.verification >= 0.4,
+                'fraud_alert': genome.delta_fraud > 0.5,
+                'decay_alert': genome.delta_decay > 0.6,
+            },
+            'signal': data.get('signal', '📊 中性'),
+            'recommendation': self._get_recommendation_from_signal(data.get('signal', 'NEUTRAL')),
+            'risk_level': self._get_risk_level_from_signal(data.get('signal', 'NEUTRAL')),
+            'grade': data.get('grade', 'B'),
+            'final_score': round(data.get('final_score', 0.5), 3),
+            'warnings': data.get('warnings', []),
+        }
+
+        # 添加因果验证结果
+        if causal_validation:
+            report_item['causal_validation'] = {
+                'overall_score': round(causal_validation.overall_score, 3),
+                'revenue_profit_consistent': causal_validation.revenue_profit_consistent,
+                'profit_ocf_consistent': causal_validation.profit_ocf_consistent,
+                'roe_roic_consistent': causal_validation.roe_roic_consistent,
+                'warnings': causal_validation.warnings,
+            }
+
+        # 构建解释
+        interpretations = []
+        for solver_name, solver_result in solver_results.items():
+            if hasattr(solver_result, 'interpretation'):
+                interpretations.append(solver_result.interpretation)
+        report_item['interpretations'] = interpretations
+
+        return report_item
+
+    def _get_recommendation_from_signal(self, signal: str) -> str:
+        """从信号获取推荐"""
+        signal_map = {
+            'STRONG_BUY': '强烈买入',
+            'BUY': '买入',
+            'NEUTRAL': '观察',
+            'SELL': '卖出',
+            'FRAUD_RISK': '回避',
+            'DECAY_WARNING': '谨慎',
+        }
+        return signal_map.get(signal, '观察')
+
+    def _get_risk_level_from_signal(self, signal: str) -> str:
+        """从信号获取风险等级"""
+        risk_map = {
+            'STRONG_BUY': '低',
+            'BUY': '中低',
+            'NEUTRAL': '中',
+            'SELL': '中高',
+            'FRAUD_RISK': '高',
+            'DECAY_WARNING': '高',
+        }
+        return risk_map.get(signal, '中')
 
     def _generate_signal(
         self,
@@ -450,31 +625,39 @@ class TruthReportGenerator:
         reports = []
         for ts_code, data in self.company_results.items():
             genome = data['genome']
-            solvers = data['solvers']
-            signal = data['signal']
 
-            reports.append({
-                'ts_code': ts_code,
-                'company_name': genome.company_name,
-                'genome': {
-                    'alpha': round(genome.alpha, 3),
-                    'beta': round(genome.beta, 3),
-                    'gamma': round(genome.gamma, 3),
-                    'delta_fraud': round(genome.delta_fraud, 3),
-                    'delta_decay': round(genome.delta_decay, 3),
-                    'verification': round(genome.verification, 3),
-                },
-                'dynamic_thresholds': {
-                    'T_threshold': round(solvers['thresholds']['T_threshold'], 4),
-                    'T_growth_bound': round(solvers['thresholds']['T_growth_bound'], 4),
-                    'T_slope': round(solvers['thresholds']['T_slope'], 4),
-                },
-                'gates': solvers['gates'],
-                'signal': signal['signal'],
-                'recommendation': signal['recommendation'],
-                'risk_level': signal['risk_level'],
-                'interpretations': solvers['interpretations'],
-            })
+            # 处理专业模式和兼容模式的数据结构差异
+            if self.use_professional_mode:
+                # 专业模式：数据来自 TruthProcessor
+                report_item = self._build_professional_report_item(ts_code, data)
+            else:
+                # 兼容模式：使用旧的数据结构
+                solvers = data.get('solvers', {})
+                signal = data.get('signal', {})
+                report_item = {
+                    'ts_code': ts_code,
+                    'company_name': genome.company_name,
+                    'genome': {
+                        'alpha': round(genome.alpha, 3),
+                        'beta': round(genome.beta, 3),
+                        'gamma': round(genome.gamma, 3),
+                        'delta_fraud': round(genome.delta_fraud, 3),
+                        'delta_decay': round(genome.delta_decay, 3),
+                        'verification': round(genome.verification, 3),
+                    },
+                    'dynamic_thresholds': {
+                        'T_threshold': round(solvers.get('thresholds', {}).get('T_threshold', 0.08), 4),
+                        'T_growth_bound': round(solvers.get('thresholds', {}).get('T_growth_bound', 0.05), 4),
+                        'T_slope': round(solvers.get('thresholds', {}).get('T_slope', 0.0), 4),
+                    },
+                    'gates': solvers.get('gates', {}),
+                    'signal': signal.get('signal', '📊 中性'),
+                    'recommendation': signal.get('recommendation', '观察'),
+                    'risk_level': signal.get('risk_level', '中'),
+                    'interpretations': solvers.get('interpretations', []),
+                }
+
+            reports.append(report_item)
 
         # 确保目录存在
         output_file = Path(output_path)
@@ -489,10 +672,12 @@ class TruthReportGenerator:
         md_path = f"{base_path}.md"
 
         # 导出 JSON
+        mode_tag = "Professional Gene-Indicator Mapping" if self.use_professional_mode else "Compatible Mode"
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump({
-                'version': '3.1',
+                'version': '3.2',
                 'system': 'T.R.U.T.H. (Threshold Rendering Using True History)',
+                'mode': mode_tag,
                 'generated_at': datetime.now().isoformat(),
                 'total_companies': len(reports),
                 'metrics_analyzed': list(self.metrics_data.keys()),

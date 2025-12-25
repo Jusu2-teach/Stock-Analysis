@@ -203,14 +203,19 @@ def detect_heteroscedasticity(residuals: np.ndarray, x: np.ndarray) -> Tuple[boo
 
     return bool(has_hetero), float(correlation)
 
-class LogTrendCalculator:
-    """Log trend calculator with adaptive transformation."""
+class LogTrendProbe:
+    """Log trend probe with adaptive transformation.
+
+    Unified interface following ProbeProtocol:
+    - compute(values, **kwargs) -> LogTrendResult
+    - default() -> LogTrendResult
+    """
 
     def __init__(self, config: TrendAnalysisConfig = None):
         self.config = config or get_default_config()
         self.quality_checker = DataQualityChecker(self.config)
 
-    def calculate(
+    def compute(
         self,
         values: List[float],
         check_outliers: bool = True,
@@ -529,4 +534,21 @@ class LogTrendCalculator:
             outliers=outlier_result,
             metadata=metadata,
             warnings=warnings,
+        )
+    def default(self) -> LogTrendResult:
+        """Return default result for insufficient data (ProbeProtocol compliance)."""
+        return LogTrendResult(
+            log_slope=0.0, slope=0.0, intercept=0.0, r_squared=0.0,
+            p_value=1.0, std_err=0.0, cagr_approx=0.0, crosses_zero=False,
+            used_cleaned_data=False,
+            quality=DataQualitySummary(
+                original="unknown", cleaned="unknown", effective="unknown",
+                has_loss_years=False, loss_year_count=0,
+                has_near_zero_years=False, near_zero_count=0,
+                has_loss_years_cleaned=False, loss_year_count_cleaned=0,
+                has_near_zero_years_cleaned=False, near_zero_count_cleaned=0,
+            ),
+            outliers=None,
+            metadata={},
+            warnings=["Insufficient data"],
         )

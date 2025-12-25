@@ -493,9 +493,13 @@ class StructuralBreakDetector:
 # 多时间窗口分析器
 # =============================================================================
 
-class MultiHorizonAnalyzer:
+class MultiHorizonProbe:
     """
-    多时间窗口分析器
+    多时间窗口分析探针
+
+    Unified interface following ProbeProtocol:
+    - compute(values, **kwargs) -> MultiHorizonResult
+    - default() -> MultiHorizonResult
 
     核心设计理念:
     - 近5年 (Recent): 70%权重，反映当前经营状态
@@ -536,7 +540,7 @@ class MultiHorizonAnalyzer:
             min_effect_size=break_threshold
         )
 
-    def analyze(
+    def compute(
         self,
         values: List[float],
         metric_name: str = "unknown"
@@ -860,6 +864,33 @@ class MultiHorizonAnalyzer:
 
         return " | ".join(parts)
 
+    def default(self) -> MultiHorizonResult:
+        """Return default result for insufficient data (ProbeProtocol compliance)."""
+        # Return a minimal result with empty values
+        return MultiHorizonResult(
+            recent_analysis=None,
+            extended_analysis=None,
+            effective_analysis=None,
+            structural_break=StructuralBreakResult(
+                has_break=False,
+                break_type=BreakType.NONE,
+                break_year_index=None,
+                break_significance=0.0,
+                p_value=1.0,
+                pre_break_stats={},
+                post_break_stats={},
+                recommended_window_start=0,
+                confidence=0.0,
+            ),
+            effective_slope=0.0,
+            effective_cagr=0.0,
+            data_regime="unknown",
+            recent_weight=1.0,
+            extended_weight=0.0,
+            recommendation="数据不足，无法提供建议",
+            warnings=["Insufficient data"],
+        )
+
 
 # =============================================================================
 # 便捷函数
@@ -884,8 +915,8 @@ def analyze_multi_horizon(
         >>> result = analyze_multi_horizon(data, "revenue")
         >>> print(result.recommendation)
     """
-    analyzer = MultiHorizonAnalyzer()
-    return analyzer.analyze(values, metric_name)
+    analyzer = MultiHorizonProbe()
+    return analyzer.compute(values, metric_name)
 
 
 def detect_structural_break(values: List[float]) -> StructuralBreakResult:

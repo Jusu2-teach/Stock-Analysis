@@ -1,467 +1,609 @@
 """
-DuckDB 通用趋势分析方法（重构版）
-=================================
+趋势分析 DuckDB 引擎
+====================
 
-提供独立的、可复用的趋势分析方法,支持对任意指标(ROIC、ROE、ROA等)进行:
-1. 加权平均计算
-2. 线性回归趋势分析
-3. 趋势过滤和评分调整
-4. 行业差异化参数配置
+提供注册到 orchestrator 的趋势分析方法。
+
+作者: AStock Analysis System
+日期: 2025-12-19
 """
 
+from __future__ import annotations
+
+import logging
 import sys
 from pathlib import Path
-import math
+from typing import Any, Dict, List, Optional, Union
+
+import numpy as np
 import pandas as pd
-import logging
-from typing import Union, List, Optional
 
 try:
-    from tqdm import tqdm
-    HAS_TQDM = True
+    import duckdb
+    HAS_DUCKDB = True
 except ImportError:
-    HAS_TQDM = False
-    tqdm = None
+    HAS_DUCKDB = False
 
-# orchestrator 已移至根目录
+# orchestrator path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
-from ...core.duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
-from .config import (
-    INDUSTRY_FILTER_CONFIGS,
-    DEFAULT_FILTER_CONFIG,
-    ROIIC_INDUSTRY_FILTER_CONFIGS,
-    DEFAULT_ROIIC_FILTER_CONFIG,
-    get_industry_category,
-    get_default_config,
-    get_metric_filter_config,
-)
-from . import (
+
+from .core import (
     TrendAnalyzer,
+    TrendResultCollector,
+    ConfigResolver,
+    get_default_metric_probes,
+)
+from .models import (
     TrendAnalyzerConfig,
     TrendSeriesConfig,
-    ConfigResolver,
     TrendEvaluationResult,
-    TrendResultCollector,
-    TrendRuleEngine,
-    TrendEvaluator,
+    TrendSnapshot,
 )
-# 🔌 导入插件化派生器系统
-from .derivers import find_deriver, list_available_metrics, check_derivable
-from ...core.interfaces import IAnalyzer, AnalysisResult
+from .config import get_default_config
+from .derivers import (
+    find_deriver,
+    check_derivable,
+    list_available_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# 辅助函数
+# ============================================================================
 
-class DuckDBTrendAnalyzer(IAnalyzer):
+def _snapshot_to_row(
+    snapshot: TrendSnapshot,
+    group_df: pd.DataFrame,
+    keep_cols: List[str],
+) -> Dict[str, Any]:
     """
-    Implementation of IAnalyzer using DuckDB and Trend Analysis logic.
+    将 TrendSnapshot 转换为扁平的字典行
+
+    提取核心趋势分析指标，适合输出到 DataFrame。
     """
-    def analyze(self, data: Union[str, Path, pd.DataFrame], config: dict) -> AnalysisResult:
-        # Extract parameters from config
-        group_cols = config.get('group_cols', 'ts_code')
-        metric_name = config.get('metric_name')
-        if not metric_name:
-            raise ValueError("metric_name is required in config")
+    row: Dict[str, Any] = {}
 
-        prefix = config.get('prefix', '')
-        suffix = config.get('suffix', '_trend')
-        min_periods = config.get('min_periods', 5)
-        analyzer_config = config.get('analyzer_config')
-        filter_config = config.get('filter_config')
-        industry_configs = config.get('industry_configs')
+    # 基本标识
+    row['ts_code'] = snapshot.group_key
+    row['metric_name'] = snapshot.metric_name
 
-        # Reuse the existing function logic
-        df = analyze_metric_trend(
-            data=data,
-            group_cols=group_cols,
-            metric_name=metric_name,
-            prefix=prefix,
-            suffix=suffix,
-            min_periods=min_periods,
-            analyzer_config=analyzer_config,
-            filter_config=filter_config,
-            industry_configs=industry_configs
-        )
+    # 从 group_df 提取保留列
+    if not group_df.empty:
+        latest_row = group_df.iloc[-1]
+        for col in keep_cols:
+            if col in group_df.columns:
+                row[col] = latest_row.get(col)
 
-        return AnalysisResult(
-            data=df,
-            metric_name=metric_name,
-            metadata=config
-        )
+    # 核心趋势指标
+    trend = snapshot.trend
+    row['slope'] = trend.slope
+    row['log_slope'] = trend.log_slope
+    row['r_squared'] = trend.r_squared
+    row['p_value'] = trend.p_value
+    row['cagr_approx'] = trend.cagr_approx
+    row['trend_direction'] = "up" if trend.log_slope > 0 else ("down" if trend.log_slope < 0 else "flat")
+
+    # 波动性指标
+    vol = snapshot.volatility
+    row['cv'] = vol.cv
+    row['std_dev'] = vol.std_dev
+    row['volatility_type'] = vol.volatility_type
+    row['volatility_regime'] = vol.volatility_regime
+
+    # 退化检测
+    det = snapshot.deterioration
+    row['has_deterioration'] = det.has_deterioration
+    row['deterioration_severity'] = det.severity
+    row['total_decline_pct'] = det.total_decline_pct
+
+    # 拐点检测
+    infl = snapshot.inflection
+    row['has_inflection'] = infl.has_inflection
+    row['inflection_type'] = infl.inflection_type
+
+    # 周期性
+    cyc = snapshot.cyclical
+    row['is_cyclical'] = cyc.is_cyclical
+    row['current_phase'] = cyc.current_phase
+    row['cycle_position'] = cyc.cycle_position
+
+    # 滚动趋势
+    roll = snapshot.rolling
+    row['is_accelerating'] = roll.is_accelerating
+    row['is_decelerating'] = roll.is_decelerating
+    row['recent_3y_slope'] = roll.recent_3y_slope
+
+    # 稳健趋势
+    robust = snapshot.robust
+    row['robust_slope'] = robust.robust_slope
+    row['mk_tau'] = robust.mann_kendall_tau
+    row['mk_p_value'] = robust.mann_kendall_p_value
+
+    # 加权平均与最新值
+    row['weighted_avg'] = snapshot.weighted_avg
+    row['latest_value'] = snapshot.latest_value
+    row['latest_vs_weighted_ratio'] = snapshot.latest_vs_weighted_ratio
+
+    # 多时间窗口分析
+    row['full_data_years'] = snapshot.full_data_years
+    row['trend_window_years'] = snapshot.trend_window_years
+    row['has_structural_break'] = snapshot.has_structural_break
+    row['break_year_index'] = snapshot.break_year_index
+    row['data_regime'] = snapshot.data_regime
+
+    return row
+
+
+# ============================================================================
+# 派生指标计算 (使用 derivers.py 的正式派生器系统)
+# ============================================================================
 
 @register_method(
-    engine_name="analyze_generic",
+    engine_name="compute_derived_metrics",
     component_type="business_engine",
     engine_type="duckdb",
-    description="Generic analysis entry point returning AnalysisResult"
+    description="计算派生指标 (如 ROIIC) - 使用派生器框架"
 )
-def analyze_generic(data: Union[str, Path, pd.DataFrame], config: dict) -> AnalysisResult:
+def compute_derived_metrics(
+    data: Union[str, Path, pd.DataFrame],
+    group_cols: str = 'ts_code',
+    sort_cols: str = 'end_date',
+    metrics: Optional[List[str]] = None,
+) -> pd.DataFrame:
     """
-    Generic entry point for trend analysis.
-    Returns an AnalysisResult object instead of a raw DataFrame.
+    使用派生器框架计算派生指标
+
+    支持的派生指标 (可通过 list_available_metrics() 查询):
+    - roiic: 增量投入资本回报率 = ΔNOPAT / ΔInvested_Capital
+
+    Args:
+        data: 输入数据 (DataFrame 或文件路径)
+        group_cols: 分组列 (默认 'ts_code')
+        sort_cols: 排序列 (默认 'end_date')
+        metrics: 要计算的派生指标列表 (None=自动检测可计算的指标)
+
+    Returns:
+        包含派生指标的 DataFrame
+
+    Example:
+        >>> df = compute_derived_metrics(
+        ...     data="data/financial.csv",
+        ...     group_cols="ts_code",
+        ...     metrics=["roiic"]
+        ... )
     """
-    analyzer = DuckDBTrendAnalyzer()
-    return analyzer.analyze(data, config)
+    # 1. 加载数据
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        if not path.exists():
+            raise FileNotFoundError(f"数据文件不存在: {path}")
+        if path.suffix.lower() == '.parquet':
+            df = pd.read_parquet(path)
+        else:
+            df = pd.read_csv(path)
+    elif isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:
+        raise ValueError(f"不支持的数据类型: {type(data)}")
+
+    logger.info(f"compute_derived_metrics: 加载数据 {len(df)} 行")
+
+    available_cols = set(df.columns)
+
+    # 2. 确定要计算的指标
+    if metrics is None:
+        # 自动检测可计算的指标
+        metrics = []
+        for metric_name in list_available_metrics():
+            can_derive, missing = check_derivable(metric_name, available_cols)
+            if can_derive:
+                metrics.append(metric_name)
+        logger.info(f"自动检测可计算指标: {metrics}")
+    else:
+        # 验证用户指定的指标
+        for metric_name in metrics:
+            can_derive, missing = check_derivable(metric_name, available_cols)
+            if not can_derive:
+                if missing:
+                    raise ValueError(f"指标 {metric_name} 缺少依赖列: {missing}")
+                else:
+                    raise ValueError(f"不支持的派生指标: {metric_name}")
+
+    if not metrics:
+        logger.warning("没有可计算的派生指标")
+        return df
+
+    # 3. 使用 DuckDB 执行派生
+    if HAS_DUCKDB:
+        return _compute_with_duckdb(df, group_cols, sort_cols, metrics)
+    else:
+        # 回退到 Pandas 实现
+        return _compute_with_pandas(df, group_cols, sort_cols, metrics)
 
 
+def _compute_with_duckdb(
+    df: pd.DataFrame,
+    group_cols: str,
+    sort_cols: str,
+    metrics: List[str]
+) -> pd.DataFrame:
+    """使用 DuckDB 派生器计算派生指标"""
+    con = duckdb.connect(':memory:')
 
-def _describe_roiic_spread(spread: float) -> str:
-    if not math.isfinite(spread):
-        return ""
+    # 注册原始数据
+    con.register('source_data', df)
+    current_view = 'source_data'
 
-    if spread >= 10.0:
-        return f"ROIIC Spread {spread:.1f}pp：扩张创造大量价值"
-    if spread >= 3.0:
-        return f"ROIIC Spread {spread:.1f}pp：扩张创造价值"
-    if spread >= 0.0:
-        return f"ROIIC Spread {spread:.1f}pp：刚好覆盖资本成本"
-    if spread > -5.0:
-        return f"ROIIC Spread {spread:.1f}pp：扩张回报偏弱"
-    return f"ROIIC Spread {spread:.1f}pp：扩张可能毁灭价值"
+    available_cols = set(df.columns)
 
+    # 依次应用派生器
+    for metric_name in metrics:
+        deriver = find_deriver(metric_name, available_cols)
+        if deriver:
+            try:
+                new_view = deriver.derive(con, current_view, group_cols)
+                current_view = new_view
+                # 更新可用列
+                available_cols.add(metric_name)
+                logger.info(f"✅ 派生指标 {metric_name} 计算完成")
+            except Exception as e:
+                logger.warning(f"⚠️ 派生指标 {metric_name} 计算失败: {e}")
+
+    # 导出结果
+    result = con.execute(f"SELECT * FROM {current_view}").fetchdf()
+    con.close()
+
+    return result
+
+
+def _compute_with_pandas(
+    df: pd.DataFrame,
+    group_cols: str,
+    sort_cols: str,
+    metrics: List[str]
+) -> pd.DataFrame:
+    """使用 Pandas 回退实现计算派生指标"""
+    logger.info("DuckDB 不可用，使用 Pandas 实现")
+
+    # 确保排序
+    df = df.sort_values([group_cols, sort_cols])
+
+    # 分组计算
+    results = []
+    for group_key, group_df in df.groupby(group_cols):
+        group_df = group_df.copy()
+
+        for metric_name in metrics:
+            if metric_name == 'roiic':
+                group_df = _pandas_compute_roiic(group_df)
+
+        results.append(group_df)
+
+    return pd.concat(results, ignore_index=True)
+
+
+def _pandas_compute_roiic(df: pd.DataFrame) -> pd.DataFrame:
+    """Pandas 版 ROIIC 计算"""
+    df = df.copy()
+
+    roic = df['roic'].values
+    ic = df['invest_capital'].values
+
+    # ROIC 可能是百分比形式，统一处理
+    roic_decimal = np.where(np.abs(roic) > 1, roic / 100, roic)
+    nopat = roic_decimal * ic
+
+    # 计算增量
+    delta_nopat = np.diff(nopat, prepend=np.nan)
+    delta_ic = np.diff(ic, prepend=np.nan)
+
+    # 计算 ROIIC
+    with np.errstate(divide='ignore', invalid='ignore'):
+        roiic = np.where(
+            np.abs(delta_ic) > 1e-6,
+            (delta_nopat / delta_ic) * 100,
+            np.nan
+        )
+
+    roiic[0] = np.nan
+    df['roiic'] = roiic
+
+    return df
+
+
+# ============================================================================
+# 趋势分析方法
+# ============================================================================
 
 @register_method(
     engine_name="analyze_metric_trend",
     component_type="business_engine",
     engine_type="duckdb",
-    description="对指定指标进行通用趋势分析"
+    description="通用指标趋势分析"
 )
 def analyze_metric_trend(
     data: Union[str, Path, pd.DataFrame],
-    group_cols: Union[str, List[str]],
-    metric_name: str,
+    group_cols: str = 'ts_code',
+    metric_name: str = 'roic',
     prefix: str = "",
-    suffix: str = "_trend",
+    suffix: str = "",
     min_periods: int = 5,
-    window_size: Optional[int] = None,  # 趋势计算窗口(近N年), None=使用全部数据
-    enable_multi_horizon: bool = True,  # 是否启用多时间窗口分析
-    analyzer_config: Optional[TrendAnalyzerConfig] = None,
-    filter_config: Optional[dict] = None,  # 新增：支持外部注入配置
-    industry_configs: Optional[dict] = None, # 新增：支持外部注入行业配置
+    window_size: Optional[int] = None,
+    enable_multi_horizon: bool = True,
+    reference_metrics: Optional[List[str]] = None,
+    analyzer_config: Optional[Dict[str, Any]] = None,
+    filter_config: Optional[Dict[str, Any]] = None,
+    industry_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+    keep_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    对指定指标进行通用趋势分析
+    通用指标趋势分析
 
-    双窗口设计:
-    - 全量数据: 用于断点检测和周期分析
-    - 趋势计算数据(window_size):
-      - None: 使用全部数据计算趋势(与断点检测相同范围)
-      - 整数N: 只用最近N年数据计算趋势
-
-    核心功能:
-    1. 计算加权平均(最近数据权重更高)
-    2. 线性回归分析(斜率、R²、p值)
-    3. 结构断点检测(使用全量数据)
-    4. 周期性分析(使用全量数据)
-    5. 趋势过滤(可选,根据配置)
-    6. 评分调整(可选,根据配置)
+    对输入数据按分组列分组，对每组的指定指标进行趋势分析。
 
     Args:
-        data: 输入数据(必须包含多期数据,按时间排序)
-        group_cols: 分组列(如 'ts_code', 'industry')
-        metric_name: 要分析的指标名(如 'roic', 'roe', 'roa')
-        prefix: 输出列名前缀(默认空)
-        suffix: 输出列名后缀(默认 '_trend')
-        min_periods: 最少需要的期数(默认5)，数据不足此年限的公司会被跳过
-        window_size: 趋势计算窗口
-            - None(默认): 使用全部数据计算趋势，有多少年算多少年
-            - 整数N: 只使用最近N年数据计算趋势(如5表示近5年)
-        enable_multi_horizon: 是否启用多时间窗口分析(断点/周期检测)(默认True)
-        analyzer_config: 趋势分析器配置(窗口、权重、探针、参考指标等)
-        filter_config: 过滤配置字典 (IoC注入)
-        industry_configs: 行业差异化配置字典 (IoC注入)
+        data: 输入数据 (DataFrame, CSV 文件路径, 或 Parquet 文件路径)
+        group_cols: 分组列名 (默认 'ts_code')
+        metric_name: 分析指标名 (默认 'roic')
+        prefix: 输出列名前缀
+        suffix: 输出列名后缀
+        min_periods: 最小数据期数要求 (默认 5)
+        window_size: 趋势计算窗口大小 (None=使用全部数据, N=只用最近N年)
+        enable_multi_horizon: 是否启用多时间窗口分析(断点检测+周期分析)
+        reference_metrics: 交叉验证参考指标列表
+        analyzer_config: 分析器配置字典
+        filter_config: 过滤配置字典 (如 min_latest_value)
+        industry_configs: 行业差异化配置
+        keep_cols: 保留的额外列
 
     Returns:
-        DataFrame,包含:
-        - 原分组列
-        - {prefix}{metric_name}_weighted{suffix}: 加权平均值
-        - {prefix}{metric_name}_slope{suffix}: 趋势斜率
-        - {prefix}{metric_name}_r_squared{suffix}: R²
-        - {prefix}{metric_name}_latest{suffix}: 最新期值
-        - {prefix}{metric_name}_has_break{suffix}: 是否存在结构断点
-        - {prefix}{metric_name}_break_idx{suffix}: 断点位置
-        - {prefix}{metric_name}_regime{suffix}: 数据体制
-        - {prefix}{metric_name}_penalty{suffix}: 扣分(如果启用过滤)
+        包含趋势分析结果的 DataFrame
+
+    Example:
+        >>> result = analyze_metric_trend(
+        ...     data="data/financial.csv",
+        ...     group_cols="ts_code",
+        ...     metric_name="roic",
+        ...     min_periods=5,
+        ...     window_size=5,
+        ...     reference_metrics=["roe", "roiic"]
+        ... )
     """
+    # 1. 加载数据
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        if not path.exists():
+            raise FileNotFoundError(f"数据文件不存在: {path}")
 
-    logger.info("=" * 80)
-    logger.info(f"🔍 通用趋势分析启动: {metric_name}")
-    window_desc = f"{window_size}年" if window_size else "全部数据"
-    logger.info(f"📊 趋势计算窗口: {window_desc} | 多时间窗口分析: {'开启' if enable_multi_horizon else '关闭'}")
-    logger.info("=" * 80)
-
-    # ========== 1. 加载数据 ==========
-    con, source_sql = _init_duckdb_and_source(data)
-
-    # 标准化分组列
-    group_cols_list = [group_cols] if isinstance(group_cols, str) else list(group_cols)
-
-    # 检查指标列是否存在
-    cols_info = con.execute(f"DESCRIBE SELECT * FROM {source_sql}").df()
-    all_cols = cols_info['column_name'].tolist()
-
-    # 🔌 插件化指标派生系统
-    if metric_name not in all_cols:
-        # 尝试使用插件派生指标
-        deriver = find_deriver(metric_name, set(all_cols))
-
-        if deriver:
-            logger.info(f"🔌 使用插件 {deriver.__class__.__name__} 派生 {metric_name}")
-            source_sql = deriver.derive(con, source_sql, group_cols_list[0])
-
-            # 刷新列信息
-            cols_info = con.execute(f"DESCRIBE SELECT * FROM {source_sql}").df()
-            all_cols = cols_info['column_name'].tolist()
-
-        # 最终检查：如果仍然不存在，提供详细错误
-        if metric_name not in all_cols:
-            # 使用 check_derivable 获取详细信息
-            can_derive, missing = check_derivable(metric_name, set(all_cols))
-
-            if missing:
-                raise ValueError(
-                    f"❌ 指标 '{metric_name}' 无法派生，缺少必需列: {', '.join(sorted(missing))}\n"
-                    f"当前可用列: {', '.join(sorted(all_cols))}"
-                )
-            else:
-                available = list_available_metrics()
-                raise ValueError(
-                    f"❌ 指标 '{metric_name}' 不存在且无可用派生器。\n"
-                    f"可派生指标: {', '.join(available)}\n"
-                    f"当前可用列: {', '.join(sorted(all_cols))}"
-                )
-
-    logger.info(f"分组列: {group_cols_list}")
-    logger.info(f"分析指标: {metric_name}")
-    _trend_config = get_default_config()
-    logger.info(f"加权方案: {_trend_config.default_weights.tolist()}")
-
-    metric_lower = metric_name.lower()
-
-    # IoC: 优先使用注入的配置，否则回退到指标专属配置
-    if filter_config is None:
-        # 获取指标专属配置
-        metric_config = get_metric_filter_config(metric_lower)
-
-        # 构建过滤配置，整合指标专属阈值
-        filter_config = {
-            "min_latest_value": metric_config.get("min_latest_value"),
-            "log_severe_decline_slope": metric_config.get("severe_decline", -0.30),
-            "log_mild_decline_slope": metric_config.get("mild_decline", -0.15),
-            "is_auxiliary": metric_config.get("is_auxiliary", False),
-        }
-        logger.info(f"📋 使用指标专属配置 [{metric_name}]: min={metric_config.get('min_latest_value')}, "
-                    f"severe={metric_config.get('severe_decline')}, aux={metric_config.get('is_auxiliary')}")
-
-    if industry_configs is None:
-        industry_configs = ROIIC_INDUSTRY_FILTER_CONFIGS if metric_lower == "roiic" else INDUSTRY_FILTER_CONFIGS
-
-    # ========== 2. 解析过滤配置 ==========
-    base_config = {"enable_filter": True}
-    base_config.update(filter_config)
-    logger.info(f"过滤基线配置(默认阈值): {base_config}")
-
-    # ========== 3. 读取数据并排序 ==========
-    # 检查是否有 name, industry, size_class, invest_capital 列（用于输出）
-    # 这样报告生成器不需要再从原始数据加载规模信息
-    keep_cols = []
-    for col in ['name', 'industry', 'size_class', 'invest_capital']:
-        if col in all_cols:
-            keep_cols.append(col)
-
-    # 构建SELECT列表
-    select_cols = [_q(group_cols_list[0]), _q(metric_name), 'end_date']
-    if keep_cols:
-        select_cols.extend([_q(col) for col in keep_cols])
-
-    sql_load = f"""
-        SELECT {', '.join(select_cols)}
-        FROM {source_sql}
-        ORDER BY {_q(group_cols_list[0])}, end_date ASC
-    """
-
-    df_full = con.execute(sql_load).df()
-    logger.info(f"输入数据: {len(df_full)} 行")
-    if keep_cols:
-        logger.info(f"保留额外列: {keep_cols}")
-
-    # ========== 4. 分组处理 ==========
-    eliminated_count = 0
-    config_resolver = ConfigResolver(industry_configs)
-    rule_evaluator = TrendEvaluator(logger)
-    result_collector = TrendResultCollector()
-
-    grouped = df_full.groupby(group_cols_list[0])
-    total_groups = grouped.ngroups
-
-    # ========== 构建 TrendAnalyzerConfig ==========
-    # 如果未提供 analyzer_config，则根据参数创建
-    if analyzer_config is None:
-        series_config = TrendSeriesConfig(
-            window_size=window_size,
-            enable_multi_horizon=enable_multi_horizon,
-        )
-        analyzer_config = TrendAnalyzerConfig(series=series_config)
-    else:
-        # 如果提供了 analyzer_config，但没有设置 window_size，则覆盖
-        if analyzer_config.series.window_size != window_size:
-            series_config = TrendSeriesConfig(
-                window_size=window_size,
-                enable_multi_horizon=enable_multi_horizon,
-                order_column=analyzer_config.series.order_column,
-                weights=analyzer_config.series.weights,
-                fill_strategy=analyzer_config.series.fill_strategy,
-                fill_value=analyzer_config.series.fill_value,
-                min_valid_ratio=analyzer_config.series.min_valid_ratio,
-                allow_partial_window=analyzer_config.series.allow_partial_window,
-                drop_non_finite=analyzer_config.series.drop_non_finite,
-            )
-            analyzer_config = TrendAnalyzerConfig(
-                series=series_config,
-                probes=analyzer_config.probes,
-                output_fields=analyzer_config.output_fields,
-                reference_metrics=analyzer_config.reference_metrics,
-            )
-
-    # 使用进度条（如果 tqdm 可用）
-    if HAS_TQDM:
-        iterator = tqdm(
-            grouped,
-            total=total_groups,
-            desc=f"📊 {metric_name} 趋势分析",
-            unit="公司",
-            ncols=100,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
-        )
-    else:
-        iterator = grouped
-        logger.info(f"处理 {total_groups} 个分组...")
-
-    for group_key, group_df in iterator:
-        # 检查数据完整性
-        if len(group_df) < min_periods:
-            logger.debug(f"跳过 {group_key}: 数据不足{min_periods}期(实际{len(group_df)}期)")
-            continue
-
-        # ========== 根据行业动态调整过滤参数 ==========
-        current_config, _ = config_resolver.resolve(group_key, base_config, group_df, logger)
-
-        analyzer = TrendAnalyzer(
-            group_key=group_key,
-            group_df=group_df,
-            metric_name=metric_name,
-            group_column=group_cols_list[0],
-            prefix=prefix,
-            suffix=suffix,
-            keep_cols=keep_cols,
-            logger=logger,
-            config=analyzer_config,
-        )
-
-        if not analyzer.valid:
-            logger.debug(f"跳过 {group_key}: {analyzer.error_reason}")
-            continue
-
-        trend_vector = analyzer.build_trend_vector()
-
-        if current_config.get('enable_filter'):
-            evaluation = rule_evaluator.evaluate(group_key, metric_name, current_config, trend_vector)
-
-            if not evaluation.passes:
-                eliminated_count += 1
-                continue
+        if path.suffix.lower() == '.parquet':
+            df = pd.read_parquet(path)
+        elif path.suffix.lower() in ('.csv', '.svc'):
+            df = pd.read_csv(path)
         else:
-            evaluation = TrendEvaluationResult(
+            raise ValueError(f"不支持的文件格式: {path.suffix}")
+    elif isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:
+        raise ValueError(f"不支持的数据类型: {type(data)}")
+
+    logger.info(f"analyze_metric_trend: 加载数据 {len(df)} 行, 指标={metric_name}")
+
+    # 2. 验证必要列
+    if group_cols not in df.columns:
+        raise ValueError(f"缺少分组列: {group_cols}")
+    if metric_name not in df.columns:
+        raise ValueError(f"缺少指标列: {metric_name}")
+
+    # 3. 构建配置
+    series_config = TrendSeriesConfig(
+        window_size=window_size,
+        enable_multi_horizon=enable_multi_horizon,
+    )
+
+    config = TrendAnalyzerConfig(
+        series=series_config,
+        reference_metrics=reference_metrics or [],
+    )
+
+    if analyzer_config:
+        # 合并用户配置
+        for key, value in analyzer_config.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+
+    # 4. 默认保留列
+    default_keep_cols = ['industry', 'name', 'end_date', 'ann_date']
+    keep_cols = list(set((keep_cols or []) + default_keep_cols))
+    keep_cols = [c for c in keep_cols if c in df.columns]
+
+    # 5. 配置解析器
+    config_resolver = ConfigResolver(industry_configs or {})
+
+    # 6. 结果收集器
+    collector = TrendResultCollector()
+
+    # 7. 分组处理
+    grouped = df.groupby(group_cols)
+    total_groups = len(grouped)
+    processed = 0
+    skipped = 0
+    failed = 0
+
+    for group_key, group_df in grouped:
+        # 检查数据量
+        if len(group_df) < min_periods:
+            skipped += 1
+            logger.debug(f"{group_key}: 数据不足 ({len(group_df)} < {min_periods})")
+            continue
+
+        try:
+            # 解析配置
+            resolved_config, industry = config_resolver.resolve(
+                str(group_key),
+                {},
+                group_df,
+                logger
+            )
+
+            # 创建分析器
+            analyzer = TrendAnalyzer(
+                group_key=str(group_key),
+                group_df=group_df,
+                metric_name=metric_name,
+                group_column=group_cols,
+                prefix=prefix,
+                suffix=suffix,
+                keep_cols=keep_cols,
+                reference_metrics=reference_metrics,
+                logger=logger,
+                config=config,
+            )
+
+            if not analyzer.valid:
+                failed += 1
+                logger.debug(f"{group_key}: 分析失败 - {analyzer.error_reason}")
+                continue
+
+            # 构建趋势向量
+            vector = analyzer.build_trend_vector()
+
+            # 创建默认评估结果（趋势分析层不做业务评估）
+            default_evaluation = TrendEvaluationResult(
                 passes=True,
                 elimination_reason="",
                 penalty=0.0,
                 penalty_details=[],
                 bonus_details=[],
-                trend_score=100.0,
-                auxiliary_notes=[],
+                trend_score=0.0,
             )
 
-        snapshot = analyzer.build_snapshot(evaluation, trend_vector)
-        result_row = analyzer.build_result_row(snapshot, current_config.get('enable_filter', False))
-        result_collector.add(result_row)
+            # 构建快照并输出
+            snapshot = analyzer.build_snapshot(default_evaluation, vector)
 
-    # ========== 10. 构建输出 DataFrame ==========
-    df_result = result_collector.to_dataframe()
+            # 将快照转换为扁平行
+            row = _snapshot_to_row(snapshot, analyzer.group_df, keep_cols)
+            collector.add(row)
+            processed += 1
 
-    logger.info("\n" + "=" * 80)
-    logger.info(f"📊 {metric_name} 趋势分析完成")
-    logger.info("=" * 80)
-    logger.info(f"输入分组数: {grouped.ngroups}")
-    logger.info(f"输出分组数: {len(df_result)}")
+        except Exception as exc:
+            failed += 1
+            logger.warning(f"{group_key}: 分析异常 - {exc}")
+            continue
 
-    if base_config.get('enable_filter'):
-        logger.info(f"过滤淘汰: {eliminated_count} 组")
+    # 8. 输出结果
+    result_df = collector.to_dataframe()
 
-        # 行业配置使用统计
-        usage_stats = config_resolver.usage_stats()
-        if usage_stats:
-            logger.info(f"\n🏭 行业差异化参数应用:")
-            for industry, count in sorted(usage_stats.items(), key=lambda x: -x[1])[:10]:
-                ind_config = industry_configs.get(industry, filter_config)
-                slope_param = ind_config.get('log_severe_decline_slope', ind_config.get('severe_decline_slope', filter_config.get('log_severe_decline_slope', -0.30)))
-                min_value = ind_config.get('min_latest_value', filter_config.get('min_latest_value'))
-                logger.info(f"  {industry}: {count}家 (min={min_value}, log_slope={slope_param:.2f})")
-
-    if len(df_result) > 0:
-        logger.info("\n📊 v2.0 趋势统计 (Log斜率):")
-        logger.info(f"  平均加权值:   {df_result[f'{prefix}{metric_name}_weighted{suffix}'].mean():.2f}")
-        logger.info(f"  平均Log斜率:  {df_result[f'{prefix}{metric_name}_log_slope{suffix}'].mean():.4f} (CAGR: {df_result[f'{prefix}{metric_name}_cagr{suffix}'].mean()*100:.1f}%)")
-        logger.info(f"  平均线性斜率: {df_result[f'{prefix}{metric_name}_slope{suffix}'].mean():.2f} (对照)")
-        logger.info(f"  平均R²:       {df_result[f'{prefix}{metric_name}_r_squared{suffix}'].mean():.2f}")
-
-        score_col = f"{prefix}{metric_name}_trend_score{suffix}"
-        if score_col in df_result.columns:
-            logger.info(f"  平均趋势评分: {df_result[score_col].mean():.1f}")
-
-        # 改善vs衰退 (使用Log斜率)
-        log_slope_col = f"{prefix}{metric_name}_log_slope{suffix}"
-        improving = (df_result[log_slope_col] > 0.10).sum()   # CAGR >10%
-        declining = (df_result[log_slope_col] < -0.10).sum()  # CAGR <-10%
-        stable = len(df_result) - improving - declining
-
-        logger.info(f"\n  改善趋势(斜率>+1): {improving} ({improving/len(df_result)*100:.1f}%)")
-        logger.info(f"  稳定趋势(斜率±1):  {stable} ({stable/len(df_result)*100:.1f}%)")
-        logger.info(f"  下滑趋势(斜率<-1): {declining} ({declining/len(df_result)*100:.1f}%)")
-
-        # 扣分统计
-        if base_config.get('enable_filter'):
-            penalty_col = f"{prefix}{metric_name}_penalty{suffix}"
-            penalized = (df_result[penalty_col] > 0).sum()
-            if penalized > 0:
-                logger.info(f"\n  被扣分: {penalized} 组")
-                logger.info(f"  平均扣分: {df_result[df_result[penalty_col]>0][penalty_col].mean():.1f}分")
-
-    logger.info("=" * 80)
-
-    return df_result
-
-
-if __name__ == "__main__":
-    # 测试通用趋势分析
-    import sys
-    sys.path.append('src')
-
-    # 测试: ROIC趋势分析
-    print("\n" + "=" * 80)
-    print("测试: ROIC趋势分析")
-    print("=" * 80)
-
-    df_roic = analyze_metric_trend(
-        data='data/polars/5yd_final_industry.csv',
-        group_cols='ts_code',
-        metric_name='roic',
-        prefix='',
-        suffix='',
-        min_periods=5,
+    logger.info(
+        f"analyze_metric_trend 完成: "
+        f"total={total_groups}, processed={processed}, skipped={skipped}, failed={failed}"
     )
 
-    print("\nROIC趋势分析结果(前10):")
-    print(df_roic.head(10))
-    print(f"\n输出列: {df_roic.columns.tolist()}")
+    return result_df
+
+
+@register_method(
+    engine_name="analyze_multiple_metrics",
+    component_type="business_engine",
+    engine_type="duckdb",
+    description="批量多指标趋势分析"
+)
+def analyze_multiple_metrics(
+    data: Union[str, Path, pd.DataFrame],
+    group_cols: str = 'ts_code',
+    metrics: Optional[List[str]] = None,
+    min_periods: int = 5,
+    window_size: Optional[int] = None,
+    enable_multi_horizon: bool = True,
+    reference_config: Optional[Dict[str, List[str]]] = None,
+    keep_cols: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """
+    批量分析多个指标的趋势
+
+    Args:
+        data: 输入数据
+        group_cols: 分组列
+        metrics: 要分析的指标列表 (None=自动检测)
+        min_periods: 最小数据期数
+        window_size: 趋势计算窗口
+        enable_multi_horizon: 是否启用多时间窗口分析
+        reference_config: 交叉验证配置 {metric: [ref_metrics]}
+        keep_cols: 保留的额外列
+
+    Returns:
+        合并的趋势分析结果 DataFrame
+    """
+    # 加载数据
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        if path.suffix.lower() == '.parquet':
+            df = pd.read_parquet(path)
+        else:
+            df = pd.read_csv(path)
+    else:
+        df = data.copy()
+
+    # 自动检测指标
+    if metrics is None:
+        # 常见财务指标
+        candidate_metrics = [
+            'roic', 'roe', 'roa', 'roiic',
+            'grossprofit_margin', 'netprofit_margin',
+            'eps', 'ocfps', 'total_revenue_ps',
+        ]
+        metrics = [m for m in candidate_metrics if m in df.columns]
+        logger.info(f"自动检测到指标: {metrics}")
+
+    if not metrics:
+        raise ValueError("没有找到可分析的指标")
+
+    # 逐指标分析并合并
+    result_dfs = []
+    for metric in metrics:
+        ref_metrics = (reference_config or {}).get(metric, [])
+        try:
+            metric_result = analyze_metric_trend(
+                data=df,
+                group_cols=group_cols,
+                metric_name=metric,
+                min_periods=min_periods,
+                window_size=window_size,
+                enable_multi_horizon=enable_multi_horizon,
+                reference_metrics=ref_metrics,
+                keep_cols=keep_cols,
+            )
+            if not metric_result.empty:
+                result_dfs.append(metric_result)
+        except Exception as exc:
+            logger.warning(f"指标 {metric} 分析失败: {exc}")
+            continue
+
+    if not result_dfs:
+        return pd.DataFrame()
+
+    # 合并结果 (按分组列)
+    merged = result_dfs[0]
+    for df in result_dfs[1:]:
+        # 找出公共列 (分组列 + keep_cols)
+        common_cols = [group_cols] + (keep_cols or [])
+        common_cols = [c for c in common_cols if c in merged.columns and c in df.columns]
+
+        # 去掉 df 中的公共列再合并
+        df_to_merge = df.drop(columns=[c for c in common_cols if c in df.columns and c != group_cols], errors='ignore')
+        merged = merged.merge(df_to_merge, on=group_cols, how='outer', suffixes=('', '_dup'))
+
+        # 清理重复列
+        dup_cols = [c for c in merged.columns if c.endswith('_dup')]
+        merged = merged.drop(columns=dup_cols, errors='ignore')
+
+    return merged
+
+
+__all__ = [
+    'compute_derived_metrics',
+    'analyze_metric_trend',
+    'analyze_multiple_metrics',
+]

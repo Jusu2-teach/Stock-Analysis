@@ -4,32 +4,30 @@
 
 专业的财务指标趋势分析框架，支持：
 - 7种分析探针（LogTrend, Robust, Inflection, Cyclical, Deterioration, Rolling, Volatility）
-- 29条评分规则（否决、扣分、交叉验证、周期调整、加分）
 - 指标类型适配器（自动调整分析参数）
 - 行业差异化配置
 
 核心组件：
 - TrendAnalyzer: 趋势分析器主类
 - MetricAdapter: 指标类型适配器
-- TrendRuleEngine: 规则引擎
 - MetricProfile: 指标特性配置
+
+**架构说明**:
+- Probe 层是纯数学趋势分析，不包含任何行业阈值或业务规则
+- 评估规则和策略已迁移到 evaluators/threshold/ 模块
+- TrendRuleEngine、TrendEvaluator、DEFAULT_TREND_RULES 现在位于 evaluators.threshold.engine
 
 作者: AStock Analysis System
 日期: 2025-12-06
 """
 
-# 核心分析器
+# 核心分析器（纯探针层）
 from .core import (
     TrendAnalyzer,
     MetricProbe,
-    MetricProbeContext,
     get_default_metric_probes,
-    TrendRuleEngine,
-    trend_rule_engine,
     ConfigResolver,
-    TrendEvaluator,
     TrendResultCollector,
-    DEFAULT_TREND_RULES,
 )
 
 # 数据模型
@@ -39,55 +37,28 @@ from .models import (
     TrendSnapshot,
     TrendVector,
     TrendEvaluationResult,
-    TrendContext,
-    RuleResult,
+    MetricProbeContext,
 )
 
-# 配置
+# 配置 (纯算法参数)
 from .config import (
-    trend_field_schema,
     get_default_config,
     TrendAnalysisConfig,
-    get_filter_config,
-    get_decline_thresholds,
-    get_cyclical_thresholds,
+    DEFAULT_CV_THRESHOLDS,
 )
 
-# 指标档案与适配器
-from .metric_profiles import (
-    MetricCategory,
-    MetricProfile,
-    METRIC_PROFILES,
-    get_metric_profile,
-    detect_metric_category,
-)
-
-from .metric_adapter import (
-    MetricAdapter,
-    AdapterFactory,
-    AdaptedConfig,
-    create_metric_config_for_pipeline,
-)
-
-# 策略
-from .strategies import (
-    TrendStrategy,
-    get_default_strategies,
-)
+# 注意：业务配置（行业阈值、周期性判断）已移至 evaluators/threshold 模块
+# trend/ 层是纯数学层，不应直接导入或重导出业务配置
+# 需要业务配置的代码应从 evaluators.threshold 导入
 
 
 __all__ = [
-    # 核心分析器
+    # 核心分析器（纯探针层）
     "TrendAnalyzer",
     "MetricProbe",
-    "MetricProbeContext",
     "get_default_metric_probes",
-    "TrendRuleEngine",
-    "trend_rule_engine",
     "ConfigResolver",
-    "TrendEvaluator",
     "TrendResultCollector",
-    "DEFAULT_TREND_RULES",
 
     # 数据模型
     "TrendAnalyzerConfig",
@@ -95,29 +66,10 @@ __all__ = [
     "TrendSnapshot",
     "TrendVector",
     "TrendEvaluationResult",
-    "TrendContext",
-    "RuleResult",
+    "MetricProbeContext",
 
-    # 配置
-    "trend_field_schema",
+    # 配置 (纯算法参数)
     "get_default_config",
     "TrendAnalysisConfig",
-    "get_filter_config",
-    "get_decline_thresholds",
-    "get_cyclical_thresholds",
-
-    # 指标档案与适配器
-    "MetricCategory",
-    "MetricProfile",
-    "METRIC_PROFILES",
-    "get_metric_profile",
-    "detect_metric_category",
-    "MetricAdapter",
-    "AdapterFactory",
-    "AdaptedConfig",
-    "create_metric_config_for_pipeline",
-
-    # 策略
-    "TrendStrategy",
-    "get_default_strategies",
+    "DEFAULT_CV_THRESHOLDS",
 ]

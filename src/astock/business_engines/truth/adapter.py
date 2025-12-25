@@ -37,106 +37,16 @@ from ..analyzers.trend.models import (
     InflectionResult,
 )
 
+# ============================================================================
+# 统一导入：ProbeOutputs 和 MultiIndicatorProbeOutputs
+# 权威定义在 core.probe_engine.builders，此处仅导入复用
+# ============================================================================
+from ..core.probe_engine.builders import (
+    ProbeOutputs,
+    MultiIndicatorProbeOutputs,
+)
+
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# 探针输出集合
-# ============================================================================
-
-@dataclass
-class ProbeOutputs:
-    """
-    单个指标的所有探针输出集合
-
-    例如 ROIC 指标会有：
-    - log_trend: LogTrendResult
-    - volatility: VolatilityResult
-    - cyclical: CyclicalPatternResult
-    - deterioration: RecentDeteriorationResult
-    - rolling: RollingTrendResult
-    - robust: RobustTrendResult (可选)
-    """
-    indicator_name: str
-    log_trend: Optional[LogTrendResult] = None
-    volatility: Optional[VolatilityResult] = None
-    cyclical: Optional[CyclicalPatternResult] = None
-    deterioration: Optional[RecentDeteriorationResult] = None
-    rolling: Optional[RollingTrendResult] = None
-    robust: Optional[RobustTrendResult] = None
-    inflection: Optional[InflectionResult] = None
-
-    # 原始数据（降级用）
-    raw_values: Optional[np.ndarray] = None
-
-    def has_core_probes(self) -> bool:
-        """检查核心探针是否齐全"""
-        return all([
-            self.log_trend is not None,
-            self.volatility is not None,
-            self.cyclical is not None,
-            self.deterioration is not None,
-        ])
-
-    def missing_probes(self) -> List[str]:
-        """列出缺失的探针"""
-        missing = []
-        if self.log_trend is None:
-            missing.append("log_trend")
-        if self.volatility is None:
-            missing.append("volatility")
-        if self.cyclical is None:
-            missing.append("cyclical")
-        if self.deterioration is None:
-            missing.append("deterioration")
-        if self.rolling is None:
-            missing.append("rolling")
-        return missing
-
-
-@dataclass
-class MultiIndicatorProbeOutputs:
-    """
-    多指标的探针输出集合（公司级别）
-
-    一个公司需要多个指标的探针输出：
-    - roic: ROIC的探针输出
-    - gross_margin: 毛利率的探针输出
-    - revenue: 营收的探针输出
-    - ocf: 经营现金流的探针输出
-    - net_profit: 净利润的探针输出
-    """
-    company_code: str
-    company_name: str = ""
-
-    # 核心指标探针输出
-    roic: Optional[ProbeOutputs] = None
-    gross_margin: Optional[ProbeOutputs] = None
-    revenue: Optional[ProbeOutputs] = None
-    ocf: Optional[ProbeOutputs] = None  # Operating Cash Flow
-    net_profit: Optional[ProbeOutputs] = None
-
-    # 辅助财务数据（用于 δ_fraud 和 V 因子）
-    total_assets: float = 0.0
-    equity: float = 0.0
-    goodwill: float = 0.0
-    receivables: float = 0.0
-    related_party_transactions: float = 0.0
-    advance_receipts: float = 0.0  # 预收款项
-    inventory: float = 0.0  # 存货
-
-    def list_missing(self) -> Dict[str, List[str]]:
-        """列出各指标缺失的探针"""
-        result = {}
-        for name in ['roic', 'gross_margin', 'revenue', 'ocf', 'net_profit']:
-            outputs = getattr(self, name)
-            if outputs is None:
-                result[name] = ['all']
-            else:
-                missing = outputs.missing_probes()
-                if missing:
-                    result[name] = missing
-        return result
 
 
 # ============================================================================

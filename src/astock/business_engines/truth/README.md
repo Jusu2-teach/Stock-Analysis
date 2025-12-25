@@ -1,8 +1,168 @@
-# T.R.U.T.H. 六维基因系统 v2.0
+# T.R.U.T.H. 六维基因系统 v3.0
 
 > **T**ransparent **R**isk-adjusted **U**nified **T**hreshold **H**euristic
 >
 > 透明风险调整统一阈值启发式系统
+
+## 🏗️ 系统架构总览
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        T.R.U.T.H. 系统架构 v3.0                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                    Pipeline 探针分析层                                │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                     │   │
+│  │  │  ROIC   │ │   ROE   │ │  ROIIC  │ │ 毛利率  │                     │   │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘                     │   │
+│  │  ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐                     │   │
+│  │  │ 净利率  │ │  营收   │ │  利润   │ │  OCF    │   8个探针DataFrame  │   │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘                     │   │
+│  └───────┼──────────┼──────────┼──────────┼─────────────────────────────┘   │
+│          │          │          │          │                                 │
+│          ▼          ▼          ▼          ▼                                 │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                 DataFrameToProbeConverter (桥接层)                    │   │
+│  │                                                                       │   │
+│  │  DataFrame行 ──→ LogTrendResult, VolatilityResult,                   │   │
+│  │                  CyclicalPatternResult, RecentDeteriorationResult... │   │
+│  │                                      ↓                                │   │
+│  │                              ProbeOutputs                             │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                   ProbeAdapter.adapt() (适配层)                       │   │
+│  │                                                                       │   │
+│  │  MultiIndicatorProbeOutputs ──→ GenomeInput                          │   │
+│  │  (roic, gross_margin, revenue, ocf, net_profit)                      │   │
+│  │                           ↓                                          │   │
+│  │  AlphaGeneInput, BetaGeneInput, GammaGeneInput,                      │   │
+│  │  DeltaFraudInput, DeltaDecayInput, VFactorInput                      │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │              compute_genome_from_probes() (核心计算层)                │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │  core/genes/                                                    │  │   │
+│  │  │  ├─ alpha.py:       compute_alpha_from_probes()   → α          │  │   │
+│  │  │  ├─ beta.py:        compute_beta_from_probes()    → β          │  │   │
+│  │  │  ├─ gamma.py:       compute_gamma_from_probes()   → γ          │  │   │
+│  │  │  ├─ delta_fraud.py: compute_delta_fraud_from_probes() → δ_f    │  │   │
+│  │  │  ├─ delta_decay.py: compute_delta_decay_from_probes() → δ_d    │  │   │
+│  │  │  └─ verification.py: compute_verification_from_probes() → V    │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                           ↓                                          │   │
+│  │                     CompanyGenome                                    │   │
+│  │              (α, β, γ, δ_fraud, δ_decay, V)                          │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                      三大求解器 (Solvers)                             │   │
+│  │  ┌─────────────────┬─────────────────┬─────────────────┐             │   │
+│  │  │ gravity_solver  │ velocity_solver │ structure_solver│             │   │
+│  │  │ (重力求解器)    │ (速度求解器)    │ (结构求解器)    │             │   │
+│  │  ├─────────────────┼─────────────────┼─────────────────┤             │   │
+│  │  │ 输入: α, β      │ 输入: γ, V      │ 输入: genome    │             │   │
+│  │  │ 输出: ROIC阈值  │ 输出: 增长边界  │ 输出: 斜率预测  │             │   │
+│  │  └─────────────────┴─────────────────┴─────────────────┘             │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                      │
+│                                      ▼                                      │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                      TruthProcessResult (输出)                        │   │
+│  │  - genome: CompanyGenome (六维基因)                                   │   │
+│  │  - solver_results: 三大求解器结果                                     │   │
+│  │  - final_score: 综合评分                                              │   │
+│  │  - signal: STRONG_BUY | BUY | NEUTRAL | CAUTION | SELL               │   │
+│  │  - grade: A | B+ | B | C | D                                         │   │
+│  │  - warnings: 风险预警列表                                             │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 Workflow 集成
+
+### analysis.yaml 中的 T.R.U.T.H. 处理步骤
+
+```yaml
+# ═══════════════════════════════════════════════════════════════════════════
+# 🧬 T.R.U.T.H. 处理系统 - 专业基因-指标映射
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Step 1: T.R.U.T.H. 处理（专业基因提取 + 求解器）
+- name: "Process_Truth_System"
+  component: "business_engine"
+  engine: "truth"
+  method: ["process_truth"]
+  parameters:
+    # 接收8个探针分析结果
+    roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+    roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+    roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+    gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+    net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+    revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+    profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+    ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+  outputs:
+    parameters:
+      - name: Truth_Processed_Results
+
+# Step 2: T.R.U.T.H. 报告生成
+- name: "Generate_Truth_Report"
+  component: "business_engine"
+  engine: "reporting"
+  method: ["report_truth"]
+  parameters:
+    truth_processed: "steps.Process_Truth_System.outputs.parameters.Truth_Processed_Results"
+    output_path: "data/truth_analysis_report.md"
+```
+
+### 完整数据流
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Pipeline 完整数据流                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ① Load_Financial_Data                                                      │
+│     │  读取: data/polars/10yd_final_industry.csv                            │
+│     ▼                                                                       │
+│  ② 8个探针分析步骤 (并行处理)                                                │
+│     ├─ Analyze_ROIC_Trend    → roic_trend_analysis.csv                      │
+│     ├─ Analyze_ROE_Trend     → roe_trend_analysis.csv                       │
+│     ├─ Analyze_ROIIC_Trend   → roiic_trend_analysis.csv                     │
+│     ├─ Analyze_GrossMargin   → gross_margin_trend_analysis.csv              │
+│     ├─ Analyze_NetMargin     → net_margin_trend_analysis.csv                │
+│     ├─ Analyze_Revenue       → revenue_trend_analysis.csv                   │
+│     ├─ Analyze_Profit        → profit_trend_analysis.csv                    │
+│     └─ Analyze_OCF           → ocf_trend_analysis.csv                       │
+│     │                                                                       │
+│     ▼                                                                       │
+│  ③ Generate_Comprehensive_Report (规则驱动报告)                              │
+│     │  输出: data/comprehensive_analysis_report.md                          │
+│     │                                                                       │
+│  ④ Process_Truth_System  ← 【T.R.U.T.H. 核心处理】                          │
+│     │  - 8个DataFrame → ProbeOutputs → GenomeInput                          │
+│     │  - compute_genome_from_probes() 专业基因计算                           │
+│     │  - 三大求解器执行                                                      │
+│     │  输出: Truth_Processed_Results                                        │
+│     │                                                                       │
+│     ▼                                                                       │
+│  ⑤ Generate_Truth_Report                                                    │
+│     │  输出: data/truth_analysis_report.md                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## 🧬 核心理念：信号熔炉
 
@@ -307,37 +467,64 @@ T.R.U.T.H. v2.0 遵循"信号熔炉"三层过滤：
 
 ## 🚀 使用方式
 
+### 方式一：通过 Workflow（推荐）
+
+在 `workflow/analysis.yaml` 中已配置好完整的处理流程：
+
+```bash
+# 运行完整分析管道
+python -m pipeline.main workflow/analysis.yaml
+```
+
+### 方式二：直接调用 TruthProcessor
+
 ```python
-from src.astock.business_engines.truth import TruthEngine, CompanyGenome
+import pandas as pd
+from src.astock.business_engines.truth.processor import TruthProcessor
 
-# 初始化引擎
-engine = TruthEngine()
+# 初始化处理器
+processor = TruthProcessor()
 
-# 计算公司基因组
-genome: CompanyGenome = engine.compute_genome(
-    ts_code="600519.SH",  # 贵州茅台
-    probe_results=probe_outputs,
-    financial_data=fina_df
-)
+# 准备探针数据（从 Pipeline 分析结果）
+probe_data = {
+    'roic': pd.read_csv('data/filter_middle/roic_trend_analysis.csv'),
+    'roe': pd.read_csv('data/filter_middle/roe_trend_analysis.csv'),
+    'gross_margin': pd.read_csv('data/filter_middle/gross_margin_trend_analysis.csv'),
+    'revenue': pd.read_csv('data/filter_middle/revenue_trend_analysis.csv'),
+    'profit': pd.read_csv('data/filter_middle/profit_trend_analysis.csv'),
+    'ocf': pd.read_csv('data/filter_middle/ocf_trend_analysis.csv'),
+}
 
-# 获取六维基因值
-print(f"α (周期性): {genome.alpha.value:.3f}")
-print(f"β (资本密度): {genome.beta.value:.3f}")
-print(f"γ (成长动能): {genome.gamma.value:.3f}")
-print(f"δ_fraud (欺诈熵): {genome.delta_fraud.value:.3f}")
-print(f"δ_decay (衰退熵): {genome.delta_decay.value:.3f}")
-print(f"V (真相验证): {genome.verification.value:.3f}")
+# 处理单个公司
+ts_code = "600519.SH"  # 贵州茅台
+result = processor.process_company(ts_code, probe_data, "贵州茅台")
 
-# 计算动态阈值
-threshold = engine.compute_threshold(genome)
-print(f"动态阈值: {threshold:.2%}")
+# 获取处理结果
+print(f"ts_code: {result.ts_code}")
+print(f"六维基因:")
+g = result.genome
+print(f"  α (周期性): {g.alpha:.4f}")
+print(f"  β (资本密度): {g.beta:.4f}")
+print(f"  γ (成长动能): {g.gamma:.4f}")
+print(f"  δ_fraud (欺诈熵): {g.delta_fraud:.4f}")
+print(f"  δ_decay (衰退熵): {g.delta_decay:.4f}")
+print(f"  V (真相验证): {g.verification:.4f}")
+print(f"最终评分: {result.final_score:.2f}")
+print(f"信号: {result.signal}")
+print(f"评级: {result.grade}")
+print(f"处理流程: {result.processing_notes}")
+```
 
-# 判断是否值得投资
-current_roic = 0.25  # 茅台ROIC约25%
-if current_roic > threshold:
-    print("✅ 值得投资")
-else:
-    print("❌ 不值得投资")
+### 方式三：批量处理
+
+```python
+# 批量处理所有公司
+batch_result = processor.process_batch(probe_data)
+
+# 获取结果 DataFrame
+df_results = processor.get_results_dataframe(batch_result)
+print(f"处理了 {len(df_results)} 家公司")
+print(df_results[['ts_code', 'alpha', 'gamma', 'final_score', 'signal', 'grade']].head())
 ```
 
 ---
@@ -346,28 +533,77 @@ else:
 
 ```
 truth/
-├── __init__.py          # 模块导出
-├── adapter.py           # 探针适配器（v2.0输入字段）
-├── calibrator.py        # 阈值校准器
-├── clusterer.py         # 聚类分析
-├── config.py            # 配置参数
-├── engine.py            # 主引擎
-├── models.py            # 数据模型
-├── visualizer.py        # 可视化
-├── README.md            # 本文档
-├── GENE_EVOLUTION_ANALYSIS.md  # 进化分析报告
+├── __init__.py              # 模块导出
+├── README.md                # 本文档
+├── GENE_EVOLUTION_ANALYSIS.md  # 基因进化分析报告
+│
+├── adapter.py               # ProbeAdapter - 探针适配器
+│                            # ProbeOutputs → GenomeInput
+│
+├── processor.py             # TruthProcessor - 核心处理器 ⭐
+│                            # 包含 DataFrameToProbeConverter (桥接层)
+│                            # DataFrame → ProbeOutputs → GenomeInput → CompanyGenome
+│
+├── truth_engine.py          # process_truth() - Pipeline注册入口
+│                            # @register_method 注册到 orchestrator
+│
+├── config.py                # TruthConfig - 配置参数
+├── models.py                # CompanyGenome, TruthResult 等数据模型
+├── calibrator.py            # 阈值校准器
+├── clusterer.py             # 聚类分析
+├── visualizer.py            # 可视化
+│
 └── core/
-    ├── genes/           # 六维基因实现
-    │   ├── alpha.py     # α 周期性基因 v2.0
-    │   ├── beta.py      # β 资本密度基因 v2.0
-    │   ├── gamma.py     # γ 成长动能基因 v2.0
-    │   ├── delta_fraud.py  # δ_fraud 欺诈熵基因 v2.0
-    │   ├── delta_decay.py  # δ_decay 衰退熵基因 v2.0
-    │   └── verification.py # V 真相验证基因 v2.0
-    └── solvers/         # 三大求解器
-        ├── threshold_solver.py   # 阈值求解器
-        ├── weight_optimizer.py   # 权重优化器
-        └── sensitivity_analyzer.py  # 敏感性分析器
+    ├── genes/               # 六维基因实现 ⭐
+    │   ├── __init__.py      # 模块导出 + compute_genome_from_probes
+    │   ├── genome_assembler.py  # 基因组装器（调用下面6个函数）
+    │   ├── alpha.py         # α 周期性基因 - compute_alpha_from_probes()
+    │   ├── beta.py          # β 资本密度基因 - compute_beta_from_probes()
+    │   ├── gamma.py         # γ 成长动能基因 - compute_gamma_from_probes()
+    │   ├── delta_fraud.py   # δ_fraud 欺诈熵基因 - compute_delta_fraud_from_probes()
+    │   ├── delta_decay.py   # δ_decay 衰退熵基因 - compute_delta_decay_from_probes()
+    │   └── verification.py  # V 真相验证基因 - compute_verification_from_probes()
+    │
+    └── solvers/             # 三大求解器 ⭐
+        ├── __init__.py      # 模块导出
+        ├── gravity_solver.py     # 重力求解器 - 计算动态ROIC阈值
+        ├── velocity_solver.py    # 速度求解器 - 计算增长边界
+        └── structure_solver.py   # 结构求解器 - 斜率预测
+```
+
+---
+
+## 🔗 基因-指标映射关系
+
+### 专业映射表
+
+| 基因 | 核心指标 | 聚合策略 | 计算逻辑 |
+|------|----------|----------|----------|
+| α (周期性) | ROIC, ROE | max | 选择周期性最强的指标 |
+| β (资本密度) | ROIC, OCF | 加权 | ROIC波动 + OCF波动 + DOL |
+| γ (成长动能) | 营收, 利润, OCF | 调和平均 | 惩罚不平衡增长 |
+| δ_fraud (欺诈熵) | 利润, OCF | 逻辑OR | 任一异常即触发 |
+| δ_decay (衰退熵) | 所有效率指标 | max | 最严重的衰退信号 |
+| V (验证因子) | OCF | 单一 | 现金流验证利润真实性 |
+
+### 求解器输入输出
+
+| 求解器 | 核心输入 | 输出 | 用途 |
+|--------|----------|------|------|
+| gravity_solver | α, β | final_threshold | 动态ROIC阈值 |
+| velocity_solver | γ, V | max_sustainable_growth | 增长边界评估 |
+| structure_solver | genome | expected_slope | 斜率预测（护城河检测）|
+
+### 因果网络验证
+
+```
+    营收增长 ──────→ 利润增长 ──────→ 现金流增长
+        │               │
+        ▼               ▼
+       ROE ←────────── ROIC
+        │
+        ▼
+    周期性波动 → α
 ```
 
 ---
@@ -376,7 +612,8 @@ truth/
 
 | 版本 | 日期 | 更新内容 |
 |------|------|----------|
-| v2.0 | 2025-01 | 六维基因全面进化：Hurst门控、DOL检测、断点重置、麦道夫特征、拐点预警、体制惩罚 |
+| v3.0 | 2025-01 | 架构重构：DataFrameToProbeConverter桥接层、专业函数调用链、三大求解器集成 |
+| v2.0 | 2025-01 | 六维基因进化：Hurst门控、DOL检测、断点重置、麦道夫特征、拐点预警、体制惩罚 |
 | v1.0 | 2024-12 | 初始版本：六维基因框架建立 |
 
 ---

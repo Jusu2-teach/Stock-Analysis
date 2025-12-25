@@ -258,7 +258,7 @@ AStock-Analysis/
 │   │   │       ├── rules.py    # 31条规则引擎
 │   │   │       └── strategies.py # 5种策略识别
 │   │   ├── reporters/      # 报告生成器
-│   │   └── scorers/        # 评分引擎
+│   │   └── truth/          # T.R.U.T.H. 六维基因系统
 │   └── data_engines/       # 数据引擎 (DuckDB/Polars)
 ├── workflow/               # [Config] YAML 工作流
 │   ├── duckdb_screen.yaml  # 主分析流程

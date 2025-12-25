@@ -158,9 +158,13 @@ def ewma_trend_shift(
     return ewma, False, 0
 
 
-class InflectionDetector:
+class InflectionProbe:
     """
-    增强版拐点检测器
+    增强版拐点检测探针
+
+    Unified interface following ProbeProtocol:
+    - compute(values, **kwargs) -> InflectionResult
+    - default() -> InflectionResult
 
     使用分段线性回归识别结构性断点，增加了：
     - F检验验证拐点统计显著性
@@ -187,7 +191,7 @@ class InflectionDetector:
         self.slope_diff_threshold = slope_diff_threshold
         self.f_test_alpha = f_test_alpha
 
-    def detect(self, values: List[float]) -> InflectionResult:
+    def compute(self, values: List[float]) -> InflectionResult:
         config = get_default_config()
         checker = DataQualityChecker(config)
         values_array = checker.ensure_window(values)
@@ -542,4 +546,23 @@ class InflectionDetector:
             early_r_squared=0.0,
             recent_r_squared=0.0,
             warnings=[],
+        )
+
+    def default(self) -> InflectionResult:
+        """Return default result for insufficient data (ProbeProtocol compliance)."""
+        return InflectionResult(
+            has_inflection=False,
+            inflection_type="none",
+            early_slope=0.0,
+            middle_slope=0.0,
+            recent_slope=0.0,
+            slope_change=0.0,
+            confidence=0.0,
+            early_r_squared=0.0,
+            recent_r_squared=0.0,
+            warnings=[TrendWarning(
+                code="INSUFFICIENT_DATA",
+                level="warning",
+                message="Insufficient data",
+            )],
         )

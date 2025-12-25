@@ -200,22 +200,27 @@ class RobustTrendProbe:
     def __init__(self):
         self.config = get_default_config()
 
-    def compute(self, values: List[float], context: MetricProbeContext) -> RobustTrendResult:
+    def compute(self, values: List[float], **kwargs) -> RobustTrendResult:
         """
         计算稳健趋势指标
 
         Args:
             values: 时间序列数据（按时间顺序，从早到晚）
-            context: 探针上下文
+            **kwargs: 可选参数
+                - context (MetricProbeContext): 探针上下文（可选）
 
         Returns:
             RobustTrendResult 包含稳健斜率和 Mann-Kendall 检验结果
         """
+        # 从 kwargs 获取可选的 context
+        context = kwargs.get('context')
+        group_key = context.group_key if context else "unknown"
+
         n = len(values)
 
         if n < 3:
             return self._default_result(
-                context,
+                group_key,
                 "INSUFFICIENT_DATA",
                 f"数据点不足（需要 ≥3，实际 {n}）"
             )
@@ -229,7 +234,7 @@ class RobustTrendProbe:
                 valid_mask = np.isfinite(y)
                 if valid_mask.sum() < 3:
                     return self._default_result(
-                        context,
+                        group_key,
                         "INVALID_DATA",
                         "有效数据点不足"
                     )
@@ -303,18 +308,18 @@ class RobustTrendProbe:
 
         except Exception as e:
             logger.warning(
-                f"RobustTrendProbe computation failed for {context.group_key}: {e}",
+                f"RobustTrendProbe computation failed for {group_key}: {e}",
                 exc_info=True
             )
             return self._default_result(
-                context,
+                group_key,
                 "COMPUTATION_ERROR",
                 f"计算异常: {str(e)}"
             )
 
     def _default_result(
         self,
-        context: MetricProbeContext,
+        group_key: str,
         error_code: str,
         message: str
     ) -> RobustTrendResult:
@@ -332,15 +337,15 @@ class RobustTrendProbe:
                     code=error_code,
                     level="warning",
                     message=message,
-                    context={"group_key": context.group_key}
+                    context={"group_key": group_key}
                 )
             ]
         )
 
-    def default(self, context: MetricProbeContext) -> RobustTrendResult:
-        """向后兼容的默认结果方法"""
+    def default(self) -> RobustTrendResult:
+        """返回默认结果（符合统一协议）"""
         return self._default_result(
-            context,
+            "unknown",
             "ROBUST_CALC_FAILED",
             "稳健趋势计算失败或数据不足"
         )

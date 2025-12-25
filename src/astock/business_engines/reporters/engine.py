@@ -1,7 +1,10 @@
 """
 Reporting Engine Entry Point
 ============================
-Registers the generic reporting method.
+
+报告生成引擎入口，提供两种报告模式：
+1. report_comprehensive: 规则驱动的综合分析报告
+2. report_truth: T.R.U.T.H. 数据驱动报告（六维基因+三大求解器）
 
 数据输入：直接接收探针分析结果 DataFrame
 """
@@ -13,29 +16,9 @@ import pandas as pd
 # orchestrator 已移至根目录
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
-from ..core.interfaces import ScoreResult
-from .generic_reporter import GenericReporter
 from .comprehensive_generator import ComprehensiveReportGenerator
 from .truth_report_generator import TruthReportGenerator
 
-@register_method(
-    engine_name="report_generic",
-    component_type="business_engine",
-    engine_type="reporting",
-    description="Generic reporting entry point"
-)
-def report_generic(result: ScoreResult, config: Dict[str, Any] = None, output_path: str = None) -> str:
-    """
-    Generic reporting function using the new architecture.
-    """
-    reporter = GenericReporter()
-    report_text = reporter.generate(result, config)
-
-    if output_path:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).write_text(report_text, encoding='utf-8')
-
-    return report_text
 
 @register_method(
     engine_name="report_comprehensive",
@@ -94,6 +77,7 @@ def report_comprehensive(
     description="Generate T.R.U.T.H. data-driven report (no thresholds, pure data speaks)"
 )
 def report_truth(
+    truth_processed: Dict[str, Any] = None,  # 新增：T.R.U.T.H. 处理后的结果
     roic_data: pd.DataFrame = None,
     roe_data: pd.DataFrame = None,
     roiic_data: pd.DataFrame = None,
@@ -107,6 +91,10 @@ def report_truth(
     """
     生成 T.R.U.T.H. 纯数据驱动报告
 
+    支持两种模式:
+    1. 使用 truth_processed（推荐）: 从 process_truth 步骤获取专业处理后的数据
+    2. 直接使用探针数据（兼容旧版）
+
     特点：
     - 🧬 六维基因测序（Alpha/Beta/Gamma/Delta欺诈/Delta衰退/Verification）
     - ⚙️ 三大求解器动态评分（重力/速度/结构）
@@ -114,24 +102,33 @@ def report_truth(
     - 🔬 多维度全面分析每家公司
 
     Args:
-        roic_data ~ ocf_data: 各指标探针分析结果
+        truth_processed: T.R.U.T.H. 处理后的结果（来自 process_truth 步骤）
+        roic_data ~ ocf_data: 各指标探针分析结果（兼容旧版）
         output_path: 输出报告路径
 
     Returns:
         生成的报告内容
     """
-    probe_data = {
-        'roic': roic_data,
-        'roe': roe_data,
-        'roiic': roiic_data,
-        'gross_margin': gross_margin_data,
-        'net_margin': net_margin_data,
-        'revenue': revenue_data,
-        'profit': profit_data,
-        'ocf': ocf_data,
-    }
+    # 优先使用 truth_processed
+    if truth_processed is not None:
+        generator = TruthReportGenerator(
+            truth_processed=truth_processed,
+            probe_data=truth_processed.get('probe_data', {})
+        )
+    else:
+        # 兼容旧版：直接使用探针数据
+        probe_data = {
+            'roic': roic_data,
+            'roe': roe_data,
+            'roiic': roiic_data,
+            'gross_margin': gross_margin_data,
+            'net_margin': net_margin_data,
+            'revenue': revenue_data,
+            'profit': profit_data,
+            'ocf': ocf_data,
+        }
+        generator = TruthReportGenerator(probe_data=probe_data)
 
-    generator = TruthReportGenerator(probe_data=probe_data)
     return generator.generate_report(output_path=output_path)
 
 

@@ -45,7 +45,7 @@ from enum import Enum
 import numpy as np
 
 from .multi_horizon_probe import (
-    MultiHorizonAnalyzer,
+    MultiHorizonProbe,
     MultiHorizonResult,
     StructuralBreakResult,
     BreakType,
@@ -265,7 +265,7 @@ class ProfessionalDataWindowStrategy:
         if custom_strategies:
             self.strategies.update(custom_strategies)
 
-        self.analyzer = MultiHorizonAnalyzer()
+        self.analyzer = MultiHorizonProbe()
 
     def analyze(
         self,

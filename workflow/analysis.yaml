@@ -89,6 +89,22 @@ pipeline:
         format: "csv"
         data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
 
+    # ========== 计算派生指标 (ROIIC) ==========
+    # ROIIC = 增量NOPAT / 增量投入资本
+    # 用于评估新增投资的边际回报率
+    - name: "Compute_Derived_Metrics"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["compute_derived_metrics"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        group_cols: 'ts_code'
+        sort_cols: 'end_date'
+        metrics: ["roiic"]
+      outputs:
+        parameters:
+          - name: Data_With_ROIIC
+
     # ========== ROIIC 趋势分析 (增量资本回报) ==========
     # 辅助指标：增量资本回报率，评估新投资效率
     # 特殊处理：不做一票否决，降低扣分权重
@@ -98,13 +114,13 @@ pipeline:
       engine: "duckdb"
       method: ["analyze_metric_trend"]
       parameters:
-        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        data: "steps.Compute_Derived_Metrics.outputs.parameters.Data_With_ROIIC"
         group_cols: 'ts_code'
         metric_name: 'roiic'
         prefix: ""
         suffix: ""
-        min_periods: 5              # 最低5年数据要求
-        window_size: 5            # 不配置=使用全部数据
+        min_periods: 4              # ROIIC 需要差分，最低4年数据
+        window_size: 5
         reference_metrics: ["roic"]  # 交叉验证
       outputs:
         parameters:
@@ -311,7 +327,7 @@ pipeline:
         # 直接接收探针分析结果
         roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
         roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+        # roiic_data: 已禁用，数据源缺少 roiic 列
         gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
         net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
         revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
@@ -322,21 +338,58 @@ pipeline:
         parameters:
           - name: Comprehensive_Report_Path
 
-    # 🟢 T.R.U.T.H. 数据驱动报告（无预设阈值，数据说话）
-    - name: "Generate_Truth_Report"
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🧬 T.R.U.T.H. 处理系统 - 专业基因-指标映射
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 数据流: 8个探针结果 → T.R.U.T.H.处理 → 报告生成
+    #
+    # 基因映射关系:
+    # ├─ 效率指标(ROIC,ROE,ROIIC) → α(周期性), β(资本密度), δ_decay(衰退熵)
+    # ├─ 成长指标(营收,利润) → γ(成长动能)
+    # ├─ 验证指标(现金流) → V(验证因子)
+    # └─ 交叉验证(利润vs现金流,ROE vs ROIC) → δ_fraud(欺诈熵)
+    #
+    # 三大求解器:
+    # ├─ 重力求解器: ROIC阈值计算 (α, β → 动态阈值)
+    # ├─ 速度求解器: 增长边界评估 (γ → 增长分类)
+    # └─ 结构求解器: 护城河检测 (毛利率斜率 → 侵蚀预警)
+    #
+    # 因果网络验证:
+    #     营收增长 → 利润增长 → 现金流增长
+    #         ↓           ↓
+    #        ROE ← ROIC
+    #         ↓
+    #     周期性波动
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 🧬 Step 1: T.R.U.T.H. 处理（专业基因提取 + 求解器）
+    - name: "Process_Truth_System"
       component: "business_engine"
-      engine: "reporting"
-      method: ["report_truth"]
+      engine: "truth"
+      method: ["process_truth"]
       parameters:
-        # 直接接收探针分析结果
+        # 接收探针分析结果 (roiic_data 已禁用)
         roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
         roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+        # roiic_data: 已禁用，数据源缺少 roiic 列
         gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
         net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
         revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
         profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
         ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+      outputs:
+        parameters:
+          - name: Truth_Processed_Results
+
+    # 🟢 Step 2: T.R.U.T.H. 报告生成（使用处理后的数据）
+    - name: "Generate_Truth_Report"
+      component: "business_engine"
+      engine: "reporting"
+      method: ["report_truth"]
+      parameters:
+        # 使用 T.R.U.T.H. 处理后的结果
+        truth_processed: "steps.Process_Truth_System.outputs.parameters.Truth_Processed_Results"
         output_path: "data/truth_analysis_report.md"
       outputs:
         parameters:

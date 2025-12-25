@@ -5,13 +5,16 @@
 整合趋势分析的核心逻辑，包括：
 1. 默认值生成器
 2. 指标探针 (Metric Probes)
-3. 规则引擎 (Rule Engine)
-4. 趋势分析器 (Trend Analyzer)
-5. 配置解析器 (Config Resolver)
-6. 趋势评估器 (Trend Evaluator)
-7. 结果收集器 (Trend Result Collector)
+3. 趋势分析器 (Trend Analyzer)
+4. 配置解析器 (Config Resolver)
+5. 结果收集器 (Trend Result Collector)
 
 此模块是趋势分析业务逻辑的单一入口。
+
+**架构说明**:
+- Probe 层是纯数学趋势分析，不包含任何行业阈值或业务规则
+- 评估规则和策略已迁移到 evaluators/threshold/ 模块
+- TrendRuleEngine、TrendEvaluator 现在位于 evaluators.threshold.engine
 """
 
 from __future__ import annotations
@@ -34,89 +37,66 @@ from .models import (
     TrendVector,
     VolatilityResult,
     TrendWarning,
-    TrendContext,
-    TrendRuleParameters,
-    TrendThresholds,
-    RuleResult,
-    TrendRuleOutcome,
-    TrendRule,
-    TrendEvaluationResult,
     TrendField,
     MetricProbeContext,
     TrendAnalyzerConfig,
     TrendSeriesConfig,
-    TrendRuleConfig,
+    TrendEvaluationResult,
 )
 from .config import (
     get_default_config,
-    trend_field_schema,
-    get_default_fields,
-    get_industry_category,
+    DEFAULT_CV_THRESHOLDS,
 )
+
+# 移除 evaluators 依赖 - 趋势分析层是纯数学层
+# 业务逻辑（行业阈值、周期性判断）应在 evaluators/truth 层处理
+# 此处只使用统计学标准阈值
 from .probes.common import (
     calculate_weighted_average,
     FatalMetricProbeError,
 )
-from .probes.log_trend_probe import LogTrendCalculator
-from .probes.volatility_probe import VolatilityCalculator
-from .probes.inflection_probe import InflectionDetector
-from .probes.deterioration_probe import DeteriorationDetector
-from .probes.cyclical_probe import CyclicalPatternDetector
-from .probes.rolling_probe import RollingTrendCalculator
+# 导入探针类
+from .probes.log_trend_probe import LogTrendProbe
+from .probes.volatility_probe import VolatilityProbe as VolatilityProbeImpl
+
+def trend_field_schema() -> List[TrendField]:
+    """返回默认的趋势分析字段 schema
+
+    定义输出 DataFrame 中需要的字段及其来源路径。
+    """
+    return [
+        # 核心趋势指标
+        TrendField("slope", "trend_result.slope", "趋势斜率", "", "core"),
+        TrendField("r_squared", "trend_result.r_squared", "R²拟合优度", "", "core"),
+        TrendField("p_value", "trend_result.p_value", "统计显著性", "", "core"),
+        TrendField("cagr", "trend_result.cagr", "复合增长率", "%", "core"),
+        TrendField("trend_direction", "trend_result.trend_direction", "趋势方向", "", "core"),
+
+        # 波动性指标
+        TrendField("cv", "volatility_result.cv", "变异系数", "", "volatility"),
+        TrendField("volatility", "volatility_result.volatility", "波动率", "", "volatility"),
+        TrendField("zscore", "volatility_result.zscore", "Z分数", "", "volatility"),
+
+        # 加权平均
+        TrendField("weighted_avg", "weighted_avg", "加权平均值", "", "core"),
+
+        # 最新值
+        TrendField("latest_value", "latest_value", "最新值", "", "core"),
+    ]
+
+
+from .probes.inflection_probe import InflectionProbe as InflectionProbeImpl
+from .probes.deterioration_probe import DeteriorationProbe as DeteriorationProbeImpl
+from .probes.cyclical_probe import CyclicalProbe as CyclicalProbeImpl
+from .probes.rolling_probe import RollingProbe
 from .probes.robust_probe import RobustTrendProbe
 from .probes.multi_horizon_probe import (
-    MultiHorizonAnalyzer,
+    MultiHorizonProbe,
     StructuralBreakDetector,
     MultiHorizonResult,
     StructuralBreakResult,
     BreakType,
 )
-
-from .rules import (
-    rule_roiic_capital_destruction,
-    rule_min_latest_value,
-    rule_low_significance_decline,
-    rule_high_volatility_instability,
-    rule_severe_decline,
-    rule_severe_deterioration_veto,
-    rule_structural_decline_veto,
-    rule_roiic_negative_penalty,
-    rule_compound_recent_deterioration,
-    rule_mild_decline_penalty,
-    rule_deterioration_penalty,
-    rule_sustained_decline,
-    rule_single_year_decline,
-    rule_relative_decline,
-    rule_roiic_roic_divergence,
-    rule_inflection_penalty_or_bonus,
-    rule_cyclical_adjustment,
-    rule_acceleration_adjustment,
-    rule_roiic_positive_bonus,
-    rule_growth_momentum_bonus,
-    rule_earnings_quality_divergence,
-    rule_sustainable_growth_check,
-    # 新增专业规则：杜邦分解与均值回归
-    rule_dupont_consistency,
-    rule_mean_reversion_adjustment,
-    # 新增专业规则：周期位置与现金流验证
-    rule_cycle_position_adjustment,
-    rule_cycle_veto_override,
-    rule_fcf_quality_check,
-    rule_capex_intensity_check,
-    rule_explosive_growth_validation,
-    # 新增专业规则：贝叶斯概率与高级统计指标 v2.0
-    rule_bayesian_deterioration_alert,
-    rule_volatility_regime_adjustment,
-    rule_bootstrap_confidence_adjustment,
-    rule_wls_ols_divergence,
-    rule_chronic_decline_pattern,
-    # 新增改进规则 v2.1：峰值跌幅、智能连续下跌、绝对水平保护
-    rule_peak_decline_severe,
-    rule_smart_consecutive_decline,
-    rule_absolute_level_protection,
-    rule_cumulative_decline_veto,
-)
-from .strategies import get_default_strategies, TrendStrategy
 
 if TYPE_CHECKING:
     from .models import TrendEvaluationResult
@@ -295,239 +275,119 @@ class BaseMetricProbe:
         raise NotImplementedError
 
 
-class LogTrendProbe(BaseMetricProbe):
+class LogTrendMetricProbe(BaseMetricProbe):
     name = "log_trend"
     fatal = True
 
     def compute(self, values: List[float], context: MetricProbeContext) -> LogTrendResult:
-        calculator = LogTrendCalculator()
-        return calculator.calculate(values)
+        probe = LogTrendProbe()
+        return probe.compute(values)
 
     def default(self, context: MetricProbeContext) -> LogTrendResult:
         return empty_log_trend_result()
 
 
-class VolatilityProbe(BaseMetricProbe):
+class VolatilityMetricProbe(BaseMetricProbe):
     name = "volatility"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> VolatilityResult:
-        calculator = VolatilityCalculator()
-        return calculator.calculate(values)
+        probe = VolatilityProbeImpl()
+        # 纯数学层：使用默认统计阈值，不引入业务逻辑
+        # 业务逻辑（如行业特定阈值）在 evaluators 层处理
+        return probe.compute(values, cv_thresholds=DEFAULT_CV_THRESHOLDS)
 
     def default(self, context: MetricProbeContext) -> VolatilityResult:
         return empty_volatility_result()
 
 
-class InflectionProbe(BaseMetricProbe):
+class InflectionMetricProbe(BaseMetricProbe):
     name = "inflection"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> InflectionResult:
-        detector = InflectionDetector()
-        return detector.detect(values)
+        probe = InflectionProbeImpl()
+        return probe.compute(values)
 
     def default(self, context: MetricProbeContext) -> InflectionResult:
         return empty_inflection_result()
 
 
-class DeteriorationProbe(BaseMetricProbe):
+class DeteriorationMetricProbe(BaseMetricProbe):
     name = "deterioration"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> RecentDeteriorationResult:
-        detector = DeteriorationDetector()
-        return detector.detect(values, context.industry or "default")
+        probe = DeteriorationProbeImpl()
+        # 纯数学层：使用默认统计阈值，不引入业务逻辑
+        # 业务逻辑（如行业特定阈值、先验概率）在 evaluators 层处理
+        return probe.compute(
+            values,
+            decline_threshold_pct=-15.0,  # 默认15%下跌阈值
+            decline_threshold_abs=-2.0,
+            high_level_threshold=20.0,
+            prior_probability=0.3,  # 默认先验
+            industry=context.industry,
+        )
 
     def default(self, context: MetricProbeContext) -> RecentDeteriorationResult:
         return empty_deterioration_result()
 
 
-class CyclicalProbe(BaseMetricProbe):
+class CyclicalMetricProbe(BaseMetricProbe):
     name = "cyclical"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> CyclicalPatternResult:
-        detector = CyclicalPatternDetector()
-        return detector.detect(values, context.industry or "default")
+        probe = CyclicalProbeImpl()
+        # 纯数学层：使用默认统计阈值，不引入业务逻辑
+        # 业务逻辑（如行业特定阈值、先验概率）在 evaluators 层处理
+        return probe.compute(
+            values,
+            prior_probability=0.3,  # 默认先验
+            cv_threshold=0.3,  # 默认CV阈值
+            peak_valley_threshold=2.0,  # 默认峰谷比
+            industry=context.industry,
+        )
 
     def default(self, context: MetricProbeContext) -> CyclicalPatternResult:
         return empty_cyclical_result()
 
 
-class RollingTrendProbe(BaseMetricProbe):
+class RollingMetricProbe(BaseMetricProbe):
     name = "rolling"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> RollingTrendResult:
-        calculator = RollingTrendCalculator()
-        return calculator.calculate(values)
+        probe = RollingProbe()
+        return probe.compute(values)
 
     def default(self, context: MetricProbeContext) -> RollingTrendResult:
         return empty_rolling_result()
 
 
-class RobustProbe(BaseMetricProbe):
+class RobustMetricProbe(BaseMetricProbe):
     name = "robust"
 
     def compute(self, values: List[float], context: MetricProbeContext) -> RobustTrendResult:
         probe = RobustTrendProbe()
-        return probe.compute(values, context)
+        return probe.compute(values, context=context)
 
     def default(self, context: MetricProbeContext) -> RobustTrendResult:
         probe = RobustTrendProbe()
-        return probe.default(context)
+        return probe.default()
 
 
 def get_default_metric_probes() -> List[MetricProbe]:
     """Return the default suite of metric probes."""
     return [
-        LogTrendProbe(),
-        VolatilityProbe(),
-        InflectionProbe(),
-        DeteriorationProbe(),
-        CyclicalProbe(),
-        RollingTrendProbe(),
-        RobustProbe(),
+        LogTrendMetricProbe(),
+        VolatilityMetricProbe(),
+        InflectionMetricProbe(),
+        DeteriorationMetricProbe(),
+        CyclicalMetricProbe(),
+        RollingMetricProbe(),
+        RobustMetricProbe(),
     ]
 
 
 # ============================================================================
-# 3. 规则引擎 (Rule Engine)
-# ============================================================================
-
-class TrendRuleEngine:
-    def __init__(self, rules: List[TrendRule]) -> None:
-        self._rules = rules
-
-    def run(
-        self,
-        context: TrendContext,
-        params: TrendRuleParameters,
-        thresholds: TrendThresholds,
-        logger: Optional[logging.Logger] = None
-    ) -> TrendRuleOutcome:
-        penalty = 0.0
-        penalty_details: List[str] = []
-        bonus_details: List[str] = []
-        auxiliary_notes: List[str] = []
-        # 使用配置的 is_auxiliary 标记，而不是硬编码检查 roiic
-        is_auxiliary_metric = getattr(thresholds, 'is_auxiliary', False) or context.metric_name.lower() == "roiic"
-        metric_label = f"【{context.metric_name.upper()}辅助】" if is_auxiliary_metric else ""
-
-        for rule in self._rules:
-            result = rule.evaluate(context, params, thresholds)
-            if result is None:
-                continue
-
-            if result.kind == "veto":
-                if is_auxiliary_metric:
-                    if logger:
-                        logger.log(
-                            result.log_level,
-                            f"⚠️ {metric_label}{context.group_key}: {result.message}",
-                        )
-                    auxiliary_notes.append(result.message)
-                    continue
-
-                if logger:
-                    prefix = result.log_prefix
-                    if prefix:
-                        logger.log(result.log_level, f"❌ {prefix}: {context.group_key} - {result.message}")
-                    else:
-                        logger.log(result.log_level, f"❌ {context.group_key}: {result.message}")
-                return TrendRuleOutcome(False, result.message, penalty, penalty_details, bonus_details, auxiliary_notes)
-
-            if result.kind == "penalty":
-                if is_auxiliary_metric:
-                    if logger:
-                        logger.log(
-                            result.log_level,
-                            f"⚠️ {metric_label}{context.group_key}: {result.message}",
-                        )
-                    auxiliary_notes.append(result.message)
-                    continue
-
-                penalty += result.value
-                penalty_details.append(result.message)
-                continue
-
-            if result.kind == "bonus":
-                if is_auxiliary_metric:
-                    if logger:
-                        logger.log(
-                            result.log_level,
-                            f"✅ {metric_label}{context.group_key}: {result.message}",
-                        )
-                    auxiliary_notes.append(result.message)
-                    continue
-
-                if result.value > 0:
-                    penalty = max(0.0, penalty - result.value)
-                bonus_details.append(result.message)
-
-        return TrendRuleOutcome(True, "", penalty, penalty_details, bonus_details, auxiliary_notes)
-
-
-DEFAULT_TREND_RULES: List[TrendRule] = [
-    # === 一票否决规则 (Veto Rules) ===
-    # 最严格的过滤条件，触发即淘汰
-    TrendRule("roiic_capital_destruction_veto", rule_roiic_capital_destruction),
-    TrendRule("min_latest_value", rule_min_latest_value),
-    TrendRule("low_significance_decline", rule_low_significance_decline),
-    TrendRule("high_volatility_instability", rule_high_volatility_instability),
-    TrendRule("severe_decline", rule_severe_decline),
-    TrendRule("severe_deterioration_veto", rule_severe_deterioration_veto),
-    TrendRule("structural_decline_veto", rule_structural_decline_veto),
-
-    # === 扣分规则 (Penalty Rules) ===
-    # 根据严重程度扣除分数
-    TrendRule("roiic_negative_penalty", rule_roiic_negative_penalty),
-    TrendRule("compound_recent_deterioration", rule_compound_recent_deterioration),
-    TrendRule("mild_decline_penalty", rule_mild_decline_penalty),
-    TrendRule("deterioration_penalty", rule_deterioration_penalty),
-    TrendRule("sustained_decline", rule_sustained_decline),
-    TrendRule("single_year_decline", rule_single_year_decline),
-    TrendRule("relative_decline", rule_relative_decline),
-    TrendRule("roiic_roic_divergence_penalty", rule_roiic_roic_divergence),
-
-    # === 交叉验证规则 (Cross-Validation Rules) ===
-    # 多指标联动校验，防止单一指标误判
-    TrendRule("earnings_quality_divergence", rule_earnings_quality_divergence),
-    TrendRule("sustainable_growth_check", rule_sustainable_growth_check),
-    TrendRule("dupont_consistency", rule_dupont_consistency),
-    TrendRule("fcf_quality_check", rule_fcf_quality_check),               # 新增：现金流质量
-    TrendRule("capex_intensity_check", rule_capex_intensity_check),       # 新增：资本开支效率
-    TrendRule("explosive_growth_validation", rule_explosive_growth_validation),  # 新增：爆发增长验证
-
-    # === 周期调整规则 (Cyclical Rules) ===
-    # 针对周期股的特殊处理
-    TrendRule("cyclical_adjustment", rule_cyclical_adjustment),
-    TrendRule("cycle_position_adjustment", rule_cycle_position_adjustment),  # 新增：周期位置
-    TrendRule("cycle_veto_override", rule_cycle_veto_override),              # 新增：周期底部豁免
-
-    # === 加分/调整规则 (Bonus/Adjustment Rules) ===
-    # 对优质特征给予加分
-    TrendRule("inflection_penalty_or_bonus", rule_inflection_penalty_or_bonus),
-    TrendRule("acceleration_adjustment", rule_acceleration_adjustment),
-    TrendRule("roiic_positive_bonus", rule_roiic_positive_bonus),
-    TrendRule("growth_momentum_bonus", rule_growth_momentum_bonus),
-    TrendRule("mean_reversion_adjustment", rule_mean_reversion_adjustment),
-
-    # === 高级统计规则 (Advanced Statistical Rules) ===
-    # 基于贝叶斯概率、ARCH效应、Bootstrap置信区间的专业统计方法
-    TrendRule("bayesian_deterioration_alert", rule_bayesian_deterioration_alert),   # 贝叶斯恶化概率
-    TrendRule("volatility_regime_adjustment", rule_volatility_regime_adjustment),   # 波动率体制调整
-    TrendRule("bootstrap_confidence_adjustment", rule_bootstrap_confidence_adjustment),  # Bootstrap置信区间
-
-    # === 改进规则 v2.1 (Enhanced Rules) ===
-    # 解决峰值跌幅、智能连续下跌、绝对水平保护的问题
-    TrendRule("peak_decline_severe", rule_peak_decline_severe),                     # 峰值跌幅检测
-    TrendRule("smart_consecutive_decline", rule_smart_consecutive_decline),         # 智能连续下跌
-    TrendRule("cumulative_decline_veto", rule_cumulative_decline_veto),             # 累计崩塌否决
-    TrendRule("absolute_level_protection", rule_absolute_level_protection),         # 绝对水平保护
-]
-
-trend_rule_engine = TrendRuleEngine(DEFAULT_TREND_RULES)
-
-
-# ============================================================================
-# 4. 趋势分析器 (Trend Analyzer)
+# 3. 趋势分析器 (Trend Analyzer)
 # ============================================================================
 
 class TrendAnalyzer:
@@ -781,11 +641,11 @@ class TrendAnalyzer:
             # 完整的多时间窗口分析
             # recent_years: 如果 window_size 为 None，使用全量数据长度
             recent_years = self.series_config.window_size or len(self.full_values_list)
-            horizon_analyzer = MultiHorizonAnalyzer(
+            horizon_analyzer = MultiHorizonProbe(
                 recent_years=recent_years,
                 break_threshold=self.series_config.break_detection_threshold
             )
-            self.multi_horizon_result = horizon_analyzer.analyze(
+            self.multi_horizon_result = horizon_analyzer.compute(
                 self.full_values_list,
                 metric_name=self.metric_name
             )
@@ -797,11 +657,6 @@ class TrendAnalyzer:
             )
             self.structural_break = None
             self.multi_horizon_result = None
-
-    # ------------------------------------------------------------------
-    def _prepare_metric_series(self, column: str) -> List[float]:
-        """兼容旧接口：准备趋势计算数据"""
-        return self._prepare_trend_series(column)
 
     # ------------------------------------------------------------------
     def _fill_missing_values(self, values_array: np.ndarray, finite_mask: np.ndarray) -> np.ndarray:
@@ -851,7 +706,19 @@ class TrendAnalyzer:
 
         for probe in self.metric_probes:
             try:
-                result = probe.compute(self.values_list, context)
+                result = probe.compute(self.values_list, context=context)
+            except TypeError:
+                # 尝试不传 context（兼容旧版探针签名）
+                try:
+                    result = probe.compute(self.values_list)
+                except Exception as exc2:
+                    self.logger.warning(
+                        "%s %s指标计算失败: %s, 使用默认值",
+                        self.group_key,
+                        probe.name,
+                        exc2,
+                    )
+                    result = self._safe_default(probe, context)
             except Exception as exc:
                 if getattr(probe, "fatal", False):
                     raise FatalMetricProbeError(probe.name, exc) from exc
@@ -862,9 +729,20 @@ class TrendAnalyzer:
                     probe.name,
                     exc,
                 )
-                result = probe.default(context)
+                result = self._safe_default(probe, context)
 
             self._assign_probe_result(probe.name, result)
+
+    # ------------------------------------------------------------------
+    def _safe_default(self, probe: Any, context: MetricProbeContext) -> Any:
+        """安全调用探针的 default 方法，兼容不同签名"""
+        try:
+            return probe.default(context=context)
+        except TypeError:
+            try:
+                return probe.default()
+            except Exception:
+                return None
 
     # ------------------------------------------------------------------
     def _assign_probe_result(self, probe_name: str, result: Any) -> None:
@@ -897,18 +775,18 @@ class TrendAnalyzer:
                 continue
 
             try:
-                values = self._prepare_metric_series(ref_metric)
+                values = self._prepare_trend_series(ref_metric)
                 if len(values) < 2:
                     continue
 
                 weighted_avg = float(
                     calculate_weighted_average(values, weights=self.series_config.weights)
                 )
-                calculator = LogTrendCalculator()
-                trend = calculator.calculate(values)
+                trend_probe = LogTrendProbe()
+                trend = trend_probe.compute(values)
 
-                rolling_calc = RollingTrendCalculator()
-                rolling = rolling_calc.calculate(values)
+                rolling_probe = RollingProbe()
+                rolling = rolling_probe.compute(values)
 
                 reference_stats[ref_metric.lower()] = {
                     "latest": values[-1],
@@ -1130,110 +1008,36 @@ class ConfigResolver:
         logger: Optional[logging.Logger] = None
     ) -> Tuple[Dict[str, Any], str]:
         """
-        Resolve the final configuration for a specific group.
-        Returns (resolved_config, industry).
-        """
-        industry = "default"
-        if 'industry' in group_df.columns:
-            industry_val = group_df['industry'].iloc[0]
-            if isinstance(industry_val, str):
-                industry = industry_val
+        根据 group_key 查找并合并配置。
 
-        # Get industry category (e.g., "cyclical", "growth", "stable")
-        # This might be used to look up configs if direct industry match fails
-        # For now, we just use the industry name directly as per previous logic
+        纯数学层只做配置查找，不做任何业务逻辑判断。
+
+        Returns:
+            (resolved_config, config_key): 合并后的配置和使用的配置键名
+        """
+        config_key = "default"
+        if 'industry' in group_df.columns:
+            val = group_df['industry'].iloc[0]
+            if isinstance(val, str):
+                config_key = val
 
         current_config = base_config.copy()
 
-        # Apply industry-specific overrides
-        if industry in self.industry_configs:
-            current_config.update(self.industry_configs[industry])
-            self._usage_stats[industry] = self._usage_stats.get(industry, 0) + 1
+        # 简单配置查找与合并
+        if config_key in self.industry_configs:
+            current_config.update(self.industry_configs[config_key])
+            self._usage_stats[config_key] = self._usage_stats.get(config_key, 0) + 1
         else:
-            # Try to find by category if not found by exact name
-            category = get_industry_category(industry)
-            if category in self.industry_configs:
-                current_config.update(self.industry_configs[category])
-                self._usage_stats[category] = self._usage_stats.get(category, 0) + 1
-            else:
-                self._usage_stats["default"] = self._usage_stats.get("default", 0) + 1
+            self._usage_stats["default"] = self._usage_stats.get("default", 0) + 1
 
-        return current_config, industry
+        return current_config, config_key
 
     def usage_stats(self) -> Dict[str, int]:
         return self._usage_stats
 
 
 # ============================================================================
-# 6. 趋势评估器 (Trend Evaluator)
-# ============================================================================
-
-class TrendEvaluator:
-    """Evaluates trend vectors against rules."""
-
-    def __init__(self, logger: Optional[logging.Logger] = None, strategies: Optional[List[TrendStrategy]] = None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.strategies = strategies or get_default_strategies()
-
-    def evaluate(
-        self,
-        group_key: str,
-        metric_name: str,
-        config: Dict[str, Any],
-        trend_vector: TrendVector
-    ) -> TrendEvaluationResult:
-        """
-        Evaluate the trend vector and return an evaluation result.
-        """
-        # Convert dict config to TrendRuleConfig objects
-        rule_config = TrendRuleConfig.from_dict(config)
-
-        # Create context
-        context = TrendContext.from_vector(group_key, metric_name, trend_vector)
-
-        # Run rule engine
-        outcome = trend_rule_engine.run(
-            context,
-            rule_config.parameters,
-            rule_config.thresholds,
-            self.logger
-        )
-
-        # Run strategies
-        matched_strategies = []
-        strategy_reasons = []
-        strategy_bonus = 0.0
-
-        for strategy in self.strategies:
-            result = strategy.evaluate(context)
-            if result.matched:
-                matched_strategies.append(result.name)
-                strategy_reasons.append(result.reason)
-                strategy_bonus += result.score_boost
-                if self.logger:
-                    self.logger.info(f"🎯 {group_key} 命中策略 [{strategy.name}]: {result.reason}")
-
-        # Calculate final score
-        base_score = 100.0
-        # Apply penalty first, then add strategy bonus
-        final_score = max(0.0, base_score - outcome.penalty)
-        final_score += strategy_bonus
-
-        return TrendEvaluationResult(
-            passes=outcome.passes,
-            elimination_reason=outcome.elimination_reason,
-            penalty=outcome.penalty,
-            penalty_details=outcome.penalty_details,
-            bonus_details=outcome.bonus_details,
-            trend_score=final_score,
-            auxiliary_notes=outcome.auxiliary_notes,
-            strategies=matched_strategies,
-            strategy_reasons=strategy_reasons
-        )
-
-
-# ============================================================================
-# 7. 结果收集器 (Trend Result Collector)
+# 5. 结果收集器 (Trend Result Collector)
 # ============================================================================
 
 class TrendResultCollector:

@@ -4,16 +4,31 @@
 
 计算多窗口趋势指标，用于检测趋势加速/减速。
 
-专业改进点：
+专业改进点 v3.0：
 1. 使用对数变换后的斜率（与主趋势探针一致）
 2. 加速度计算考虑置信度权重
 3. 引入早期斜率用于更精确的拐点判断
-4. 动态阈值根据指标类型自适应
+4. 阈值由调用方传入
+
+⚠️ 设计原则 (v3.0):
+==================
+此探针是 **纯数学工具**，不包含任何业务逻辑：
+- ✅ 计算滚动斜率、加速度
+- ✅ 所有阈值由调用方传入
+- ❌ 不包含 INDICATOR_THRESHOLDS 字典
+- ❌ 不知道 'roe' 或 'gross_margin'
+
+调用方通过参数控制：
+- acceleration_threshold: 加速度阈值 (默认 0.05)
+
+作者: AStock Analysis System
+日期: 2025-01-07
+版本: 3.0 (Pure Math Edition)
 """
 
 import logging
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 from ..models import RollingTrendResult, TrendWarning
 from ..config import get_default_config
@@ -23,36 +38,28 @@ from .fast_stats import fast_linregress_no_pvalue
 logger = logging.getLogger(__name__)
 
 
-# 不同指标类型的阈值配置
-# 盈利类指标（如ROE、净利润率）波动大，阈值应宽松
-# 稳定性指标（如毛利率、资产周转率）波动小，阈值应严格
-INDICATOR_THRESHOLDS = {
-    # 盈利能力类 - 波动大
-    'roe': 0.08,
-    'roa': 0.06,
-    'roic': 0.08,
-    'net_profit_margin': 0.08,
-    'eps': 0.10,
+# ============================================================================
+# 默认阈值 (纯统计学标准)
+# ============================================================================
 
-    # 稳定性类 - 波动小
-    'gross_margin': 0.04,
-    'asset_turnover': 0.03,
-    'current_ratio': 0.04,
-
-    # 增长类 - 波动最大
-    'revenue_growth': 0.12,
-    'profit_growth': 0.15,
-
-    # 默认
-    'default': 0.05,
-}
+DEFAULT_ACCELERATION_THRESHOLD = 0.05
 
 
-class RollingTrendCalculator:
-    """Rolling trend calculator with enhanced acceleration detection."""
+class RollingProbe:
+    """
+    滚动趋势探针 (纯数学版)
 
-    def _compute_log_slope(self, values: np.ndarray) -> Tuple[float, float]:
-        """计算对数变换后的斜率和R²（与LogTrendProbe一致）"""
+    Unified interface following ProbeProtocol:
+    - compute(values, **kwargs) -> RollingTrendResult
+    - default() -> RollingTrendResult
+
+    v3.0 变更：
+    - 移除 INDICATOR_THRESHOLDS 字典
+    - 阈值由调用方传入
+    """
+
+    def _compute_log_slope(self, values: np.ndarray) -> tuple[float, float]:
+        """计算对数变换后的斜率和R²"""
         if len(values) < 2:
             return 0.0, 0.0
         try:
@@ -63,46 +70,25 @@ class RollingTrendCalculator:
         except (ValueError, RuntimeWarning):
             return 0.0, 0.0
 
-    def _get_threshold(self, indicator_type: Optional[str], base_slope: float) -> float:
-        """
-        根据指标类型获取动态阈值
-
-        Args:
-            indicator_type: 指标类型（如 'roe', 'gross_margin' 等）
-            base_slope: 基准斜率，用于动态调整
-
-        Returns:
-            阈值
-        """
-        # 获取指标特定阈值
-        if indicator_type:
-            indicator_key = indicator_type.lower().replace(' ', '_')
-            specific_threshold = INDICATOR_THRESHOLDS.get(
-                indicator_key,
-                INDICATOR_THRESHOLDS['default']
-            )
-        else:
-            specific_threshold = INDICATOR_THRESHOLDS['default']
-
-        # 动态调整：基于全样本斜率的20%，但不低于指标特定阈值
-        dynamic_threshold = abs(base_slope) * 0.2
-
-        return max(dynamic_threshold, specific_threshold)
-
-    def calculate(
+    def compute(
         self,
         values: List[float],
-        indicator_type: Optional[str] = None
+        acceleration_threshold: float = DEFAULT_ACCELERATION_THRESHOLD,
     ) -> RollingTrendResult:
         """
         计算滚动趋势指标
 
         Args:
             values: 数值序列
-            indicator_type: 指标类型，用于选择合适的阈值
-                - 盈利类: 'roe', 'roa', 'roic', 'net_profit_margin', 'eps'
-                - 稳定类: 'gross_margin', 'asset_turnover', 'current_ratio'
-                - 增长类: 'revenue_growth', 'profit_growth'
+            acceleration_threshold: 加速度阈值，用于判断是否加速/减速。
+                                   由调用方根据指标类型设置：
+                                   - 盈利类指标(ROE, ROIC): 建议 0.08
+                                   - 稳定类指标(毛利率): 建议 0.04
+                                   - 增长类指标: 建议 0.12
+                                   - 默认: 0.05
+
+        Returns:
+            RollingTrendResult 滚动趋势分析结果
         """
         config = get_default_config()
         checker = DataQualityChecker(config)
@@ -126,24 +112,19 @@ class RollingTrendCalculator:
         if len(values_array) >= 3:
             early_3y_slope, early_3y_r_squared = self._compute_log_slope(values_array[:3])
 
-        # 4. 加速度计算 (修复版)
-        # 改进：R²作为置信度标签，而非乘数
-        # 原始加速度 = 近期斜率 - 早期斜率
+        # 4. 加速度计算
         raw_acceleration = recent_3y_slope - early_3y_slope
-
-        # 置信度：两段趋势的最小 R²
-        # 不再用于乘以加速度，而是单独记录用于判断
         acceleration_confidence = min(recent_3y_r_squared, early_3y_r_squared)
-
-        # 保留原始加速度值，不再压缩
         trend_acceleration = raw_acceleration
 
-        # 5. 判断阈值 (根据指标类型动态调整)
-        threshold = self._get_threshold(indicator_type, full_5y_slope)
+        # 5. 使用传入的阈值判断加速/减速
+        # 动态调整：基于全样本斜率的20%，但不低于传入阈值
+        dynamic_threshold = abs(full_5y_slope) * 0.2
+        effective_threshold = max(dynamic_threshold, acceleration_threshold)
 
         # 只有当置信度足够 (>0.3) 时才确认加速/减速
-        is_accelerating = trend_acceleration > threshold and acceleration_confidence > 0.3
-        is_decelerating = trend_acceleration < -threshold and acceleration_confidence > 0.3
+        is_accelerating = trend_acceleration > effective_threshold and acceleration_confidence > 0.3
+        is_decelerating = trend_acceleration < -effective_threshold and acceleration_confidence > 0.3
 
         warnings: List[TrendWarning] = []
         if is_accelerating:
@@ -154,8 +135,8 @@ class RollingTrendCalculator:
                     message="Trend accelerating",
                     context={
                         "acceleration": float(trend_acceleration),
-                        "threshold": float(threshold),
-                        "indicator_type": indicator_type,
+                        "threshold": float(effective_threshold),
+                        "confidence": float(acceleration_confidence),
                     },
                 )
             )
@@ -167,8 +148,8 @@ class RollingTrendCalculator:
                     message="Trend decelerating",
                     context={
                         "acceleration": float(trend_acceleration),
-                        "threshold": float(threshold),
-                        "indicator_type": indicator_type,
+                        "threshold": float(effective_threshold),
+                        "confidence": float(acceleration_confidence),
                     },
                 )
             )
@@ -185,4 +166,24 @@ class RollingTrendCalculator:
             early_3y_slope=early_3y_slope,
             early_3y_r_squared=early_3y_r_squared,
             warnings=warnings,
+        )
+
+    def default(self) -> RollingTrendResult:
+        """Return default result for insufficient data (ProbeProtocol compliance)."""
+        return RollingTrendResult(
+            recent_3y_slope=0.0,
+            recent_3y_r_squared=0.0,
+            full_5y_slope=0.0,
+            full_5y_r_squared=0.0,
+            trend_acceleration=0.0,
+            acceleration_confidence=0.0,
+            is_accelerating=False,
+            is_decelerating=False,
+            early_3y_slope=0.0,
+            early_3y_r_squared=0.0,
+            warnings=[TrendWarning(
+                code="INSUFFICIENT_DATA",
+                level="warning",
+                message="Insufficient data",
+            )],
         )

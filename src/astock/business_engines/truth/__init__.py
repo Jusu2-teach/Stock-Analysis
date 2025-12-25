@@ -109,6 +109,20 @@ from .clusterer import GenomeClusterer
 from .calibrator import AdaptiveCalibrator
 
 # ============================================================================
+# 处理器（专业基因-指标映射）
+# ============================================================================
+from .processor import (
+    TruthProcessor,
+    TruthProcessResult,
+    BatchProcessResult,
+    GeneExtractionResult,
+    SolverExecutionResult,
+    CausalValidation,
+    ProfessionalGeneMapper,
+    CausalNetworkValidator,
+)
+
+# ============================================================================
 # 可视化
 # ============================================================================
 from .visualizer import (
@@ -175,6 +189,15 @@ __all__ = [
     # Clustering & Calibration
     "GenomeClusterer",
     "AdaptiveCalibrator",
+    # Processor (Professional Gene-Indicator Mapping)
+    "TruthProcessor",
+    "TruthProcessResult",
+    "BatchProcessResult",
+    "GeneExtractionResult",
+    "SolverExecutionResult",
+    "CausalValidation",
+    "ProfessionalGeneMapper",
+    "CausalNetworkValidator",
     # Visualization
     "GenomeVisualization",
     "plot_genome_radar",

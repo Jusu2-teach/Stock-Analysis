@@ -1,9 +1,9 @@
 # AStock Business Engines 架构文档
 
-> **版本**: 4.1 (2025-12-07)
+> **版本**: 4.2 (2025-01-08)
 > **定位**: 专业级基本面量化选股系统的业务引擎层
 > **核心理念**: "用成长的速度衡量扩张，用质量的高度衡量护城河，用交叉验证识别造假"
-> **最新更新**: v2.1 改进规则 - 峰值跌幅检测、智能连续下跌、绝对水平保护
+> **最新更新**: v4.2 - 移除未使用的 scorers 模块和 generic_reporter，简化架构
 
 ---
 
@@ -13,15 +13,14 @@
 2. [架构设计](#2-架构设计)
 3. [模块详解](#3-模块详解)
 4. [分析器系统](#4-分析器系统-analyzers)
-5. [评分引擎](#5-评分引擎-scorers)
-6. [报告生成器](#6-报告生成器-reporters)
-7. [核心组件](#7-核心组件-core)
-8. [趋势分析详解](#8-趋势分析详解)
-9. [规则引擎](#9-规则引擎-rule-engine)
-10. [策略引擎](#10-策略引擎-strategy-engine)
-11. [扩展指南](#11-扩展指南)
-12. [配置参考](#12-配置参考)
-13. [最佳实践](#13-最佳实践)
+5. [报告生成器](#5-报告生成器-reporters)
+6. [核心组件](#6-核心组件-core)
+7. [趋势分析详解](#7-趋势分析详解)
+8. [规则引擎](#8-规则引擎-rule-engine)
+9. [策略引擎](#9-策略引擎-strategy-engine)
+10. [扩展指南](#10-扩展指南)
+11. [配置参考](#11-配置参考)
+12. [最佳实践](#12-最佳实践)
 
 ---
 
@@ -35,11 +34,11 @@ Business Engines 是 AStock Analysis 系统的**业务逻辑层**，负责实现
 
 | 能力 | 描述 | 实现模块 |
 |------|------|----------|
-| **多维趋势识别** | OLS + Theil-Sen + Mann-Kendall 组合分析 | `analyzers/trend/` |
-| **三表交叉验证** | 利润表 × 现金流量表 × 资产负债表 | `analyzers/trend/rules.py` |
-| **双向决策机制** | 规则引擎(排雷) + 策略引擎(选优) | `rules.py` + `strategies.py` |
-| **自适应阈值** | 行业差异化 + 指标类型差异化 | `metric_adapter.py` |
-| **质量评分** | 多维度加权综合评分 | `scorers/` |
+| **多维趋势识别** | OLS + Theil-Sen + Mann-Kendall 组合分析 | `analyzers/trend/probes/` |
+| **三表交叉验证** | 利润表 × 现金流量表 × 资产负债表 | `evaluators/threshold/rules/validation.py` |
+| **双向决策机制** | 规则引擎(排雷) + 策略引擎(选优) | `evaluators/threshold/rules/` + `strategies.py` |
+| **行业差异化阈值** | 周期/成长/防御行业差异化配置 | `evaluators/threshold/industry_config.py` |
+| **T.R.U.T.H.六维评估** | 六维基因 + 三大求解器 | `truth/` |
 | **智能报告** | 自动生成分析报告 | `reporters/` |
 
 ### 1.3 设计原则
@@ -73,7 +72,50 @@ Business Engines 是 AStock Analysis 系统的**业务逻辑层**，负责实现
 
 ## 2. 架构设计
 
-### 2.1 整体架构
+### 2.1 分层架构原则
+
+> ⚠️ **核心设计原则**: 严格分层，禁止反向依赖
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           分层架构                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   📊 纯数学层 (analyzers/trend/)                                    │
+│   ├── 只处理 List[float]，不知道"股票"、"行业"概念                   │
+│   ├── 输出: TrendVector (50+ 统计特征)                               │
+│   ├── 包含: probes/, models.py, config.py, core.py                  │
+│   └── ❌ 禁止导入: evaluators/, industry_config                      │
+│                                                                     │
+│   📈 业务逻辑层 (evaluators/threshold/)                              │
+│   ├── 行业分类 (cyclical/growth/defensive)                          │
+│   ├── 业务规则 (veto/penalty/bonus)                                 │
+│   ├── 策略引擎 (HighGrowth/Turnaround/...)                          │
+│   └── ✅ 可以导入: analyzers/trend/models (只用数据模型)             │
+│                                                                     │
+│   🎯 协调层 (duckdb_engine.py)                                      │
+│   ├── 调用纯数学层得到 TrendVector                                   │
+│   ├── 可选调用业务层进行评估                                         │
+│   └── 组装最终结果                                                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**依赖方向**:
+```
+duckdb_engine.py
+       │
+       ├──────────► analyzers/trend/core.py (纯数学)
+       │                    │
+       │                    └──► probes/* (纯数学探针)
+       │
+       └──────────► evaluators/threshold/engine.py (业务规则)
+                            │
+                            ├──► industry_config.py (行业分类)
+                            └──► rules/, strategies.py
+```
+
+### 2.2 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -124,45 +166,68 @@ src/astock/business_engines/
 │
 ├── analyzers/               # 分析器模块
 │   ├── __init__.py
-│   ├── trend/               # 趋势分析
+│   ├── trend/               # 趋势分析 (纯数学层)
 │   │   ├── __init__.py
-│   │   ├── config.py        # 行业配置
-│   │   ├── core.py          # 核心分析器
-│   │   ├── derivers.py      # 派生指标计算
+│   │   ├── config.py        # 算法配置 (纯统计参数)
+│   │   ├── core.py          # 核心分析器 + 探针协调
+│   │   ├── derivers.py      # 派生指标计算 (ROIIC等)
 │   │   ├── duckdb_engine.py # DuckDB 实现
-│   │   ├── metric_adapter.py # 指标适配器
-│   │   ├── metric_profiles.py # 指标配置文件
 │   │   ├── models.py        # 数据模型
-│   │   ├── rules.py         # 规则定义
-│   │   ├── strategies.py    # 策略定义
 │   │   ├── README.md        # 趋势分析文档
-│   │   └── probes/          # 特征探针
+│   │   └── probes/          # 特征探针 (纯数学)
 │   │       ├── __init__.py
-│   │       ├── base.py      # 探针基类
-│   │       ├── trend.py     # 趋势探针
-│   │       └── ...
-│   ├── quality/             # 质量分析
-│   │   └── ...
-│   └── valuation/           # 估值分析
-│       └── ...
+│   │       ├── common.py           # 公共工具
+│   │       ├── log_trend_probe.py  # 对数趋势
+│   │       ├── robust_probe.py     # 稳健趋势
+│   │       ├── cyclical_probe.py   # 周期性检测
+│   │       ├── volatility_probe.py # 波动率分析
+│   │       ├── deterioration_probe.py # 恶化检测
+│   │       ├── inflection_probe.py # 拐点检测
+│   │       ├── rolling_probe.py    # 滚动窗口
+│   │       └── multi_horizon_probe.py # 多时间窗口
+│   └── ...
 │
-├── scorers/                 # 评分引擎
+├── evaluators/              # 评估器模块 (业务逻辑层)
 │   ├── __init__.py
-│   ├── engine.py            # 评分引擎入口
-│   └── generic_scorer.py    # 通用评分器
+│   └── threshold/           # 阈值评估
+│       ├── __init__.py
+│       ├── engine.py        # 评估引擎入口
+│       ├── industry_config.py # 行业分类配置
+│       ├── metric_thresholds.py # 指标阈值
+│       ├── strategies.py    # 策略引擎
+│       ├── context.py       # 评估上下文
+│       ├── models.py        # 评估结果模型
+│       ├── rule_config.py   # 规则配置
+│       └── rules/           # 规则引擎
+│           ├── __init__.py
+│           ├── base.py      # 规则基类
+│           ├── veto.py      # 一票否决规则
+│           ├── penalty.py   # 扣分规则
+│           ├── bonus.py     # 加分规则
+│           └── validation.py # 验证规则
 │
 ├── reporters/               # 报告生成器
 │   ├── __init__.py
-│   ├── engine.py            # 报告引擎入口
-│   ├── generator.py         # 报告生成器
-│   ├── generic_reporter.py  # 通用报告器
-│   └── comprehensive_generator.py # 综合报告生成器
+│   ├── engine.py            # 报告引擎入口 (@register_method 注册点)
+│   ├── comprehensive_generator.py # 综合报告生成器
+│   └── truth_report_generator.py  # T.R.U.T.H.报告生成器
 │
-└── core/                    # 核心工具
+├── core/                    # 核心工具
+│   ├── __init__.py
+│   ├── duckdb_utils.py      # DuckDB 工具函数
+│   ├── interfaces.py        # 接口定义
+│   └── probe_engine/        # 探针引擎框架
+│       ├── __init__.py
+│       ├── interface.py     # 探针接口
+│       ├── specs.py         # 探针规格
+│       ├── builders.py      # 探针构建器
+│       └── unified.py       # 统一探针接口
+│
+└── truth/                   # T.R.U.T.H. 六维基因系统
     ├── __init__.py
-    ├── config_loader.py     # 配置加载器
-    ├── duckdb_utils.py      # DuckDB 工具函数
-    └── interfaces.py        # 接口定义
+    ├── processor.py         # 处理器
+    ├── adapter.py           # 适配器
+    └── ...
 ```
 
 ### 2.3 数据流架构
@@ -234,12 +299,11 @@ src/astock/business_engines/
 ### 3.1 模块职责矩阵
 
 | 模块 | 职责 | 输入 | 输出 |
-|------|------|------|------|
+| ---- | ---- | ---- | ---- |
 | `analyzers/trend` | 趋势分析 | 财务数据 + 配置 | TrendResult |
-| `analyzers/quality` | 质量分析 | 财务数据 | QualityScore |
-| `analyzers/valuation` | 估值分析 | 财务数据 + 市场数据 | ValuationResult |
-| `scorers` | 综合评分 | 分析结果 | 评分报告 |
-| `reporters` | 报告生成 | 分析结果 + 评分 | Markdown/PDF |
+| `evaluators/threshold` | 规则评估 | TrendResult | 评估结果 |
+| `truth` | T.R.U.T.H.六维评估 | ProbeOutputs | 六维基因 + 求解器结果 |
+| `reporters` | 报告生成 | 分析结果 | Markdown/JSON |
 | `core` | 基础设施 | - | 工具函数 |
 
 ### 3.2 接口定义
@@ -429,75 +493,9 @@ class CyclicalProbe(BaseProbe):
 
 ---
 
-## 5. 评分引擎 (Scorers)
+## 5. 报告生成器 (Reporters)
 
-### 5.1 质量评分
-
-```python
-# scorers/engine.py
-
-@register_method(
-    engine_name="score_quality",
-    component_type="business_engine",
-    engine_type="scoring",
-    description="质量评分引擎"
-)
-def score_quality(
-    data: pd.DataFrame,
-    report_path: str = None,
-    weights: Dict[str, float] = None
-) -> pd.DataFrame:
-    """
-    质量评分
-
-    评分维度:
-    - 成长性 (Growth): 营收/利润增长率
-    - 盈利性 (Profitability): ROE/ROIC/毛利率
-    - 稳定性 (Stability): 趋势显著性/波动率
-    - 现金流 (Cash Flow): 经营现金流/自由现金流
-
-    Args:
-        data: 趋势分析结果
-        report_path: 报告输出路径
-        weights: 维度权重配置
-
-    Returns:
-        带评分的 DataFrame
-    """
-```
-
-### 5.2 评分模型
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        质量评分模型                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   总分 = Σ (维度得分 × 维度权重) + 策略加分 - 规则扣分            │
-│                                                                 │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │  维度得分计算                                            │  │
-│   │  ├── 成长性 (30%): log_slope × 100                      │  │
-│   │  ├── 盈利性 (25%): weighted_avg / benchmark             │  │
-│   │  ├── 稳定性 (25%): r_squared × 100                      │  │
-│   │  └── 现金流 (20%): ocf_ratio × 100                      │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │  调整项                                                  │  │
-│   │  ├── 策略加分: +5 ~ +20 (匹配优质策略)                   │  │
-│   │  ├── 规则扣分: -5 ~ -50 (触发扣分规则)                   │  │
-│   │  └── 一票否决: 直接标记为 0 分                           │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 6. 报告生成器 (Reporters)
-
-### 6.1 综合报告
+### 5.1 综合报告
 
 ```python
 # reporters/comprehensive_generator.py
@@ -572,7 +570,7 @@ def report_comprehensive(
 
 ---
 
-## 7. 核心组件 (Core)
+## 6. 核心组件 (Core)
 
 ### 7.1 DuckDB 工具
 
@@ -641,7 +639,7 @@ class ConfigLoader:
 
 ---
 
-## 8. 趋势分析详解
+## 7. 趋势分析详解
 
 ### 8.1 为什么需要多种回归方法?
 
@@ -715,7 +713,7 @@ class MetricAdapter:
 
 ---
 
-## 9. 规则引擎 (Rule Engine)
+## 8. 规则引擎 (Rule Engine)
 
 ### 9.1 规则分类
 
@@ -814,7 +812,7 @@ class MetricAdapter:
 ### 9.3 规则定义示例
 
 ```python
-# analyzers/trend/rules.py
+# evaluators/threshold/rules/validation.py
 
 def rule_earnings_quality_divergence(
     context: TrendContext,
@@ -860,7 +858,7 @@ def rule_earnings_quality_divergence(
 
 ---
 
-## 10. 策略引擎 (Strategy Engine)
+## 9. 策略引擎 (Strategy Engine)
 
 ### 10.1 策略分类
 
@@ -933,7 +931,7 @@ class HighGrowthStrategy(BaseStrategy):
 
 ---
 
-## 11. 扩展指南
+## 10. 扩展指南
 
 ### 11.1 添加新分析器
 
@@ -975,7 +973,10 @@ steps:
 ### 11.2 添加新规则
 
 ```python
-# 1. 在 rules.py 中定义规则函数
+# 1. 在 evaluators/threshold/rules/ 目录中添加规则
+# 例如在 penalty.py 中添加：
+from .base import Rule, RuleResult
+
 def rule_my_custom_check(
     context: TrendContext,
     params: TrendRuleParameters,
@@ -991,11 +992,7 @@ def rule_my_custom_check(
         )
     return None
 
-# 2. 在 core.py 的 DEFAULT_TREND_RULES 中注册
-DEFAULT_TREND_RULES = [
-    # ... 现有规则
-    rule_my_custom_check,
-]
+# 2. 在 rules/__init__.py 中注册到 ALL_PENALTY_RULES 列表
 ```
 
 ### 11.3 添加新策略
@@ -1011,7 +1008,7 @@ class MyCustomStrategy(BaseStrategy):
             return StrategyResult(self.name, matched=True, bonus_score=10)
         return StrategyResult(self.name, matched=False)
 
-# 2. 在 get_default_strategies() 中注册
+# 2. 在 evaluators/threshold/strategies.py 的 get_default_strategies() 中注册
 def get_default_strategies() -> List[BaseStrategy]:
     return [
         HighGrowthStrategy(),
@@ -1022,7 +1019,7 @@ def get_default_strategies() -> List[BaseStrategy]:
 
 ---
 
-## 12. 配置参考
+## 11. 配置参考
 
 ### 12.1 趋势分析配置
 
@@ -1078,7 +1075,7 @@ INDUSTRY_FILTER_CONFIGS = {
 
 ---
 
-## 13. 最佳实践
+## 12. 最佳实践
 
 ### 13.1 数据准备
 
@@ -1173,18 +1170,20 @@ MIT License
     4.  **DeteriorationProbe**: 检测近期（近1-2年）是否出现断崖式下跌。
 
 #### 第三阶段：规则引擎 (Rule Engine - The Negative Filter)
-*   **模块**: `rules.py`
+*   **模块**: `evaluators/threshold/rules/`
 *   **职责**: **"排雷"**。寻找任何可能导致亏损的瑕疵。
 *   **机制**:
-    *   **一票否决 (Veto)**: 触发即淘汰。例如：ROIIC 长期为负、财务造假嫌疑。
-    *   **扣分 (Penalty)**: 瑕疵累积。例如：增速放缓、波动过大。
+    *   **一票否决 (Veto)**: `veto.py` - 触发即淘汰。例如：ROIIC 长期为负、财务造假嫌疑。
+    *   **扣分 (Penalty)**: `penalty.py` - 瑕疵累积。例如：增速放缓、波动过大。
+    *   **加分 (Bonus)**: `bonus.py` - 优秀特征。例如：高稳定性、绝对值保护。
+    *   **验证 (Validation)**: `validation.py` - 三表交叉验证。
 *   **关键规则**:
     *   `rule_earnings_quality_divergence`: **含金量检验**。利润增长但现金流恶化 -> 重罚。
     *   `rule_sustainable_growth_check`: **内生增长检验**。营收增速远超 ROE -> 判定为低效烧钱扩张。
     *   `rule_roiic_capital_destruction`: **价值毁灭检验**。投入资本回报率长期为负 -> 一票否决。
 
 #### 第四阶段：策略引擎 (Strategy Engine - The Positive Selector)
-*   **模块**: `strategies.py`
+*   **模块**: `evaluators/threshold/strategies.py`
 *   **职责**: **"选优"**。在幸存者中寻找特定类型的优质公司。
 *   **核心策略**:
     1.  **HighGrowthStrategy (高增长策略)**:
@@ -1224,18 +1223,19 @@ A 股常有"单年暴雷"或"资产处置收益"导致的脉冲式波动。
 ## 4. 开发指南 (Developer Guide)
 
 ### 如何添加一个新的"排雷规则"?
-1.  在 `src/astock/business_engines/trend/rules.py` 中定义函数：
+1.  在 `evaluators/threshold/rules/` 目录中选择合适的文件（veto.py/penalty.py/bonus.py）定义函数：
     ```python
+    # 例如在 penalty.py 中
     def rule_my_new_check(context, params, thresholds):
         # 访问数据
         if context.latest_value < 0:
             return RuleResult("my_rule", "penalty", "负值扣分", 10.0)
         return None
     ```
-2.  在 `src/astock/business_engines/trend/core.py` 的 `DEFAULT_TREND_RULES` 列表中注册。
+2.  在 `evaluators/threshold/rules/__init__.py` 中注册到对应的规则列表 (ALL_PENALTY_RULES 等)。
 
 ### 如何添加一个新的"选股策略"?
-1.  在 `src/astock/business_engines/trend/strategies.py` 中继承 `BaseStrategy`：
+1.  在 `evaluators/threshold/strategies.py` 中继承 `BaseStrategy`：
     ```python
     class MySuperStrategy(BaseStrategy):
         name = "super_stock"

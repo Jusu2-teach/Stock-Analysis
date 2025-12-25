@@ -4,23 +4,35 @@
 
 专业的波动率分析，用于评估财务指标的稳定性。
 
-专业性增强 v2.0：
+专业性增强 v3.0：
 1. 变异系数 (CV) 分析
 2. ARCH 效应检测（波动聚集性）
 3. 趋势调整波动率（去趋势后的波动）
 4. 异常波动检测
 
+⚠️ 设计原则 (v3.0):
+==================
+此探针是 **纯数学工具**，不包含任何业务逻辑：
+- ✅ 计算 CV、标准差、去趋势波动
+- ✅ 检测 ARCH 效应
+- ✅ 统计分类 (基于传入的阈值)
+- ❌ 不知道什么是"周期性行业"
+- ❌ 不知道"钢铁"或"煤炭"
+
+业务逻辑（如"钢铁行业CV阈值应该放宽"）由 Evaluator 层处理。
+
 作者: AStock Analysis System
 日期: 2025-01-07
+版本: 3.0 (Pure Math Edition)
 """
 
 import logging
 import numpy as np
 from scipy import stats
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 
 from ..models import VolatilityResult, TrendWarning
-from ..config import get_default_config
+from ..config import get_default_config, DEFAULT_CV_THRESHOLDS
 from .common import DataQualityChecker
 from .fast_stats import fast_linregress_no_pvalue
 
@@ -28,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# 专业波动率分析工具
+# 专业波动率分析工具 (纯数学函数)
 # ============================================================================
 
 def detect_arch_effect(values: np.ndarray) -> Tuple[bool, float, float, bool]:
@@ -156,42 +168,79 @@ def detect_volatility_regime(values: np.ndarray) -> Tuple[str, float]:
     return regime, float(ratio)
 
 
-class VolatilityCalculator:
+def classify_volatility_type(
+    cv: float,
+    cv_thresholds: Dict[str, float],
+    mean_near_zero: bool = False
+) -> str:
     """
-    增强版波动率计算器
+    根据 CV 值和阈值对波动类型进行分类
+
+    Args:
+        cv: 变异系数
+        cv_thresholds: 阈值字典，包含 'ultra_stable', 'stable', 'moderate', 'volatile' 键
+        mean_near_zero: 均值是否接近零
+
+    Returns:
+        波动类型: "ultra_stable", "stable", "moderate", "volatile", "high_volatility", "extreme_volatility"
+    """
+    if mean_near_zero:
+        return "extreme_volatility"
+
+    if cv < cv_thresholds.get('ultra_stable', 0.12):
+        return "ultra_stable"
+    elif cv < cv_thresholds.get('stable', 0.20):
+        return "stable"
+    elif cv < cv_thresholds.get('moderate', 0.35):
+        return "moderate"
+    elif cv < cv_thresholds.get('volatile', 0.55):
+        return "volatile"
+    else:
+        return "high_volatility"
+
+
+class VolatilityProbe:
+    """
+    增强版波动率探针 (纯数学版)
+
+    Unified interface following ProbeProtocol:
+    - compute(values, **kwargs) -> VolatilityResult
+    - default() -> VolatilityResult
 
     专业特性：
     - ARCH 效应检测
     - 趋势调整波动率
     - 波动率体制识别
-    - 行业差异化CV阈值
+    - 可定制的CV阈值（由调用方传入）
+
+    v3.0 变更：
+    - 移除 CYCLICAL_INDUSTRIES 硬编码
+    - CV 阈值由调用方传入，默认使用统计学标准阈值
     """
 
-    # 行业CV阈值配置
-    # 周期性行业波动大，阈值应更宽松
-    CYCLICAL_INDUSTRIES = {
-        '钢铁', '煤炭', '有色金属', '化工', '航运', '房地产',
-        '证券', '建材', '汽车', '机械', '电子', '半导体'
-    }
+    def compute(
+        self,
+        values: List[float],
+        cv_thresholds: Optional[Dict[str, float]] = None
+    ) -> VolatilityResult:
+        """
+        计算波动率指标
 
-    CV_THRESHOLDS_NORMAL = {
-        'ultra_stable': 0.12,
-        'stable': 0.20,
-        'moderate': 0.35,
-        'volatile': 0.55,
-    }
+        Args:
+            values: 数值序列
+            cv_thresholds: CV分类阈值字典，可选。默认使用 DEFAULT_CV_THRESHOLDS。
+                          调用方可根据业务需要传入不同阈值（如周期性行业放宽阈值）。
+                          格式: {'ultra_stable': 0.12, 'stable': 0.20, 'moderate': 0.35, 'volatile': 0.55}
 
-    CV_THRESHOLDS_CYCLICAL = {
-        'ultra_stable': 0.18,  # 周期行业阈值放宽50%
-        'stable': 0.30,
-        'moderate': 0.50,
-        'volatile': 0.75,
-    }
-
-    def calculate(self, values: List[float], industry: str = None) -> VolatilityResult:
+        Returns:
+            VolatilityResult 波动率分析结果
+        """
         config = get_default_config()
         checker = DataQualityChecker(config)
         values_array = checker.ensure_window(values)
+
+        # 使用传入的阈值或默认阈值
+        thresholds = cv_thresholds or DEFAULT_CV_THRESHOLDS
 
         # ========== 1. 基础波动率指标 ==========
         std_dev = np.std(values_array, ddof=1)
@@ -219,26 +268,13 @@ class VolatilityCalculator:
         # ========== 4. 波动率体制检测 ==========
         vol_regime, vol_change_ratio = detect_volatility_regime(values_array)
 
-        # ========== 5. 波动率类型分类（行业差异化） ==========
+        # ========== 5. 波动率类型分类 ==========
         # 使用趋势调整后的 CV 更准确
         effective_cv = min(cv, detrended_cv) if detrended_cv != float('inf') else cv
 
-        # 根据行业选择阈值
-        is_cyclical = industry and industry in self.CYCLICAL_INDUSTRIES
-        thresholds = self.CV_THRESHOLDS_CYCLICAL if is_cyclical else self.CV_THRESHOLDS_NORMAL
-
-        if mean_near_zero:
-            volatility_type = "extreme_volatility"
-        elif effective_cv < thresholds['ultra_stable']:
-            volatility_type = "ultra_stable"
-        elif effective_cv < thresholds['stable']:
-            volatility_type = "stable"
-        elif effective_cv < thresholds['moderate']:
-            volatility_type = "moderate"
-        elif effective_cv < thresholds['volatile']:
-            volatility_type = "volatile"
-        else:
-            volatility_type = "high_volatility"
+        volatility_type = classify_volatility_type(
+            effective_cv, thresholds, mean_near_zero
+        )
 
         # ========== 6. 构建警告 ==========
         warnings: List[TrendWarning] = []
@@ -253,8 +289,7 @@ class VolatilityCalculator:
                         "cv": float(cv),
                         "detrended_cv": float(detrended_cv),
                         "volatility_type": volatility_type,
-                        "industry": industry,
-                        "is_cyclical": is_cyclical,
+                        "thresholds_used": thresholds,
                     },
                 )
             )
@@ -318,4 +353,13 @@ class VolatilityCalculator:
             arch_correlation=float(arch_corr),
             volatility_regime=vol_regime,
             volatility_change_ratio=float(vol_change_ratio),
+        )
+
+    def default(self) -> VolatilityResult:
+        """Return default result for insufficient data (ProbeProtocol compliance)."""
+        return VolatilityResult(
+            std_dev=0.0, cv=0.0, range_ratio=0.0, volatility_type="unknown",
+            mean_near_zero=False, warnings=["Insufficient data"],
+            detrended_cv=0.0, has_arch_effect=False, arch_correlation=0.0,
+            volatility_regime="stable", volatility_change_ratio=1.0,
         )

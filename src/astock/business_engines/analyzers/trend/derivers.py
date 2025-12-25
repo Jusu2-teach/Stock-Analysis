@@ -157,7 +157,9 @@ class ROIICDeriver(BaseDeriver):
         3. 计算 Δ投入资本
         4. ROIIC = ΔNOPAT / Δ投入资本
         """
-        from ...core.duckdb_utils import _q
+        def _q(col: str) -> str:
+            """对列名加双引号"""
+            return f'"{col}"'
 
         group_col_q = _q(group_column)
         view_name = self._generate_view_name()
