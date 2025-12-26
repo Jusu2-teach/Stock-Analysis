@@ -12,13 +12,19 @@
 - MetricAdapter: 指标类型适配器
 - MetricProfile: 指标特性配置
 
-**架构说明**:
-- Probe 层是纯数学趋势分析，不包含任何行业阈值或业务规则
-- 评估规则和策略已迁移到 evaluators/threshold/ 模块
-- TrendRuleEngine、TrendEvaluator、DEFAULT_TREND_RULES 现在位于 evaluators.threshold.engine
+**数据流向**:
+- Probe 层是纯数学趋势分析，输出各种 Result 对象
+- 结果通过 ProbeOutputs (core/probe_engine/builders.py) 统一接口传递
+- EvaluationContext 和 T.R.U.T.H. 都从 ProbeOutputs 获取数据
+
+**架构原则**:
+- 单一数据源: ProbeOutputs 是探针结果的唯一出口
+- 阈值在探针: 所有判断阈值在各 Probe 内部定义
+- 零重复计算: 不在 Pipeline 层重新计算探针已经计算的结论
 
 作者: AStock Analysis System
 日期: 2025-12-06
+更新: 2025-12-25 (移除冗余 Pipeline 层)
 """
 
 # 核心分析器（纯探针层）

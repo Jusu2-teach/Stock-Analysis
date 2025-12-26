@@ -15,22 +15,22 @@
     "file": "datasets/Analyze_Revenue_Trend__Revenue_Trend_Result.pkl"
   },
   "Analyze_OCF_Trend__OCF_Trend_Result": {
-    "fingerprint": "df:5df7d8f798d5acbab438a0261d4876ada3a1b3dc5f2946e0775acbc240eaa5b4",
+    "fingerprint": "df:730d5e221d7c49844d84b2792560c9a7647021958a155fa9bd6072d3d2c9ea43",
     "type": "DataFrame",
     "file": "datasets/Analyze_OCF_Trend__OCF_Trend_Result.pkl"
   },
   "Analyze_ROE_Trend__ROE_Trend_Result": {
-    "fingerprint": "df:b843f2a4455f37311441161e7e3f6ac291b8d96e9b60b373fae4c1daa4ad4134",
+    "fingerprint": "df:ff6f5afb6fffc41c1bd4a6b69075f9f4bfa420fc8ef14711f1ea8bc0bf5c5fed",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROE_Trend__ROE_Trend_Result.pkl"
   },
   "Analyze_ROIC_Trend__ROIC_Trend_Result": {
-    "fingerprint": "df:c984f33f2a01de2bcaf20d7407d7878610b9a13e682410125e5c9ee68beab049",
+    "fingerprint": "df:7b8f2b95738add4e9f5a7f3d12ef1fc5f164d86f3f9cf9f2768449dca5f2c567",
     "type": "DataFrame",
     "file": "datasets/Analyze_ROIC_Trend__ROIC_Trend_Result.pkl"
   },
   "Analyze_NetMargin_Trend__NetMargin_Trend_Result": {
-    "fingerprint": "df:5a986f27697c05d269130d807664b5a51a44c537ffd9926578f0270cbdb82c20",
+    "fingerprint": "df:431664a124562fb750af3251f9474f785b2f009af4a33426fb6c6ff02df06402",
     "type": "DataFrame",
     "file": "datasets/Analyze_NetMargin_Trend__NetMargin_Trend_Result.pkl"
   },

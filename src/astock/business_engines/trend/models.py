@@ -8,8 +8,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Iterable, Protocol
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Iterable, Protocol, TYPE_CHECKING
 import pandas as pd
+
+if TYPE_CHECKING:
+    from .pipeline.stages.pattern_synthesis import TrendResult
 
 # ============================================================================
 # 基础接口
@@ -146,6 +149,12 @@ class RecentDeteriorationResult(SerializableResult):
 
 @dataclass
 class CyclicalPatternResult(SerializableResult):
+    """
+    周期性分析结果
+
+    包含 HP滤波、Hurst指数、ACF 等专业分析的完整输出。
+    v2.0: 添加 hp_cycle_amplitude, hurst_exponent, acf_lag1 等关键字段
+    """
     is_cyclical: bool
     peak_to_trough_ratio: float
     has_middle_peak: bool
@@ -161,6 +170,22 @@ class CyclicalPatternResult(SerializableResult):
     trend_r_squared_max: float
     cv_threshold: float
     industry: str
+
+    # === v2.0 新增: HP滤波分析 ===
+    hp_cycle_amplitude: float = 0.0  # HP滤波周期振幅 (标准化)
+    hp_cycle_volatility: float = 0.0  # HP滤波周期波动率
+
+    # === v2.0 新增: Hurst指数分析 ===
+    hurst_exponent: float = 0.5  # Hurst指数 (0.5=随机游走, <0.5=均值回归, >0.5=趋势持续)
+    hurst_interpretation: str = "random_walk"  # 解释: mean_reverting | random_walk | trending
+    hurst_confidence: float = 0.0  # Hurst估计置信度
+
+    # === v2.0 新增: ACF分析 ===
+    acf_lag1: float = 0.0  # 一阶自相关系数
+    acf_has_cyclical_pattern: bool = False  # ACF是否显示周期模式
+    ljung_box_pvalue: float = 1.0  # Ljung-Box检验p值
+
+    # === 原有字段 (列表类型移至最后) ===
     confidence_factors: List[str] = field(default_factory=list)
     warnings: List[TrendWarning] = field(default_factory=list)
 
@@ -308,6 +333,88 @@ class TrendContext:
             # 改进规则 v2.1 - 原始数据支持
             raw_values=list(vector.raw_values) if vector.raw_values else None,
             max_value=vector.max_value,
+        )
+
+    @classmethod
+    def from_trend_result(
+        cls,
+        group_key: str,
+        metric_name: str,
+        result: "TrendResult",  # 从 pipeline.stages.pattern_synthesis
+    ) -> "TrendContext":
+        """
+        从 Pipeline 的 TrendResult 构建 TrendContext
+
+        这是统一数据传递路径的核心方法:
+        - evaluators 通过此方法获取数据
+        - truth 系统直接访问 TrendResult._probe_results
+        - 两者共享同一数据源 (TrendResult)
+
+        Args:
+            group_key: 股票代码
+            metric_name: 指标名称
+            result: Pipeline 输出的 TrendResult
+
+        Returns:
+            TrendContext: evaluators 使用的上下文
+        """
+        # 从探针结果获取完整数据
+        det = result.deterioration_result
+        cyc = result.cyclical_result
+        inf = result.inflection_result
+        roll = result.rolling_result
+        rob = result.robust_result
+        vol = result.volatility_result
+        log_trend = result.log_trend_result
+
+        return cls(
+            group_key=group_key,
+            metric_name=metric_name,
+            log_slope=result.slope,
+            r_squared=result.wls_r_squared,
+            cv=result.cv,
+            latest_value=0.0,  # 需要从原始数据获取
+            weighted_avg=result.weighted_mean,
+            cagr_approx=result.slope,  # log slope ≈ CAGR
+            total_decline_pct=det.total_decline_pct,
+            deterioration_result=result.deterioration_dict,
+            latest_vs_weighted_ratio=0.0,  # 需要从原始数据计算
+            is_cyclical=result.is_cyclical,
+            current_phase=result.current_phase,
+            cycle_position=result.cycle_position,
+            fft_dominant_period=result.fft_dominant_period,
+            peak_to_trough_ratio=cyc.peak_to_trough_ratio,
+            has_deterioration=det.deterioration_probability > 0.5,
+            deterioration_severity=det.severity,
+            has_inflection=result.inflection_detected,
+            inflection_type=getattr(inf, 'inflection_type', 'none'),
+            slope_change=getattr(inf, 'slope_change', 0.0),
+            is_accelerating=roll.is_accelerating,
+            is_decelerating=roll.is_decelerating,
+            trend_acceleration=result.acceleration,
+            recent_3y_slope=result.rolling_3y_slope,
+            has_loss_years=result.has_loss_years,
+            loss_year_count=result.loss_year_count,
+            has_near_zero_years=result.has_near_zero,
+            near_zero_count=result.near_zero_count,
+            robust_slope=result.theil_sen_slope,
+            mann_kendall_tau=result.mann_kendall_tau,
+            mann_kendall_p_value=result.mann_kendall_pvalue,
+            reference_metrics={},
+            warnings=[],
+            # 专业增强字段 v2.0
+            deterioration_probability=result.deterioration_probability,
+            deterioration_pattern=result.deterioration_pattern,
+            wls_slope=result.wls_slope,
+            bootstrap_ci_low=result.bootstrap_ci_lower,
+            bootstrap_ci_high=result.bootstrap_ci_upper,
+            has_arch_effect=result.arch_effect_detected,
+            volatility_regime=vol.volatility_regime if hasattr(vol, 'volatility_regime') else 'stable',
+            volatility_change_ratio=vol.volatility_change_ratio if hasattr(vol, 'volatility_change_ratio') else 1.0,
+            detrended_cv=result.detrended_cv,
+            # 改进规则 v2.1 - 原始数据支持
+            raw_values=list(result.values) if result.values else None,
+            max_value=max(result.values) if result.values else None,
         )
 
 

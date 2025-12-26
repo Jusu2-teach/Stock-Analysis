@@ -676,6 +676,7 @@ class CyclicalProbe:
             confidence_factors.append(f"[{evidence_type}] {name}: LR={lr:.2f} ({detail})")
         confidence_factors.append(f"Posterior: P(cyclical|data)={confidence:.2%}")
 
+        # ========== 8. 构建完整结果 (v2.0: 包含所有专业分析输出) ==========
         return CyclicalPatternResult(
             is_cyclical=is_cyclical,
             peak_to_trough_ratio=float(pv_result['peak_valley_ratio']),
@@ -692,6 +693,22 @@ class CyclicalProbe:
             trend_r_squared_max=0.3,
             cv_threshold=float(cv_threshold),
             industry=industry or "unknown",
+
+            # === v2.0 新增: HP滤波完整输出 ===
+            hp_cycle_amplitude=float(hp_result.cycle_amplitude),
+            hp_cycle_volatility=float(hp_result.cycle_volatility),
+
+            # === v2.0 新增: Hurst指数完整输出 ===
+            hurst_exponent=float(hurst_result.hurst_exponent),
+            hurst_interpretation=hurst_result.interpretation,
+            hurst_confidence=float(hurst_result.confidence),
+
+            # === v2.0 新增: ACF完整输出 ===
+            acf_lag1=float(acf_result.acf_values[1]) if len(acf_result.acf_values) > 1 else 0.0,
+            acf_has_cyclical_pattern=acf_result.has_cyclical_acf,
+            ljung_box_pvalue=float(acf_result.ljung_box_pvalue),
+
+            # === 原有列表字段 ===
             confidence_factors=confidence_factors,
             warnings=warnings,
         )
@@ -851,6 +868,15 @@ class CyclicalProbe:
             trend_r_squared_max=0.3,
             cv_threshold=0.3,
             industry=industry or "unknown",
+            # v2.0: 数据不足时的默认值
+            hp_cycle_amplitude=0.0,
+            hp_cycle_volatility=0.0,
+            hurst_exponent=0.5,  # 随机游走假设
+            hurst_interpretation="unknown",
+            hurst_confidence=0.0,
+            acf_lag1=0.0,
+            acf_has_cyclical_pattern=False,
+            ljung_box_pvalue=1.0,
             confidence_factors=[
                 f"Data Reliability: Grade {preconditions.reliability_grade}",
                 f"Confidence ceiling: {preconditions.confidence_ceiling:.0%}",
@@ -876,6 +902,15 @@ class CyclicalProbe:
             trend_r_squared_max=0.3,
             cv_threshold=0.3,
             industry="unknown",
+            # v2.0: 默认值
+            hp_cycle_amplitude=0.0,
+            hp_cycle_volatility=0.0,
+            hurst_exponent=0.5,
+            hurst_interpretation="unknown",
+            hurst_confidence=0.0,
+            acf_lag1=0.0,
+            acf_has_cyclical_pattern=False,
+            ljung_box_pvalue=1.0,
             confidence_factors=[],
             warnings=[TrendWarning(
                 code="INSUFFICIENT_DATA",
