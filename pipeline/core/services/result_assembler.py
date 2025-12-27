@@ -1,6 +1,8 @@
 """ResultAssembler: 封装输出注册与最终结果字典构建逻辑
 
-重构为依赖 PipelineContext，降低耦合。
+v3.0 重构 (2025-12-27)：
+- 使用 DataStore.refs() 获取引用列表
+- 移除对旧字典的直接访问
 """
 from __future__ import annotations
 from typing import Any, Dict
@@ -10,9 +12,9 @@ from ..context import PipelineContext
 
 
 class ResultAssembler:
-    """结果组装服务（解耦版本）
+    """结果组装服务
 
-    通过 PipelineContext 访问共享状态，而非直接依赖 ExecuteManager。
+    v3.0: 统一使用 DataStore 进行数据访问
     """
 
     __slots__ = ('ctx', 'logger')
@@ -58,9 +60,11 @@ class ResultAssembler:
         raw.setdefault('executed_steps', self.ctx.execution_order)
         raw['started_at'] = started_at
         raw['finished_at'] = datetime.now().isoformat()
+
+        # v3.0: 使用 DataStore API 获取统计信息
         raw['outputs'] = {
-            'by_reference': list(self.ctx.reference_values.keys()),
-            'registry_size': len(self.ctx.global_registry)
+            'by_reference': list(self.ctx.data_store.refs()),
+            'registry_size': len(self.ctx.data_store),
         }
 
         # 附加: 缓存统计（如果可用）

@@ -5,31 +5,13 @@
 2. 参数绑定：根据函数签名绑定调用参数
 3. 输出捕获：规范化 raw_result (dict/tuple/单值)
 4. Schema 校验：输入列和输出键校验
-
-注意：
-- 缓存策略已统一到 KedroEngine，此处不再维护独立缓存逻辑
-- CacheStrategy Protocol 保留供未来扩展（如分布式缓存）
 """
 import inspect
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Callable, Tuple, Union, Protocol
+from typing import Any, Dict, List, Optional, Callable, Tuple, Union
 
 import pandas as pd
-
-
-# ============================================================================
-# 缓存策略接口（预留扩展点，当前由 KedroEngine 统一管理）
-# ============================================================================
-
-class CacheStrategy(Protocol):
-    """缓存策略协议（预留接口）
-
-    当前缓存由 KedroEngine 的指纹签名机制统一管理。
-    此协议保留供未来扩展：如 Redis 分布式缓存、S3 持久化等。
-    """
-    def hit(self, outputs: List[str], global_catalog: Dict[str, Any]) -> bool: ...
-    def record(self, outputs: List[str], produced: Dict[str, Any], global_catalog: Dict[str, Any]): ...
 
 
 @dataclass
@@ -56,8 +38,6 @@ class NodeIOConfig:
     outputs: List[OutputSpec] = field(default_factory=list)
     primary_output: Optional[str] = None
     strict_schema: bool = False
-    # 注意：缓存策略已统一到 KedroEngine，此字段保留供未来扩展
-    cache_strategy: Optional[CacheStrategy] = None
 
 
 @dataclass
@@ -83,13 +63,46 @@ class IOManager:
     2. 统一支持 Argo 风格的 *参数* 与 *数据集/工件* 区分（预留）
     3. 支持多种返回类型：单对象 / tuple / dict
     4. primary_output 裁剪策略集中管理
-    5. 未来可插拔策略：命名规范、动态选择器、Jinja 模板、缓存策略、物化层插件
+    5. 未来可插拔策略：命名规范、动态选择器、Jinja 模板、物化层插件
+
+    支持 DataStore 或 Dict 作为后端存储。
     """
 
-    def __init__(self, global_catalog: Dict[str, Any], logger, strict_pipeline: bool = False):
-        self.global_catalog = global_catalog
+    def __init__(self, global_catalog, logger, strict_pipeline: bool = False):
+        """
+        Args:
+            global_catalog: Dict[str, Any] 或 DataStore 实例
+            logger: 日志记录器
+            strict_pipeline: 是否启用严格模式
+        """
+        self._store = global_catalog
         self.logger = logger
         self.strict_pipeline = strict_pipeline
+
+    # ---------- 兼容性访问器 ----------
+    @property
+    def global_catalog(self):
+        """兼容性属性：返回底层存储（可能是 dict 或 DataStore）"""
+        return self._store
+
+    def _get(self, key: str, default=None):
+        """统一的 get 访问器，兼容 dict 和 DataStore"""
+        if hasattr(self._store, 'get'):
+            return self._store.get(key, default)
+        return self._store.get(key, default) if isinstance(self._store, dict) else default
+
+    def _put(self, key: str, value):
+        """统一的 put 访问器，兼容 dict 和 DataStore"""
+        if hasattr(self._store, 'put'):
+            self._store.put(key, value)
+        else:
+            self._store[key] = value
+
+    def _has(self, key: str) -> bool:
+        """统一的 has 访问器，兼容 dict 和 DataStore"""
+        if hasattr(self._store, 'has'):
+            return self._store.has(key)
+        return key in self._store
 
     # ----------------------------------------------------------------------------
     # 构建配置对象（从原始 node_config 提取）
@@ -332,9 +345,10 @@ class IOManager:
             return
         for name in declared_inputs:
             if name in task_inputs:
-                self.global_catalog[name] = task_inputs[name]
+                # v2.0: 使用统一访问器
+                self._put(name, task_inputs[name])
             else:
-                if name not in self.global_catalog:
+                if not self._has(name):
                     logger.warning(f"[IOManager][Prefect] Step '{step}' 缺失声明输入且全局不存在: {name}")
                 else:
                     logger.info(f"[IOManager][Prefect] Step '{step}' 使用全局缓存输入: {name}")

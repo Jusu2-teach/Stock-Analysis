@@ -186,15 +186,17 @@ class ConfigService:
             self.ctx.steps[name] = spec
 
     def _mark_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """标记参数中的引用"""
+        """标记参数中的引用
+
+        v3.0: 不再写入 reference_to_hash 字典，哈希值在 DataStore 中自动计算
+        """
         def walk(val):
             if isinstance(val, str):
                 m = REF_PATTERN.match(val.strip())
                 if m:
                     ref = val.strip()
-                    ghash = self._hash_reference(ref)
-                    self.ctx.reference_to_hash.setdefault(ref, ghash)
-                    return {"__ref__": ref, "hash": ghash}
+                    # v3.0: 不再需要预先注册哈希，DataStore 会自动计算
+                    return {"__ref__": ref}
                 return val
             if isinstance(val, list):
                 return [walk(v) for v in val]

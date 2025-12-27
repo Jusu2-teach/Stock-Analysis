@@ -12,6 +12,15 @@ Core Components:
 - DependencyGraph: 专业级依赖图管理
 - HookManager: 事件钩子系统
 
+Engine Services (专供引擎层使用):
+- CacheService: 缓存管理（指纹计算、签名持久化）
+- EventPublisher: 事件发布（统一 EventBus 封装）
+
+Core Services (Pipeline 核心服务):
+- ConfigService: 配置加载与步骤解析
+- FlowExecutor: 流程执行协调
+- ResultAssembler: 结果组装
+
 Engines:
 - PrefectEngine: Hybrid Prefect+Kedro 运行时
 
@@ -28,7 +37,7 @@ Usage Example:
     print(graph.to_mermaid())
 
 Author: AStock Team
-Version: 2.1.0
+Version: 3.0.0 (架构优化重构)
 """
 from __future__ import annotations
 
@@ -51,9 +60,12 @@ from .engines.prefect_engine import PrefectEngine
 # Services (Advanced)
 from .core.services.hook_manager import HookManager
 
+# Engine Services (专供引擎使用)
+from .engine_services import CacheService, EventPublisher
+
 PREFECT_AVAILABLE = True  # always true in trimmed hybrid mode
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 __author__ = "AStock Team"
 
 # Export main classes and functions
@@ -76,6 +88,9 @@ __all__ = [
     'PrefectEngine',
     # Services
     'HookManager',
+    # Engine Services
+    'CacheService',
+    'EventPublisher',
     # Functions
     'create_pipeline',
     'get_system_info',

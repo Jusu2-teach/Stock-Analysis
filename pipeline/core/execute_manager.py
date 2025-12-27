@@ -151,9 +151,27 @@ class ExecuteManager:
         if not self.ctx.config:
             self.load_config()
 
+        # 发布 Pipeline 开始事件
+        pipeline_name = self.ctx.config.get('pipeline', {}).get('name', 'unnamed')
+        step_names = [s.get('name', '') for s in self.ctx.config.get('steps', [])]
+        self._event_bus.emit(PipelineStartedEvent(
+            pipeline_name=pipeline_name,
+            config_path=self.config_path or '',
+            step_names=step_names,
+        ))
+
         auto_info = self._build_auto_kedro_config()
         result = self._flow_executor.run(auto_info, manager=self)
         result['mode'] = 'hybrid'
+
+        # 发布 Pipeline 完成事件
+        self._event_bus.emit(PipelineCompletedEvent(
+            pipeline_name=pipeline_name,
+            status=result.get('status', 'unknown'),
+            executed_steps=result.get('executed_steps', []),
+            duration_ms=result.get('metrics', {}).get('total_duration_ms', 0),
+        ))
+
         return result
 
     # ------------------ Introspection ---------

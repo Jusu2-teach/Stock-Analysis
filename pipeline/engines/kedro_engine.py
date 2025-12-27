@@ -23,49 +23,81 @@ from shared import (
     PipelineErrorEvent,
 )
 
+from shared.contracts.store import DataStore, ReferenceResolver
+from pipeline.engine_services import CacheService, EventPublisher
+
 
 class KedroEngine:
+    """Kedro 执行引擎
+
+    数据存储委托给 DataStore，缓存管理委托给 CacheService，事件发布委托给 EventPublisher。
+    """
+
     def __init__(self, execute_manager):
         self.execute_manager = execute_manager
         self.logger = execute_manager.logger
         self.pipelines = {}
         self.data_catalog = None
-        self.global_catalog = {}
-        # Phase3: lineage & metrics containers
+
+        # 使用 context 的 DataStore 作为数据存储
+        self._data_store = execute_manager.ctx.data_store
+
+        # lineage & metrics containers
         self.node_metrics: Dict[str, Dict[str, Any]] = {}
-        self.lineage: Dict[str, Dict[str, Any]] = {  # step -> {inputs: [], outputs: []}
-            # filled dynamically
-        }
-        self.dataset_producers: Dict[str, str] = {}  # dataset -> step
-        # EventBus 实例
-        self._event_bus = EventBus.get()
-    # primary 输出裁剪相关状态已移除
-        # Fingerprint / caching (Phase3 enhancement)
-        self.dataset_fingerprints: Dict[str, str] = {}  # dataset -> fingerprint string
-        self.node_signatures: Dict[str, str] = {}  # step -> last execution signature
+        self.lineage: Dict[str, Dict[str, Any]] = {}
+        self.dataset_producers: Dict[str, str] = {}
+
+        # 事件发布
+        self._event_publisher = EventPublisher(source='pipeline.kedro', logger=self.logger)
+
+        # Fingerprint / caching
+        self.dataset_fingerprints: Dict[str, str] = {}
+        self.node_signatures: Dict[str, str] = {}
+
         # Persistent cache control
         self.enable_persist = True
         try:
             opts = (execute_manager.ctx.config or {}).get('pipeline', {}).get('__options__', {}) or {}
             cache_opts = opts.get('cache', {}) if isinstance(opts.get('cache'), dict) else {}
-            # 默认开启，显式 persist=False 可关闭
             self.enable_persist = cache_opts.get('persist', True)
         except Exception:
             pass
+
         self.cache_base = Path('.pipeline/cache')
         self.cache_datasets_dir = self.cache_base / 'datasets'
+
+        # 缓存服务
+        self._cache_service = CacheService(
+            cache_dir=self.cache_base,
+            store=self._data_store,
+            logger=self.logger,
+        )
+
         if self.enable_persist:
             try:
                 self._load_persistent_cache()
             except Exception as e:
                 self.logger.warning(f"⚠️ 持久化缓存加载失败(忽略继续): {e}")
-        self.logger.info("Kedro引擎初始化成功")
-        self._initialize_global_catalog()
 
-    def _initialize_global_catalog(self):
+        self.logger.info("Kedro引擎初始化成功")
+        self._initialize_data_catalog()
+
+    @property
+    def global_catalog(self) -> Dict[str, Any]:
+        """返回 DataStore 的字典视图，供 PrefectEngine 使用"""
+        return dict(self._data_store.items())
+
+    @global_catalog.setter
+    def global_catalog(self, value: Dict[str, Any]):
+        """设置 global_catalog 时写入 DataStore"""
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k not in self._data_store:
+                    self._data_store.put(k, v)
+
+    def _initialize_data_catalog(self):
         try:
             self.data_catalog = DataCatalog()
-            self.global_catalog = {}
             self.logger.info("Kedro数据目录初始化完成")
         except Exception as e:
             self.logger.error(f"数据目录初始化失败: {e}")
@@ -109,7 +141,8 @@ class KedroEngine:
             return None
         # ---------- I/O manager 构建 ----------
         step_name = node_config.get('name') or node_config.get('id') or (node_config.get('outputs') or ['unknown_step'])[0]
-        io_manager = IOManager(self.global_catalog, self.logger, strict_pipeline=bool(self.execute_manager.ctx.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.ctx.config else False)
+        # v2.0: 直接传入 DataStore
+        io_manager = IOManager(self._data_store, self.logger, strict_pipeline=bool(self.execute_manager.ctx.config.get('pipeline', {}).get('__strict_schema__')) if self.execute_manager.ctx.config else False)
         io_cfg = io_manager.build_config(node_config)
 
         def execute_node(*args, **kwargs):
@@ -121,55 +154,13 @@ class KedroEngine:
 
                 base_params = {**node_config.get("parameters", {}), **kwargs}
 
-                # --- 基于 KedroEngine 全局 catalog 的引用解析 ---
-                def _resolve_refs_via_catalog(obj):
-                    # 使用统一的 REF_PATTERN（从 context 模块导入）
-                    from pipeline.core.context import REF_PATTERN
-                    pattern = REF_PATTERN
-                    def walk(v):
-                        if isinstance(v, dict) and '__ref__' in v:
-                            ref = v['__ref__']
-                            h = v.get('hash')
-                            try:
-                                m = pattern.match(ref) if pattern else None
-                            except Exception:
-                                m = None
-                            if m:
-                                step_id = m.group('step')
-                                out_id = m.group('param')
-                                ds_name = f"{step_id}__{out_id}".replace('-', '_')
-                                # 先从 global_catalog 取，其次尝试 data_catalog.load
-                                if ds_name in self.global_catalog:
-                                    val = self.global_catalog[ds_name]
-                                else:
-                                    loaded = False
-                                    val = None
-                                    try:
-                                        if self.data_catalog and ds_name in getattr(self.data_catalog, '_data_sets', {}):
-                                            val = self.data_catalog.load(ds_name)
-                                            self.global_catalog[ds_name] = val
-                                            loaded = True
-                                    except Exception:
-                                        pass
-                                    if not loaded and val is None:
-                                        raise ValueError(f"catalog 中未找到数据集: {ds_name} (ref={ref})")
-                                # 注册到 context 引用表，保证后续通用解析可命中
-                                try:
-                                    em.ctx.register_reference(ref, val)
-                                except Exception:
-                                    pass
-                                return val
-                        if isinstance(v, list):
-                            return [walk(x) for x in v]
-                        if isinstance(v, dict):
-                            return {k: walk(val) for k, val in v.items() if k != '__ref__'}
-                        return v
-                    return {k: walk(val) for k, val in obj.items()}
-
+                # v3.0: 统一使用 ReferenceResolver 进行引用解析
+                # 取代内嵌的 _resolve_refs_via_catalog 函数
                 try:
-                    base_params = _resolve_refs_via_catalog(base_params)
+                    resolver = ReferenceResolver(self._data_store)
+                    base_params = resolver.resolve(base_params, strict=True)
                 except Exception as e:
-                    self.logger.error(f"参数引用解析失败(step={step_name}, catalog阶段): {e}")
+                    self.logger.error(f"参数引用解析失败(step={step_name}, ReferenceResolver阶段): {e}")
                     raise
 
                 # 统一通过 runtime_param_service 解析动态参数引用
@@ -218,7 +209,7 @@ class KedroEngine:
                     "[CACHE CHECK] step=%s outputs=%s loaded=%s last_sig=%s new_sig=%s",
                     step_name,
                     planned_outputs,
-                    {o: o in self.global_catalog for o in planned_outputs},
+                    {o: self._data_store.has(o) for o in planned_outputs},
                     self.node_signatures.get(step_name),
                     node_signature,
                 )
@@ -245,7 +236,9 @@ class KedroEngine:
                                     ttl_expired = True
                 except Exception:
                     pass
-                if planned_outputs and all(o in self.global_catalog for o in planned_outputs) and last_sig == node_signature and not ttl_expired:
+
+                # v2.0: 使用 DataStore.has() 检查输出是否存在
+                if planned_outputs and all(self._data_store.has(o) for o in planned_outputs) and last_sig == node_signature and not ttl_expired:
                     self.logger.info(f"🧩 Cache hit: {step_name} (signature matched) -> skip execution")
                     duration = time.perf_counter() - start_ts
                     # 补写 primary 标记（缓存命中也需要）
@@ -254,7 +247,7 @@ class KedroEngine:
                         self.dataset_producers.setdefault(ds, step_name)
                     self.node_metrics[step_name] = {
                         'duration_sec': duration,
-                        'outputs': [io_manager.summarize(o, self.global_catalog[o]) for o in planned_outputs],
+                        'outputs': [io_manager.summarize(o, self._data_store.get(o)) for o in planned_outputs],
                         'cached': True,
                         'signature': node_signature
                     }
@@ -273,14 +266,9 @@ class KedroEngine:
                     }
                     for ds in planned_outputs:
                         self.dataset_producers.setdefault(ds, step_name)
-                    # 发布缓存命中事件
-                    self._event_bus.emit(CacheHitEvent(
-                        step_name=step_name,
-                        signature=node_signature,
-                        outputs=planned_outputs,
-                        source='pipeline.kedro'
-                    ))
-                    return tuple(self.global_catalog[o] for o in planned_outputs) if len(planned_outputs) > 1 else (self.global_catalog[planned_outputs[0]],)
+                    # v2.0: 使用 EventPublisher 发布缓存命中事件
+                    self._event_publisher.on_cache_hit(step_name, node_signature, planned_outputs)
+                    return tuple(self._data_store.get(o) for o in planned_outputs) if len(planned_outputs) > 1 else (self._data_store.get(planned_outputs[0]),)
                 # 由 IOManager 决定绑定策略
 
                 def _unwrap(func: Callable) -> Callable:
@@ -296,19 +284,13 @@ class KedroEngine:
 
                 # method_list 已在上方定义
                 # 如果存在旧签名且输出存在但签名不同，输出 diff 说明
-                if planned_outputs and all(o in self.global_catalog for o in planned_outputs) and last_sig and last_sig != node_signature and not ttl_expired:
+                if planned_outputs and all(self._data_store.has(o) for o in planned_outputs) and last_sig and last_sig != node_signature and not ttl_expired:
                     self._log_cache_diff(step_name, last_sig, node_signature, upstream_fps)
                 if ttl_expired:
                     self.logger.info(f"⏰ Cache TTL expired for step={step_name}, 强制重算")
                 self.logger.info(f"🔄 执行方法序列: {method_list}")
-                # 发布节点启动事件
-                self._event_bus.emit(NodeStartedEvent(
-                    step_name=step_name,
-                    inputs=list(upstream_map.keys()),
-                    outputs=planned_outputs,
-                    signature=node_signature,
-                    source='pipeline.kedro'
-                ))
+                # v2.0: 使用 EventPublisher 发布节点启动事件
+                self._event_publisher.on_node_started(step_name, list(upstream_map.keys()), planned_outputs, node_signature)
                 result = None
                 for idx, method_name in enumerate(method_list):
                     self.logger.info(f"  ⚡ 执行方法 {idx+1}/{len(method_list)}: {method_name}")
@@ -383,18 +365,25 @@ class KedroEngine:
                 if outputs:
                     captured = io_manager.capture_outputs(io_cfg, result)
                     for on, val in captured.produced.items():
-                        self.global_catalog[on] = val
-                        # 仅记录 dataset 输出（parameter 输出仍保留在 global_catalog 可被引用）
+                        # v3.0: 使用 DataStore 统一存储，同时设置 ref 索引
+                        # 构造引用路径
+                        if '__' in on:
+                            step_id, out_id = on.split('__', 1)
+                            ref = f"steps.{step_id}.outputs.parameters.{out_id}"
+                        else:
+                            ref = f"steps.{step_name}.outputs.parameters.{on}"
+                        self._data_store.put(on, val, ref=ref, producer_step=step_name)
+                        # 仅记录 dataset 输出（parameter 输出仍保留在 data_store 可被引用）
                         spec = next((s for s in io_cfg.outputs if s.name == on), None)
                         if spec and spec.kind == 'dataset':
                             produced_dataset_names.append(on)
                     # parameter 输出摘要
-                    param_summary = {pn: io_manager.summarize(pn, self.global_catalog.get(pn)) for pn in parameter_outputs if pn in self.global_catalog}
+                    param_summary = {pn: io_manager.summarize(pn, self._data_store.get(pn)) for pn in parameter_outputs if self._data_store.has(pn)}
                     final = captured.tuple_result
                     duration = time.perf_counter() - start_ts
                     self.node_metrics[step_name] = {
                         'duration_sec': duration,
-                        'outputs': [io_manager.summarize(on, self.global_catalog[on]) for on in produced_dataset_names],
+                        'outputs': [io_manager.summarize(on, self._data_store.get(on)) for on in produced_dataset_names],
                         'parameters': param_summary,
                         'cached': False,
                         'signature': node_signature
@@ -417,36 +406,21 @@ class KedroEngine:
                     for ds in produced_dataset_names:
                         self.dataset_producers[ds] = step_name
                         # 记录输出指纹
-                        self.dataset_fingerprints[ds] = self._fingerprint_object(self.global_catalog[ds])
-                        # --- 即时向上下文注册引用 (支持后续节点参数解析) ---
-                        if '__' in ds:
-                            try:
-                                step_id, out_id = ds.split('__', 1)
-                                ref = f"steps.{step_id}.outputs.parameters.{out_id}"
-                                self.execute_manager.ctx.register_reference(ref, self.global_catalog[ds])
-                            except Exception:
-                                pass
-                    # parameter 输出同样注册（名称不含 __，但可直接构造引用）
-                    for pn in parameter_outputs:
-                        if pn in self.global_catalog:
-                            try:
-                                ref = f"steps.{step_name}.outputs.parameters.{pn}"
-                                self.execute_manager.ctx.register_reference(ref, self.global_catalog[pn])
-                            except Exception:
-                                pass
+                        self.dataset_fingerprints[ds] = self._fingerprint_object(self._data_store.get(ds))
+                        # v3.0: ref 索引已在 _data_store.put() 时设置，无需再次注册
+                    # v3.0: parameter 输出的 ref 索引也已在 _data_store.put() 时设置
                     # 记录节点签名
                     self.node_signatures[step_name] = node_signature
                     # 持久化节点与数据集（增量）
                     self._persist_node_state(produced_dataset_names)
-                    # 发布节点完成事件
-                    self._event_bus.emit(NodeCompletedEvent(
+                    # v2.0: 使用 EventPublisher 发布节点完成事件
+                    self._event_publisher.on_node_completed(
                         step_name=step_name,
                         status='success',
                         duration_ms=duration * 1000,
                         output_count=len(produced_dataset_names),
-                        metrics=self.node_metrics[step_name],
-                        source='pipeline.kedro'
-                    ))
+                        metrics=self.node_metrics[step_name]
+                    )
                     return final
                 # 无 outputs（兜底）
                 duration = time.perf_counter() - start_ts
@@ -467,15 +441,14 @@ class KedroEngine:
                 self.node_signatures[step_name] = node_signature
                 self._persist_node_state([])
                 # Kedro 期望无 outputs 的节点返回 None/()，避免 DataFrame 等被误判
-                # 发布节点完成事件
-                self._event_bus.emit(NodeCompletedEvent(
+                # v2.0: 使用 EventPublisher 发布节点完成事件
+                self._event_publisher.on_node_completed(
                     step_name=step_name,
                     status='success',
                     duration_ms=duration * 1000,
                     output_count=0,
-                    metrics=self.node_metrics[step_name],
-                    source='pipeline.kedro'
-                ))
+                    metrics=self.node_metrics[step_name]
+                )
                 return None
             except Exception as e:
                 # 失败节点 lineage & metrics 记录（即便 soft-fail 上层吞掉，也保留痕迹）
@@ -525,27 +498,25 @@ class KedroEngine:
                 except Exception:
                     pass
                 # 发布失败事件
-                self._event_bus.emit(NodeCompletedEvent(
+                self._event_publisher.on_node_completed(
                     step_name=step_name,
                     status='failed',
                     duration_ms=(duration or 0) * 1000,
                     output_count=0,
-                    error=str(e),
                     metrics=self.node_metrics.get(step_name, {}),
-                    source='pipeline.kedro'
-                ))
-                self._event_bus.emit(PipelineErrorEvent(
+                    error=str(e)
+                )
+                self._event_publisher.on_pipeline_error(
                     step_name=step_name,
                     error=str(e),
-                    traceback=traceback.format_exc(limit=8),
-                    source='pipeline.kedro'
-                ))
+                    traceback_str=traceback.format_exc(limit=8)
+                )
                 self.logger.error(f"节点执行失败: {e}")
                 raise
 
-        # 仅把 dataset 类型输出注册给 Kedro，parameter 输出只放入全局目录与占位解析
+        # 仅把 dataset 类型输出注册给 Kedro，parameter 输出只放入 DataStore 与占位解析
         try:
-            io_manager_tmp = IOManager(self.global_catalog, self.logger)
+            io_manager_tmp = IOManager(self._data_store, self.logger)
             io_cfg_tmp = io_manager_tmp.build_config(node_config)
             kedro_outputs = [spec.name for spec in io_cfg_tmp.outputs if spec.kind == 'dataset']
         except Exception:
@@ -652,7 +623,8 @@ class KedroEngine:
                     try:
                         with open(fpath, 'rb') as f:
                             obj = pickle.load(f)
-                        self.global_catalog[ds] = obj
+                        # v2.0: 使用 DataStore 统一存储
+                        self._data_store.put(ds, obj)
                         self.dataset_fingerprints[ds] = meta.get('fingerprint', '')
                         loaded += 1
                     except Exception as e:
@@ -682,7 +654,7 @@ class KedroEngine:
                 idx = {}
             # 写新产生的数据集
             for ds in produced:
-                obj = self.global_catalog.get(ds)
+                obj = self._data_store.get(ds)
                 if obj is None:
                     continue
                 fp = self.dataset_fingerprints.get(ds) or self._fingerprint_object(obj)

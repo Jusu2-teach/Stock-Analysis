@@ -72,6 +72,9 @@ from .router.parser import RouteParser, DelimiterParser, TemplateParser
 from .metadata.base import Metadata, MetadataStore
 from .metadata.lineage import Lineage, LineageNode
 
+# Store - 数据存储
+from .store import DataStore, SingletonDataStore, DataEntry, ReferenceResolver, ReferenceNotFoundError
+
 # Utilities
 from .utils.fingerprint import fingerprint
 from .utils.compat import ensure_compatibility
@@ -124,6 +127,13 @@ __all__ = [
     'MetadataStore',
     'Lineage',
     'LineageNode',
+
+    # Store
+    'DataStore',
+    'SingletonDataStore',
+    'DataEntry',
+    'ReferenceResolver',
+    'ReferenceNotFoundError',
 
     # Utils
     'fingerprint',

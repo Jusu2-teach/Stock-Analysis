@@ -2,7 +2,9 @@
 
 将 ExecuteManager._resolve_runtime_params 拆分为独立服务，便于单元测试与职责单一化。
 
-重构为依赖 PipelineContext，降低耦合。
+v3.0 重构 (2025-12-27)：
+- 使用 PipelineContext.resolver (ReferenceResolver) 进行统一解析
+- 移除对 global_registry/reference_values 的直接访问
 """
 from __future__ import annotations
 from typing import Any, Dict
@@ -12,9 +14,9 @@ from ..context import PipelineContext
 
 
 class RuntimeParamService:
-    """运行时参数解析服务（解耦版本）
+    """运行时参数解析服务
 
-    通过 PipelineContext 访问共享状态，而非直接依赖 ExecuteManager。
+    v3.0: 统一使用 ReferenceResolver 进行引用解析
     """
 
     __slots__ = ('ctx', 'logger')
@@ -30,6 +32,8 @@ class RuntimeParamService:
     def resolve(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """解析运行时参数中的引用
 
+        v3.0: 统一使用 ReferenceResolver，支持递归解析。
+
         Args:
             params: 包含引用的参数字典
 
@@ -39,27 +43,15 @@ class RuntimeParamService:
         Raises:
             ReferenceResolutionError: 引用解析失败
         """
-        def walk(v: Any):
-            if isinstance(v, dict) and '__ref__' in v:
-                ref = v['__ref__']
-                h = v.get('hash')
-                # 优先通过哈希查找（更快）
-                if h and h in self.ctx.global_registry:
-                    return self.ctx.global_registry[h]
-                # 降级到引用名查找
-                if ref in self.ctx.reference_values:
-                    return self.ctx.reference_values[ref]
-                raise self.ReferenceResolutionError(
-                    f"参数引用未找到: {ref} -> 请确认上游 step 输出名称与引用一致 "
-                    f"(pattern: steps.<step>.outputs.parameters.<output>)"
-                )
-            if isinstance(v, list):
-                return [walk(x) for x in v]
-            if isinstance(v, dict):
-                # 递归处理字典，但排除 __ref__ 键
-                return {k: walk(val) for k, val in v.items() if k != '__ref__'}
-            return v
-
-        return {k: walk(v) for k, v in params.items()}
+        try:
+            # 使用 PipelineContext 的 resolver 进行统一解析
+            # strict=True 会在引用不存在时抛出 ReferenceNotFoundError
+            return self.ctx.resolve_references(params)
+        except Exception as e:
+            # 转换为自定义异常，保持 API 兼容性
+            raise self.ReferenceResolutionError(
+                f"参数引用解析失败: {e} -> 请确认上游 step 输出名称与引用一致 "
+                f"(pattern: steps.<step>.outputs.parameters.<output>)"
+            ) from e
 
 __all__ = ["RuntimeParamService"]
