@@ -15,7 +15,7 @@
 import sys
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 import logging
 
 # 路径注入
@@ -27,9 +27,6 @@ from orchestrator import AStockOrchestrator
 
 # 统一事件总线
 from shared import EventBus, PipelineStartedEvent, PipelineCompletedEvent, SystemReadyEvent
-
-if TYPE_CHECKING:
-    from shared.protocols import OrchestratorProtocol
 
 from pipeline.core.context import PipelineContext
 from pipeline.core.services.config_service import ConfigService
@@ -56,7 +53,7 @@ class ExecuteManager:
     def __init__(
         self,
         config_path: Optional[str] = None,
-        orchestrator: Optional['OrchestratorProtocol'] = None
+        orchestrator: Optional[Any] = None
     ):
         self.logger = logging.getLogger("AStockExecuteManager")
         if not self.logger.handlers:
@@ -122,8 +119,6 @@ class ExecuteManager:
                 if hasattr(mod, 'register'):
                     mod.register()  # 新接口：无参数，插件自己获取 EventBus
                     self.logger.info(f"🔌 已加载插件: {module_info.name}")
-            except Exception as e:
-                self.logger.warning(f"插件加载失败 {module_info.name}: {e}")
             except Exception as e:
                 self.logger.warning(f"插件加载失败 {module_info.name}: {e}")
 
