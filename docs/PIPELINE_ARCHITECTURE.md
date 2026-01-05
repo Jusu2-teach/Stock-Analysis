@@ -398,18 +398,33 @@ class ExecuteManager:
 
 ### PipelineContext（共享状态）
 
-**职责**：所有服务共享的状态容器（避免传递大量参数）
+**职责**：所有服务共享的状态容器（避免传递大量参数），并通过 PGCS DataStore 统一管理跨步骤数据与引用解析。
 
-**数据结构**：
+**数据结构（简化）**：
 ```python
 @dataclass
 class PipelineContext:
-    config: Dict[str, Any]              # 配置
-    steps: Dict[str, Any]               # 步骤定义
-    execution_order: List[str]          # 执行顺序
-    reference_values: Dict[str, Any]    # 引用值缓存
-    global_registry: Dict[str, Any]     # 全局注册表
-    reference_to_hash: Dict[str, str]   # 引用哈希映射
+  # 配置与步骤
+  config: Dict[str, Any] = field(default_factory=dict)
+  steps: Dict[str, StepSpec] = field(default_factory=dict)
+  execution_order: List[str] = field(default_factory=list)
+
+  # 运行时状态（依赖图、执行计划等）
+  _runtime_state: Dict[str, Any] = field(default_factory=dict)
+
+  # 统一数据存储与引用解析
+  _data_store: DataStore | None = field(default=None, repr=False)
+  _resolver: ReferenceResolver | None = field(default=None, repr=False)
+
+  def __post_init__(self):
+    if self._data_store is None:
+      self._data_store = DataStore()
+    if self._resolver is None:
+      self._resolver = ReferenceResolver(self._data_store)
+      self._resolver.register_pattern(
+        template='steps.{step}.outputs.parameters.{param}',
+        handler='step_output',
+      )
 ```
 
 **使用方式**：
@@ -422,8 +437,8 @@ flow_executor = FlowExecutor(ctx, ...)
 result_assembler = ResultAssembler(ctx, ...)
 
 # 服务间通过 context 共享数据
-config_service.load_config(path)       # 写入 ctx.config
-flow_executor.run(...)                 # 读取 ctx.config
+config_service.load_config(path)       # 写入 ctx.config / ctx.steps / ctx.execution_order
+flow_executor.run(...)                 # 读取 ctx.config，并通过 ctx.resolver 解析引用
 ```
 
 ---

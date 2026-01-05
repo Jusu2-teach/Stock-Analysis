@@ -327,7 +327,7 @@ pipeline:
         # 直接接收探针分析结果
         roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
         roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        # roiic_data: 已禁用，数据源缺少 roiic 列
+        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
         gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
         net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
         revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
@@ -372,7 +372,7 @@ pipeline:
         # 接收探针分析结果 (roiic_data 已禁用)
         roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
         roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        # roiic_data: 已禁用，数据源缺少 roiic 列
+        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
         gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
         net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
         revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"

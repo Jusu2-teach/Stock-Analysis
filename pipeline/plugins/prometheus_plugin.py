@@ -56,7 +56,7 @@ else:
         bus = EventBus.get()
 
         @bus.on('pipeline.node.completed', priority=EventPriority.LOW)
-        def on_node_complete(event):
+        def on_node_complete(event, **kwargs):
             if event.status == 'failed':
                 NODE_FAIL.labels(event.step_name).inc()
             else:
@@ -64,5 +64,5 @@ else:
                 NODE_DURATION.labels(event.step_name).observe(duration_sec)
 
         @bus.on('pipeline.cache.hit', priority=EventPriority.LOW)
-        def on_cache_hit(event):
+        def on_cache_hit(event, **kwargs):
             CACHE_HIT.labels(event.step_name).inc()

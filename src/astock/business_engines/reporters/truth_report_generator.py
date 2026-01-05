@@ -131,25 +131,20 @@ class TruthReportGenerator:
 
     def __init__(
         self,
+        truth_processed: Dict[str, Any],
         probe_data: Dict[str, pd.DataFrame] = None,
-        truth_processed: Dict[str, Any] = None,
     ):
-        """
-        初始化 T.R.U.T.H. 报告生成器
-
-        支持两种模式:
-        1. truth_processed 模式（推荐）: 使用 TruthProcessor 处理后的数据
-        2. probe_data 模式（兼容旧版）: 直接使用探针数据
+        """初始化 T.R.U.T.H. 报告生成器（仅支持基于 TruthProcessor 的新架构）
 
         Args:
-            probe_data: 探针数据字典，格式: {'roic': df, 'roe': df, ...}
             truth_processed: TruthProcessor 处理后的结果
+            probe_data: 可选的探针数据字典，用于补充明细（通常来自 truth_processed['probe_data']）
         """
         self.metrics_data: Dict[str, pd.DataFrame] = {}
         self.company_genomes: Dict[str, CompanyGenome] = {}
         self.company_results: Dict[str, Dict[str, Any]] = {}
         self.truth_processed = truth_processed
-        self.use_professional_mode = truth_processed is not None
+        self.use_professional_mode = True
 
         if not HAS_TRUTH:
             raise RuntimeError("T.R.U.T.H. 系统不可用")
@@ -158,15 +153,23 @@ class TruthReportGenerator:
         self.truth_config = get_default_truth_config()
         self.probe_adapter = ProbeAdapter()
 
-        # 加载数据
-        if truth_processed is not None:
-            self._load_from_truth_processed(truth_processed)
-            logger.info("🧬 使用专业基因-指标映射模式（来自 TruthProcessor）")
-        elif probe_data and any(v is not None for v in probe_data.values()):
-            self._load_from_probe_data(probe_data)
-            logger.info("📊 使用兼容模式（直接从探针数据提取）")
-        else:
-            raise ValueError("必须提供 truth_processed 或 probe_data")
+        # 加载数据（必须有 truth_processed，probe_data 仅作为补充）
+        if truth_processed is None:
+            raise ValueError("truth_processed 不能为空")
+
+        # 如果 truth_processed 自带 probe_data，则优先使用
+        embedded_probe_data = None
+        if isinstance(truth_processed, dict):
+            embedded_probe_data = truth_processed.get('probe_data')
+
+        effective_probe_data = embedded_probe_data or probe_data
+
+        self._load_from_truth_processed(truth_processed)
+
+        if effective_probe_data and any(v is not None for v in effective_probe_data.values()):
+            self._load_from_probe_data(effective_probe_data)
+
+        logger.info("🧬 使用专业基因-指标映射模式（来自 TruthProcessor）")
 
     def _load_from_truth_processed(self, truth_processed: Dict[str, Any]) -> None:
         """从 TruthProcessor 处理结果加载数据"""

@@ -120,20 +120,32 @@ pipeline/
 ```python
 @dataclass
 class PipelineContext:
-    """封装配置解析和执行过程中的共享状态"""
+  """Pipeline 执行上下文
 
-    config: Dict[str, Any]              # YAML 配置
-    steps: Dict[str, StepSpec]          # 步骤规范
-    execution_order: List[str]          # 执行顺序
-    reference_values: Dict[str, Any]    # 跨步引用值
-    global_registry: Dict[str, Any]     # 全局数据注册
-    _runtime_state: Dict[str, Any]      # 运行时状态 (含 DependencyGraph)
+  封装配置解析和执行过程中的共享状态，避免服务层直接依赖 ExecuteManager。
+  数据存储统一到 DataStore，引用解析统一使用 ReferenceResolver。
+  """
+
+  # 配置数据
+  config: Dict[str, Any] = field(default_factory=dict)
+
+  # 步骤相关
+  steps: Dict[str, StepSpec] = field(default_factory=dict)
+  execution_order: List[str] = field(default_factory=list)
+
+  # 运行时状态 (含 DependencyGraph / ExecutionPlan 等)
+  _runtime_state: Dict[str, Any] = field(default_factory=dict)
+
+  # 统一数据存储（单一真相源）
+  _data_store: Optional[DataStore] = field(default=None, repr=False)
+  _resolver: Optional[ReferenceResolver] = field(default=None, repr=False)
 ```
 
 **设计亮点**：
-- 通过 Context 减少服务间耦合，实现依赖反转
-- 存储 DependencyGraph（单一构建，多处复用）
-- 支持 `clone()` 用于并行执行或快照
+- 使用 `DataStore` 作为唯一的数据存储与血缘入口，替代 `reference_values/global_registry`
+- 通过 `ReferenceResolver` + 路由模板统一解析 `steps.X.outputs.parameters.Y` 等引用
+- 存储 `DependencyGraph` 和 `ExecutionPlan`（单一构建，多处复用）
+- 支持运行时状态扩展（FlowRun/StepRun、缓存统计等）
 
 ### 2️⃣ DependencyGraph - 专业级依赖图
 
@@ -201,10 +213,11 @@ class KedroEngine:
     """
 ```
 
-**缓存机制**：
-- `dataset_fingerprints`: 数据集指纹
-- `node_signatures`: 节点执行签名
-- 基于签名变化决定是否重新执行
+**缓存机制与 PGCS 集成**：
+- `dataset_fingerprints` / `node_signatures`：节点级签名缓存
+- 结合 `shared.contracts.store.DataStore` 记录每个 step/output 的数据指纹
+- 通过引用 `steps.{step}.outputs.parameters.{param}` 与 DataStore 中的键
+  （如 `step__param`）建立稳定映射，支持跨节点/跨运行的数据复用
 
 ### 5️⃣ MethodHandle - 延迟绑定句柄
 

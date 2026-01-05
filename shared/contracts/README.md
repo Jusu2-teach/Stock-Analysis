@@ -152,10 +152,20 @@ shared/contracts/
 │   ├── base.py              # Metadata, MetadataStore
 │   └── lineage.py           # Lineage, LineageNode
 │
+├── store/                   # 数据存储与引用解析
+│   ├── data_entry.py        # DataEntry: key/value/ref/fingerprint/metadata
+│   ├── data_store.py        # DataStore: 统一数据存储 + ref/hash 索引
+│   └── reference.py         # ReferenceResolver: 引用解析与路由集成
+│
 └── utils/                   # 工具函数
     ├── fingerprint.py       # fingerprint(), content_hash()
     └── compat.py            # ensure_compatibility(), CompatibilityReport
 ```
+
+> 与 Pipeline 的集成：`pipeline.core.context.PipelineContext` 通过
+> `DataStore` 和 `ReferenceResolver` 将字符串引用
+> `steps.{step}.outputs.parameters.{param}` 映射到实际数据对象，
+> 实现 **单一真相源 + 可追踪的引用/血缘**。
 
 ---
 

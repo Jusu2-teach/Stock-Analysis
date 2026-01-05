@@ -69,8 +69,8 @@ Step 4: Generate_*_Report  ← 【这里替换】
 ### 在 analysis.yaml 中添加 T.R.U.T.H. 报告（两个报告并行）
 
 ```yaml
-# ========== 综合报告生成 (Cross-Analysis Report) ==========
-# 依赖所有 store 步骤完成后才执行
+# ========== 综合报告 & T.R.U.T.H. 报告生成 ==========
+# 依赖所有趋势分析步骤完成后才执行
 
 # 🔵 规则驱动报告（保留现有）
 - name: "Generate_Comprehensive_Report"
@@ -78,38 +78,45 @@ Step 4: Generate_*_Report  ← 【这里替换】
   engine: "reporting"
   method: ["report_comprehensive"]
   parameters:
-    data_dir: "data/filter_middle"
+    roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+    roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+    roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+    gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+    net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+    revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+    profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+    ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
     output_path: "data/comprehensive_analysis_report.md"
-  depends_on:
-    - "store_ROIC_Trend"
-    - "store_ROIIC_Trend"
-    - "store_Revenue_Trend"
-    - "store_Profit_Trend"
-    - "store_GrossMargin_Trend"
-    - "store_NetMargin_Trend"
-    - "store_ROE_Trend"
-    - "store_OCF_Trend"
   outputs:
     parameters:
       - name: Comprehensive_Report_Path
 
-# 🟢 T.R.U.T.H. 数据驱动报告（新增）
-- name: "Generate_Truth_Report"
+# 🧬 T.R.U.T.H. 处理（专业基因提取 + 求解器）
+- name: "Process_Truth_System"
   component: "business_engine"
   engine: "truth"
+  method: ["process_truth"]
+  parameters:
+    roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+    roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+    roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+    gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+    net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+    revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+    profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+    ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+  outputs:
+    parameters:
+      - name: Truth_Processed_Results
+
+# 🟢 T.R.U.T.H. 数据驱动报告（使用处理后的结果）
+- name: "Generate_Truth_Report"
+  component: "business_engine"
+  engine: "reporting"
   method: ["report_truth"]
   parameters:
-    data_dir: "data/filter_middle"
+    truth_processed: "steps.Process_Truth_System.outputs.parameters.Truth_Processed_Results"
     output_path: "data/truth_analysis_report.json"
-  depends_on:
-    - "store_ROIC_Trend"
-    - "store_ROIIC_Trend"
-    - "store_Revenue_Trend"
-    - "store_Profit_Trend"
-    - "store_GrossMargin_Trend"
-    - "store_NetMargin_Trend"
-    - "store_ROE_Trend"
-    - "store_OCF_Trend"
   outputs:
     parameters:
       - name: Truth_Report_Path
@@ -120,74 +127,32 @@ Step 4: Generate_*_Report  ← 【这里替换】
 ## T.R.U.T.H. 报告引擎内部流程
 
 ```text
-report_truth(data_dir) 内部:
+report_truth(truth_processed) 内部:
 
-1. 加载探针CSV
-   ├── roic_trend_analysis.csv
-   ├── gross_margin_trend_analysis.csv
-   ├── revenue_trend_analysis.csv
-   └── ocf_trend_analysis.csv
+1. 接收 TruthProcessor 的处理结果
+  ├── processed_results: BatchProcessResult
+  ├── results_df: 每家公司基因/求解器结果 DataFrame
+  └── probe_data: 8 个指标的探针 DataFrame（来自 trend 引擎）
 
-2. 按公司聚合 (per ts_code)
-   └── MultiIndicatorProbeOutputs
+2. 根据 results_df 生成每家公司的 T.R.U.T.H. 评分和信号
 
-3. 适配器转换
-   └── ProbeAdapter.adapt() → GenomeInput
+3. 使用 probe_data 提供的趋势特征做必要的补充解释（如趋势图、波动模式说明）
 
-4. 六大基因计算
-   ├── α 周期性基因 (Hurst门控)
-   ├── β 资本密度基因 (DOL检测)
-   ├── γ 成长动能基因 (稳健斜率)
-   ├── δ_fraud 欺诈熵 (麦道夫检测)
-   ├── δ_decay 衰退熵 (拐点预警)
-   └── V 验证因子 (体制惩罚)
-
-   → CompanyGenome
-
-5. 三大物理求解器 (v3.1)
-   ├── gravity_solver → T_threshold (动态阈值)
-   ├── velocity_solver → T_growth (增长边界)
-   └── structure_solver → T_slope (斜率通道)
-
-6. 生成报告
-   └── TruthResult → JSON/CSV/Markdown
+4. 组装多层级报告结构
+  └── TruthResult → JSON/Markdown
 ```
 
 ---
 
-## 需要实现的代码
+## 实际实现位置
 
-只需要一个文件：`truth/engine.py` 中注册 `report_truth` 方法
+- 真正的 T.R.U.T.H. 处理入口在 `truth/truth_engine.py`:
+  - `process_truth`: 批量处理 8 个探针 DataFrame，输出 `processed_results/results_df/summary/probe_data`。
+  - `process_truth_single`: 针对单只股票的深度处理。
+- 报告生成入口在 `reporters/engine.py`:
+  - `report_truth`: 接收 `truth_processed`（即上面的字典）和可选 `probe_data`，生成 Markdown 报告。
 
-```python
-# src/astock/business_engines/truth/engine.py
-
-@register_method(
-    engine_name="report_truth",
-    component_type="business_engine",
-    engine_type="truth",
-    description="T.R.U.T.H. 数据驱动报告引擎"
-)
-def report_truth(
-    data_dir: str = "data/filter_middle",
-    output_path: str = "data/truth_analysis_report.json"
-) -> str:
-    """
-    T.R.U.T.H. 数据驱动报告生成
-
-    读取探针分析结果 → 六大基因 → 三大求解器 → 动态阈值报告
-    """
-    # 1. 加载探针CSV
-    # 2. 按公司聚合
-    # 3. 计算基因组
-    # 4. 运行求解器
-    # 5. 生成报告
-    ...
-```
-
-然后在 `__init__.py` 中注册 engine:
-
-```python
+这两个入口都只依赖内存中的 DataFrame，不再从 `data/filter_middle/*.csv` 读取数据。
 # src/astock/business_engines/__init__.py
 
 from .truth import engine as truth_engine

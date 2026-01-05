@@ -51,10 +51,6 @@ from .multi_horizon_probe import (
     classify_metric,
 )
 
-# 保持向后兼容: ProfessionalDataWindowStrategy 已整合到 MultiHorizonProbe
-# 使用 MultiHorizonProbe(auto_classify=True) 获得相同功能
-ProfessionalDataWindowStrategy = MultiHorizonProbe  # 别名，向后兼容
-
 __all__ = [
     # 基础工具
     "DataQualityChecker",
@@ -88,7 +84,4 @@ __all__ = [
     "WindowStrategy",
     "METRIC_STRATEGIES",
     "classify_metric",
-
-    # 向后兼容别名
-    "ProfessionalDataWindowStrategy",
 ]

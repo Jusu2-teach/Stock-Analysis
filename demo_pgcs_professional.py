@@ -8,7 +8,10 @@ PGCS 专业演示 - 展示框架的通用性和扩展性
 """
 
 import sys
-sys.path.insert(0, r'c:\Users\jusu2\OneDrive - Cisco\桌面\AStock-Analysis')
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from typing import Literal
 from enum import Enum, auto

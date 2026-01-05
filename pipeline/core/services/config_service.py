@@ -20,7 +20,8 @@ import yaml
 import hashlib
 import logging
 
-from ..context import PipelineContext, StepSpec, StepOutput, REF_PATTERN
+from ..context import PipelineContext, StepSpec, StepOutput
+from ..runtime_models import RetryPolicy, FailurePolicy, FailureStrategy
 from ..dependency_graph import (
     DependencyGraph,
     DependencyType,
@@ -39,7 +40,7 @@ from ..dependency_graph import (
 # StepDataDependencySource 和 StepExplicitDependencySource 已移除。
 # 现在直接使用 dependency_graph.py 中的 DataDependencySource 和
 # ExplicitDependencySource，它们的实现是完全等价的。
-# REF_PATTERN 已移至 context.py 模块级常量，统一复用。
+# 引用解析统一通过 PipelineContext.resolver (ReferenceResolver) 完成。
 # ============================================================================
 
 
@@ -108,14 +109,22 @@ class ConfigService:
         if not isinstance(raw_steps, list):
             raise ValueError("配置中 pipeline.steps 必须为列表")
 
+        # 流程级默认策略（可被 step 覆盖）
+        orchestration_cfg = pipeline.get('orchestration', {}) or {}
+        default_retry = self._parse_retry_policy(orchestration_cfg.get('retry'))
+        default_failure = self._parse_failure_policy(orchestration_cfg.get('failure'))
+
         # 预扫描引用
         referenced_map: Dict[str, Set[str]] = defaultdict(set)
 
         def collect_refs(val: Any):
             if isinstance(val, str):
-                m = REF_PATTERN.match(val.strip())
-                if m:
-                    referenced_map[m.group('step')].add(m.group('param'))
+                # 利用 PipelineContext 的 resolver 模式解析步骤输出引用
+                parsed = self.ctx.resolver.parse_ref(val.strip()) or {}
+                step = parsed.get('step')
+                param = parsed.get('param')
+                if step and param:
+                    referenced_map[step].add(param)
             elif isinstance(val, list):
                 for x in val:
                     collect_refs(x)
@@ -174,6 +183,12 @@ class ConfigService:
             if isinstance(explicit_deps, str):
                 explicit_deps = [explicit_deps]
 
+            # per-step 策略（覆盖流程级）
+            step_retry_cfg = raw.get('retry')
+            step_failure_cfg = raw.get('failure')
+            retry_policy = self._parse_retry_policy(step_retry_cfg, default=default_retry)
+            failure_policy = self._parse_failure_policy(step_failure_cfg, default=default_failure)
+
             spec = StepSpec(
                 name=name,
                 component=component,
@@ -181,29 +196,104 @@ class ConfigService:
                 methods=methods,
                 raw_parameters=self._mark_references(params),
                 outputs=outputs,
-                depends_on=explicit_deps
+                depends_on=explicit_deps,
+                retry_policy=retry_policy,
+                failure_policy=failure_policy,
             )
             self.ctx.steps[name] = spec
 
     def _mark_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """标记参数中的引用
 
-        v3.0: 不再写入 reference_to_hash 字典，哈希值在 DataStore 中自动计算
+        v3.0: 不再写入 reference_to_hash 字典，哈希值在 DataStore 中自动计算。
+        通过 PipelineContext.resolver 识别步骤输出引用模式，
+        同时为 config.* / env.* 提供语法糖。
         """
+
         def walk(val):
             if isinstance(val, str):
-                m = REF_PATTERN.match(val.strip())
-                if m:
-                    ref = val.strip()
-                    # v3.0: 不再需要预先注册哈希，DataStore 会自动计算
+                ref = val.strip()
+
+                # 1) steps.* 引用：使用明确的前缀和路径结构，而不是依赖路由器
+                #    这里的目标只是“标记这是一个可解析引用”，真正的解析
+                #    仍然交给 PipelineContext.resolve_references + DataStore。
+                #    规范格式: steps.{step}.outputs.parameters.{param}
+                if ref.startswith('steps.'):
                     return {"__ref__": ref}
+
+                # 2) config.* / env.*: 直接按前缀识别并打上 __ref__，
+                #    实际解析逻辑在 PipelineContext.resolve_references 中完成。
+                if ref.startswith('config.') or ref.startswith('env.'):
+                    return {"__ref__": ref}
+
+                # 其它字符串原样返回
                 return val
             if isinstance(val, list):
                 return [walk(v) for v in val]
             if isinstance(val, dict):
                 return {k: walk(v) for k, v in val.items()}
             return val
+
         return {k: walk(v) for k, v in params.items()}
+
+    # ========== Internal: Policy Parsing ==========+
+
+    def _parse_retry_policy(self, cfg: Any, default: RetryPolicy | None = None) -> RetryPolicy | None:
+        """解析重试策略配置
+
+        支持格式：
+        - None: 使用默认策略
+        - int: 仅指定 max_attempts
+        - dict: 显式字段
+        """
+        if cfg is None:
+            return default
+        if isinstance(cfg, int):
+            if cfg <= 0:
+                return default
+            return RetryPolicy(max_attempts=cfg)
+        if isinstance(cfg, dict):
+            return RetryPolicy(
+                max_attempts=int(cfg.get('max_attempts', default.max_attempts if default else 1)),
+                delay_seconds=float(cfg.get('delay_seconds', default.delay_seconds if default else 0.0)),
+                backoff_multiplier=float(cfg.get('backoff_multiplier', default.backoff_multiplier if default else 1.0)),
+                jitter_seconds=float(cfg.get('jitter_seconds', default.jitter_seconds if default else 0.0)),
+            )
+        # 其它类型: 回退到默认
+        return default
+
+    def _parse_failure_policy(self, cfg: Any, default: FailurePolicy | None = None) -> FailurePolicy | None:
+        """解析失败策略配置
+
+        支持格式：
+        - None: 使用默认策略
+        - str: 策略枚举别名
+        - dict: {strategy, notify_events}
+        """
+        if cfg is None:
+            return default
+
+        def _to_strategy(name: str) -> FailureStrategy:
+            key = (name or '').lower()
+            if key in {'fail', 'fail_pipeline'}:
+                return FailureStrategy.FAIL_PIPELINE
+            if key in {'mark_skipped', 'skip', 'skipped'}:
+                return FailureStrategy.MARK_SKIPPED
+            if key in {'continue', 'keep_going'}:
+                return FailureStrategy.CONTINUE
+            return default.strategy if default else FailureStrategy.FAIL_PIPELINE
+
+        if isinstance(cfg, str):
+            return FailurePolicy(strategy=_to_strategy(cfg), notify_events=(default.notify_events if default else []))
+
+        if isinstance(cfg, dict):
+            strategy_name = cfg.get('strategy') or (default.strategy.name if default else 'fail_pipeline')
+            events = cfg.get('notify_events') or (default.notify_events if default else [])
+            if not isinstance(events, list):
+                events = [str(events)]
+            return FailurePolicy(strategy=_to_strategy(strategy_name), notify_events=[str(e) for e in events])
+
+        return default
 
     def _hash_reference(self, ref: str) -> str:
         """生成引用的哈希值"""
@@ -221,12 +311,20 @@ class ConfigService:
         node_configs = {}
         for name, spec in self.ctx.steps.items():
             # 收集数据集输入
-            inputs = []
+            inputs: List[str] = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
-                    m = REF_PATTERN.match(ref)
-                    if m:
-                        ds_name = self.ctx.dataset_name(m.group('step'), m.group('param'))
+                    ref_str = str(ref).strip()
+                    # 仅处理标准的 steps.* 引用，避免误伤其它引用类型
+                    if not ref_str.startswith('steps.'):
+                        continue
+
+                    # 解析规范路径: steps.{step}.outputs.parameters.{param}
+                    parts = ref_str.split('.')
+                    if len(parts) >= 5 and parts[0] == 'steps' and parts[2] == 'outputs' and parts[3] == 'parameters':
+                        step = parts[1]
+                        param = parts[4]
+                        ds_name = self.ctx.dataset_name(step, param)
                         inputs.append(ds_name)
 
             # 收集数据集输出
@@ -346,12 +444,18 @@ class ConfigService:
                 node_cfg['handles'] = handles
 
             # 收集输入依赖
-            inputs = []
+            inputs: List[str] = []
             for pval in spec.raw_parameters.values():
                 for ref in self._extract_refs(pval):
-                    m = REF_PATTERN.match(ref)
-                    if m:
-                        ds_in = self.ctx.dataset_name(m.group('step'), m.group('param'))
+                    ref_str = str(ref).strip()
+                    if not ref_str.startswith('steps.'):
+                        continue
+
+                    parts = ref_str.split('.')
+                    if len(parts) >= 5 and parts[0] == 'steps' and parts[2] == 'outputs' and parts[3] == 'parameters':
+                        step = parts[1]
+                        param = parts[4]
+                        ds_in = self.ctx.dataset_name(step, param)
                         if ds_in not in inputs:
                             inputs.append(ds_in)
             if inputs:

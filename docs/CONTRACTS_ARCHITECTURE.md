@@ -53,7 +53,7 @@ shared/contracts/
 将 PGCS 引入系统实现：
 
 1. ✅ **Schema 定义**: 用 `Field` + `Schema` 声明式定义数据契约
-2. ✅ **跨步骤引用**: 用 `Router` + `ReferenceResolver` 替换硬编码正则
+2. ✅ **跨步骤引用**: 用 `ReferenceResolver`（内部基于 Router）替换硬编码正则
 3. **数据验证**: 用 `Validator` 在步骤间传递时验证数据 (待完成)
 4. ✅ **血缘追踪**: 用 `Lineage` 记录数据流转路径 (DataEntry 已支持)
 
@@ -61,52 +61,50 @@ shared/contracts/
 
 ## 集成方案
 
-### 方案一：轻量集成（推荐先行）
+### 方案一：轻量集成（已完成）
 
-**目标**: 替换 `kedro_engine.py` 中的硬编码引用解析
+**目标**: 通过 `DataStore` + `ReferenceResolver` 统一管理跨步骤引用，彻底移除 `REF_PATTERN` + 手写正则解析。
 
-当前代码 ([kedro_engine.py](../pipeline/engines/kedro_engine.py)):
+当前实现要点：
+
 ```python
-REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
+# pipeline/core/context.py
+from shared.contracts.store import DataStore, ReferenceResolver
 
-def _resolve_references(self, params: Dict, step_name: str) -> Dict:
-    resolved = {}
-    for key, value in params.items():
-        if isinstance(value, str):
-            match = self.REF_PATTERN.match(value)
-            if match:
-                ref_step = match.group("step")
-                ref_param = match.group("param")
-                resolved[key] = self.global_catalog.get(f"{ref_step}.{ref_param}")
-```
+@dataclass
+class PipelineContext:
+    config: Dict[str, Any] = field(default_factory=dict)
+    steps: Dict[str, StepSpec] = field(default_factory=dict)
+    execution_order: List[str] = field(default_factory=list)
+    _data_store: DataStore | None = field(default=None, repr=False)
+    _resolver: ReferenceResolver | None = field(default=None, repr=False)
 
-**使用 Router 重构**:
-```python
-from shared.contracts import Router, DelimiterParser
+    def __post_init__(self):
+        self._data_store = DataStore()
+        self._resolver = ReferenceResolver(self._data_store)
+        self._resolver.register_pattern(
+            template='steps.{step}.outputs.parameters.{param}',
+            handler='step_output',
+        )
 
-class KedroEngine:
-    def __init__(self):
-        # 定义路由模式: steps.{step}.outputs.parameters.{param}
-        self._router = Router(parser=DelimiterParser(
-            pattern="steps.{step}.outputs.parameters.{param}",
-            delimiter="."
-        ))
+    def register_reference(self, ref: str, value: Any) -> str:
+        """将步骤输出注册到 DataStore，并绑定 ref（steps.X.outputs.parameters.Y）"""
+        parsed = self.resolver.parse_ref(ref) or {}
+        step_id = parsed.get('step')
+        param_id = parsed.get('param')
+        key = self.dataset_name(step_id, param_id)
+        entry = self.data_store.put(key, value, ref=ref, producer_step=step_id)
+        return entry.fingerprint
 
-    def _resolve_references(self, params: Dict, step_name: str) -> Dict:
-        resolved = {}
-        for key, value in params.items():
-            if isinstance(value, str):
-                route = self._router.parse(value)
-                if route and route.matches("step", "param"):
-                    catalog_key = f"{route['step']}.{route['param']}"
-                    resolved[key] = self.global_catalog.get(catalog_key)
-        return resolved
+    def resolve_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """递归解析参数中的 {"__ref__": "steps.X.outputs.parameters.Y"} 结构"""
+        return self.resolver.resolve_params(params)
 ```
 
 **收益**:
-- 路由模式可配置，非硬编码
-- 支持多种路由格式扩展
-- 解析逻辑可复用
+- 跨步骤数据只存放在 `DataStore` 一处（单一真相源）
+- 引用路径统一使用 `steps.{step}.outputs.parameters.{param}` 模板
+- 通过指纹(hash) 支持缓存与血缘追踪
 
 ---
 

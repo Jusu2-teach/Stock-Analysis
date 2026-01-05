@@ -21,9 +21,9 @@ AStock主模块 - 智能股票分析系统
 - 企业级设计
 """
 
-# 版本信息
-__version__ = "4.0-modular"
-__author__ = "AStock Team"
+# 版本信息（与 pyproject.toml 对齐）
+__version__ = "1.0.0"
+__author__ = "Your Name"
 
 # 公开接口
 __all__ = [

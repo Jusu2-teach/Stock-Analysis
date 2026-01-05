@@ -15,15 +15,10 @@ T.R.U.T.H. Processing Engine Entry Point
 日期: 2025-01
 """
 
-import sys
 import time
-from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
 import logging
-
-# orchestrator 已移至根目录
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
 
 # 统一事件总线

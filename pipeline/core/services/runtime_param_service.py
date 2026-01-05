@@ -46,7 +46,7 @@ class RuntimeParamService:
         try:
             # 使用 PipelineContext 的 resolver 进行统一解析
             # strict=True 会在引用不存在时抛出 ReferenceNotFoundError
-            return self.ctx.resolve_references(params)
+            return self.ctx.resolve_references(params, strict=True)
         except Exception as e:
             # 转换为自定义异常，保持 API 兼容性
             raise self.ReferenceResolutionError(

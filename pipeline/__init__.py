@@ -36,14 +36,14 @@ Usage Example:
     graph = manager.ctx.get_dependency_graph()
     print(graph.to_mermaid())
 
-Author: AStock Team
-Version: 3.0.0 (架构优化重构)
+Author: Your Name
+Version: 1.0.0 (与 pyproject.toml 对齐)
 """
 from __future__ import annotations
 
 # Core Components
 from .core.execute_manager import ExecuteManager
-from .core.context import PipelineContext, StepSpec, StepOutput, REF_PATTERN
+from .core.context import PipelineContext, StepSpec, StepOutput
 from .core.dependency_graph import (
     DependencyGraph,
     DependencyType,
@@ -65,8 +65,9 @@ from .engine_services import CacheService, EventPublisher
 
 PREFECT_AVAILABLE = True  # always true in trimmed hybrid mode
 
-__version__ = "3.0.0"
-__author__ = "AStock Team"
+# 与项目版本/作者信息对齐（见 pyproject.toml）
+__version__ = "1.0.0"
+__author__ = "Your Name"
 
 # Export main classes and functions
 __all__ = [
@@ -75,7 +76,6 @@ __all__ = [
     'PipelineContext',
     'StepSpec',
     'StepOutput',
-    'REF_PATTERN',
     # Dependency Graph
     'DependencyGraph',
     'DependencyType',

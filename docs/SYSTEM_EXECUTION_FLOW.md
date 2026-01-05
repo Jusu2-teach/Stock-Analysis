@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              用户执行命令                                         │
-│          python pipeline/main.py run -c workflow/analysis.yaml                  │
+│          python -m pipeline.main run -c workflow/analysis.yaml                  │
 └───────────────────────────────────┬─────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -204,25 +204,38 @@ pipeline:
         │
         ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│                     PipelineContext.reference_values                  │
+│              PipelineContext.data_store（PGCS DataStore）              │
 │                                                                       │
-│  {                                                                    │
-│    "steps.Load_Financial_Data.outputs.parameters.Raw_Data": <DF>,     │
-│    "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result":..│
-│  }                                                                    │
+│  - 通过 DataStore 统一存储所有步骤输出（按 key/hash/ref 三种索引）       │
+│  - 典型 key: "Load_Financial_Data__Raw_Data"                          │
+│  - 典型 ref: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"  │
+│  - ReferenceResolver 负责将 ref 解析为实际数据                         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.3 引用解析机制
 
 ```python
-# pipeline/core/context.py - 引用模式定义
-REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
+# pipeline/core/context.py - 引用模式通过 ReferenceResolver 定义
+from shared.contracts.store import DataStore, ReferenceResolver
 
-# 示例解析:
-# 输入: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
-# 匹配结果: step="Load_Financial_Data", param="Raw_Data"
-# catalog key: "Load_Financial_Data__Raw_Data"
+class PipelineContext:
+  def __post_init__(self):
+    self._data_store = DataStore()
+    self._resolver = ReferenceResolver(self._data_store)
+    self._resolver.register_pattern(
+      template='steps.{step}.outputs.parameters.{param}',
+      handler='step_output',
+    )
+
+  def register_reference(self, ref: str, value: Any) -> str:
+    """将步骤输出注册到 DataStore，并绑定 ref（steps.X.outputs.parameters.Y）"""
+    entry = self.data_store.put(key, value, ref=ref, producer_step=step_id)
+    return entry.fingerprint
+
+  def resolve_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    """递归解析参数中的 {"__ref__": "steps.X.outputs.parameters.Y"} 结构"""
+    return self.resolver.resolve_params(params)
 ```
 
 ---

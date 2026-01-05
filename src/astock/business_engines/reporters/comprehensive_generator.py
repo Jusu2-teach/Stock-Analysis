@@ -32,32 +32,13 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple
 from datetime import datetime
 import logging
-import sys
 
-# 添加项目根路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-
-# 导入统一命名规范
-try:
-    from shared.naming_convention import (
-        MetricRegistry,
-        FieldRegistry,
-        ColumnBuilder,
-        METRIC_PREFIX_MAP,
-    )
-    HAS_NAMING_CONVENTION = True
-except ImportError:
-    HAS_NAMING_CONVENTION = False
-    METRIC_PREFIX_MAP = {
-        "roic": "roic",
-        "roe": "roe",
-        "roiic": "roiic",
-        "gross_margin": "grossprofit_margin",
-        "net_margin": "netprofit_margin",
-        "revenue": "total_revenue_ps",
-        "profit": "eps",
-        "ocf": "ocfps",
-    }
+from shared.naming_convention import (
+    MetricRegistry,
+    FieldRegistry,
+    ColumnBuilder,
+    METRIC_PREFIX_MAP,
+)
 
 # 导入行业自适应阈值引擎
 try:
@@ -122,27 +103,14 @@ class ComprehensiveReportGenerator:
 
         self._probe_data = probe_data
 
-        # 使用统一命名规范 (如果可用)
-        if HAS_NAMING_CONVENTION:
-            self.metrics_config = {
-                key: {
-                    "prefix": MetricRegistry.get_output_prefix(key),
-                    "name": MetricRegistry.get_display_name(key)
-                }
-                for key in MetricRegistry.all_keys()
+        # 使用统一命名规范系统构建指标配置（单一真相源）
+        self.metrics_config = {
+            key: {
+                "prefix": MetricRegistry.get_output_prefix(key),
+                "name": MetricRegistry.get_display_name(key),
             }
-        else:
-            # 回退到硬编码配置
-            self.metrics_config = {
-                "revenue": {"prefix": "total_revenue_ps", "name": "营收"},
-                "profit": {"prefix": "eps", "name": "利润"},
-                "roe": {"prefix": "roe", "name": "ROE"},
-                "ocf": {"prefix": "ocfps", "name": "经营现金流"},
-                "gross_margin": {"prefix": "grossprofit_margin", "name": "毛利率"},
-                "net_margin": {"prefix": "netprofit_margin", "name": "净利率"},
-                "roic": {"prefix": "roic", "name": "ROIC"},
-                "roiic": {"prefix": "roiic", "name": "ROIIC"},
-            }
+            for key in MetricRegistry.all_keys()
+        }
         self.df_merged = pd.DataFrame()
 
         # v3.0: 初始化自适应阈值引擎

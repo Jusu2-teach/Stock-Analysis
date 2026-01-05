@@ -1,14 +1,10 @@
 """
 General Analysis Engine using DuckDB
 """
-import sys
-from pathlib import Path
 import logging
 import pandas as pd
 from typing import Union, List, Optional, Dict
 
-# orchestrator path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
 from ..core.duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
 

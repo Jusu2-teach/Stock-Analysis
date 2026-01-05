@@ -206,8 +206,8 @@ src/astock/business_engines/
 │       └── solvers/        # 三大物理求解器
 │
 └── reporters/              # 📊 报告生成器
-    ├── comprehensive_generator.py # 综合分析报告
-    └── truth_generator.py         # T.R.U.T.H. 基因报告
+  ├── comprehensive_generator.py   # 综合分析报告
+  └── truth_report_generator.py    # T.R.U.T.H. 基因报告
 ```
 
 ---

@@ -118,7 +118,6 @@ from .processor import (
     GeneExtractionResult,
     SolverExecutionResult,
     CausalValidation,
-    ProfessionalGeneMapper,
     CausalNetworkValidator,
 )
 
@@ -196,7 +195,6 @@ __all__ = [
     "GeneExtractionResult",
     "SolverExecutionResult",
     "CausalValidation",
-    "ProfessionalGeneMapper",
     "CausalNetworkValidator",
     # Visualization
     "GenomeVisualization",

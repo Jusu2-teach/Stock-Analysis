@@ -3,7 +3,7 @@
 > **版本**: 6.0.0
 > **日期**: 2025-12-27
 > **状态**: ✅ 已实现
-> **实现位置**: `shared/event_bus_v6/`
+> **实现位置**: `shared/event_bus/`
 > **参考**: Pluggy, Guava EventBus, Reactor Core, RxPY, Spring Events
 
 ---
@@ -74,7 +74,7 @@
 ### 1️⃣ 类型安全的 HookSpec 系统 (参考 Pluggy)
 
 ```python
-# shared/event_bus_v6/specs.py
+# shared/event_bus/specs.py
 
 from typing import TypeVar, Generic, Protocol, runtime_checkable
 from dataclasses import dataclass
@@ -150,7 +150,7 @@ REGISTRY_METHOD_SPEC = HookSpecRegistry.define(
 ### 2️⃣ 死信处理 (参考 Guava DeadEvent)
 
 ```python
-# shared/event_bus_v6/dead_letter.py
+# shared/event_bus/dead_letter.py
 
 @dataclass
 class DeadEvent(Event):
@@ -208,7 +208,7 @@ class DeadLetterQueue:
 ### 3️⃣ Historic 模式 (参考 Pluggy call_historic)
 
 ```python
-# shared/event_bus_v6/historic.py
+# shared/event_bus/historic.py
 
 class HistoricEventStore:
     """历史事件存储 - 支持新订阅者接收历史事件"""
@@ -244,7 +244,7 @@ class HistoricEventStore:
 ### 4️⃣ 异步增强 (参考 Reactor Core)
 
 ```python
-# shared/event_bus_v6/async_support.py
+# shared/event_bus/async_support.py
 
 import asyncio
 from typing import AsyncIterator
@@ -343,7 +343,7 @@ class AsyncEventBus:
 ### 5️⃣ 中间件管道 (参考 Koa/Express)
 
 ```python
-# shared/event_bus_v6/middleware.py
+# shared/event_bus/middleware.py
 
 from abc import ABC, abstractmethod
 from typing import Callable, Any, Optional
@@ -464,7 +464,7 @@ class MiddlewarePipeline:
 ### 6️⃣ Disposable 订阅模式 (参考 RxPY)
 
 ```python
-# shared/event_bus_v6/subscription.py
+# shared/event_bus/subscription.py
 
 from abc import ABC, abstractmethod
 from typing import Callable
@@ -546,7 +546,7 @@ class CompositeDisposable(Disposable):
 ## 🎯 增强后的 EventBus 主类
 
 ```python
-# shared/event_bus_v6/bus.py
+# shared/event_bus/bus.py
 
 class EventBusV6:
     """增强版事件总线 v6.0"""
@@ -718,7 +718,7 @@ class EventBusV6:
 ### Phase 1: 兼容层 (向后兼容)
 ```python
 # shared/event_bus.py 保持不变
-# shared/event_bus_v6/ 新增
+# shared/event_bus/ 新增 (v6 实现)
 
 # 兼容适配器
 class EventBusCompat:
@@ -752,7 +752,7 @@ class EventBusCompat:
 shared/
 ├── event_bus.py              # 当前实现 (保留)
 ├── events.py                 # 事件定义 (保留)
-├── event_bus_v6/             # 增强实现
+├── event_bus/                # 统一事件总线（v6 增强实现）
 │   ├── __init__.py           # 导出
 │   ├── bus.py                # 核心 EventBusV6
 │   ├── specs.py              # HookSpec 系统

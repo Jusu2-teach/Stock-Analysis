@@ -154,13 +154,12 @@ class KedroEngine:
 
                 base_params = {**node_config.get("parameters", {}), **kwargs}
 
-                # v3.0: 统一使用 ReferenceResolver 进行引用解析
-                # 取代内嵌的 _resolve_refs_via_catalog 函数
+                # v3.0: 统一使用 PipelineContext 的 resolve_references 进行引用解析
+                # 支持 steps.* / config.* / env.* 三类引用
                 try:
-                    resolver = ReferenceResolver(self._data_store)
-                    base_params = resolver.resolve(base_params, strict=True)
+                    base_params = self.execute_manager.ctx.resolve_references(base_params, strict=True)
                 except Exception as e:
-                    self.logger.error(f"参数引用解析失败(step={step_name}, ReferenceResolver阶段): {e}")
+                    self.logger.error(f"参数引用解析失败(step={step_name}, 引用解析阶段): {e}")
                     raise
 
                 # 统一通过 runtime_param_service 解析动态参数引用
@@ -509,7 +508,7 @@ class KedroEngine:
                 self._event_publisher.on_pipeline_error(
                     step_name=step_name,
                     error=str(e),
-                    traceback_str=traceback.format_exc(limit=8)
+                    traceback=traceback.format_exc(limit=8),
                 )
                 self.logger.error(f"节点执行失败: {e}")
                 raise
@@ -519,6 +518,10 @@ class KedroEngine:
             io_manager_tmp = IOManager(self._data_store, self.logger)
             io_cfg_tmp = io_manager_tmp.build_config(node_config)
             kedro_outputs = [spec.name for spec in io_cfg_tmp.outputs if spec.kind == 'dataset']
+            # 如果没有显式的 dataset 输出，但存在 parameter 输出，则退化为使用
+            # 所有输出名称，确保 Kedro node 至少有一个 outputs，避免 Invalid Node 定义
+            if not kedro_outputs and io_cfg_tmp.outputs:
+                kedro_outputs = [spec.name for spec in io_cfg_tmp.outputs]
         except Exception:
             raw_outs = node_config.get("outputs", [])
             kedro_outputs = [o for o in raw_outs if isinstance(o, str)]
@@ -623,8 +626,13 @@ class KedroEngine:
                     try:
                         with open(fpath, 'rb') as f:
                             obj = pickle.load(f)
-                        # v2.0: 使用 DataStore 统一存储
-                        self._data_store.put(ds, obj)
+                        # v2.0/v3.0: 使用 DataStore 统一存储，并在可能时恢复 ref 索引
+                        if "__" in ds:
+                            step_id, out_id = ds.split("__", 1)
+                            ref = f"steps.{step_id}.outputs.parameters.{out_id}"
+                            self._data_store.put(ds, obj, ref=ref, producer_step=step_id)
+                        else:
+                            self._data_store.put(ds, obj)
                         self.dataset_fingerprints[ds] = meta.get('fingerprint', '')
                         loaded += 1
                     except Exception as e:

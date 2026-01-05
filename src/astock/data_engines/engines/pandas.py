@@ -5,17 +5,12 @@
 专门负责数据清理工作：去重、检验、标准化等基础数据处理功能
 """
 
-import sys
-from pathlib import Path
 import logging
 import pandas as pd
 import numpy as np
 import re
 from typing import Dict, Any, List, Union, Optional
 
-# orchestrator 已移至根目录
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
-# from orchestrator import register_method  <-- Removed
 from .schema_utils import ensure_columns
 
 logger = logging.getLogger(__name__)

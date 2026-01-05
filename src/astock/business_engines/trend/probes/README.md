@@ -395,13 +395,12 @@ Theil-Sen斜率: 1.5%（忽略异常值，反映真实趋势）
 
 ---
 
-### 10. ProfessionalDataWindowStrategy（专业数据窗口策略）
+### 10. （已合并）ProfessionalDataWindowStrategy → MultiHorizonProbe
 
-**文件**: `data_window_strategy.py`
+v2.0 起，原 `ProfessionalDataWindowStrategy` 已完全合并进 `MultiHorizonProbe`，
+统一由 MultiHorizonProbe + MetricCategory + WindowStrategy 实现“专业数据窗口策略”。
 
-**功能**: 为不同类型指标自动选择**最佳分析窗口**。
-
-#### 指标分类策略
+#### 指标分类策略（由 MultiHorizonProbe 实现）
 
 ```
 ┌────────────────┬──────────────────┬──────────────────────────────┐

@@ -133,7 +133,8 @@ from .naming_convention import (
     PREFIX_TO_BUSINESS_MAP,
 )
 
-__version__ = "7.0.0"
+# 与项目版本对齐（见 pyproject.toml）
+__version__ = "1.0.0"
 
 # 新增独立模块 (v7.0)
 # 这些模块可以独立导入，也可以通过 shared 命名空间访问

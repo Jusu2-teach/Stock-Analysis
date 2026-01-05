@@ -54,12 +54,17 @@ class ResultAssembler:
         Returns:
             完整的执行结果字典
         """
-        from datetime import datetime
-
         raw.setdefault('mode', 'prefect')
         raw.setdefault('executed_steps', self.ctx.execution_order)
         raw['started_at'] = started_at
-        raw['finished_at'] = datetime.now().isoformat()
+
+        # 如果 FlowRun 已存在，则优先使用其中的 finished_at，否则使用当前时间
+        flow_run = self.ctx.get_flow_run()
+        if flow_run and flow_run.finished_at:
+            raw['finished_at'] = flow_run.finished_at
+        else:
+            from datetime import datetime as _dt
+            raw['finished_at'] = _dt.now().isoformat()
 
         # v3.0: 使用 DataStore API 获取统计信息
         raw['outputs'] = {
@@ -79,6 +84,40 @@ class ResultAssembler:
             except AttributeError:
                 # kedro_engine 可能没有这些属性，静默忽略
                 pass
+
+        # 附加: 运行时视图 (flow_run / step_runs)
+        try:
+            runtime_view: Dict[str, Any] = {}
+            if flow_run:
+                runtime_view['flow'] = {
+                    'run_id': flow_run.run_id,
+                    'status': flow_run.status.name,
+                    'started_at': flow_run.started_at,
+                    'finished_at': flow_run.finished_at,
+                    'duration_ms': flow_run.duration_ms,
+                    'step_order': flow_run.step_order,
+                    'error': flow_run.error,
+                    'metrics': flow_run.metrics,
+                }
+            step_runs = self.ctx.get_step_runs()
+            if step_runs:
+                runtime_view['steps'] = {
+                    name: {
+                        'status': sr.status.name,
+                        'started_at': sr.started_at,
+                        'finished_at': sr.finished_at,
+                        'duration_ms': sr.duration_ms,
+                        'attempts': sr.attempts,
+                        'cached': sr.cached,
+                        'error': sr.error,
+                        'metadata': sr.metadata,
+                    }
+                    for name, sr in step_runs.items()
+                }
+            if runtime_view:
+                raw['runtime'] = runtime_view
+        except Exception as e:  # 运行视图附加失败不应影响主流程
+            self.logger.debug(f"附加运行时视图失败（已忽略）: {e}")
 
         return raw
 

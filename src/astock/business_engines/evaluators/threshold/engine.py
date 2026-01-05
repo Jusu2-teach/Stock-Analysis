@@ -376,33 +376,14 @@ default_evaluator = TrendEvaluator()
 
 
 # ============================================================================
-# 向后兼容别名
-# ============================================================================
-
-# 旧名称别名 (向后兼容)
-ThresholdEvaluator = TrendEvaluator
-ThresholdEvaluatorConfig = RuleConfig
-TrendRuleEngine = RuleEngine
-trend_rule_engine = default_rule_engine
-DEFAULT_TREND_RULES = ALL_RULES
-
-
-# ============================================================================
-# 导出
+# 导出（仅新架构 API）
 # ============================================================================
 
 __all__ = [
-    # 新 API
     'RuleEngine',
     'RuleOutcome',
     'TrendEvaluator',
     'EvaluationResult',
     'default_rule_engine',
     'default_evaluator',
-    # 向后兼容
-    'ThresholdEvaluator',
-    'ThresholdEvaluatorConfig',
-    'TrendRuleEngine',
-    'trend_rule_engine',
-    'DEFAULT_TREND_RULES',
 ]

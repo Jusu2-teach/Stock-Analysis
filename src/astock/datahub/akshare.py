@@ -5,15 +5,9 @@
 基于akshare的数据获取引擎
 """
 
-import sys
-from pathlib import Path
 import logging
 import pandas as pd
 from typing import Dict, Any, Optional, Union
-
-# orchestrator 已移至根目录
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-# from orchestrator import register_method  <-- Removed
 
 logger = logging.getLogger(__name__)
 

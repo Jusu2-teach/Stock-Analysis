@@ -11,18 +11,15 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
-import re
+from datetime import datetime
+import os
 
 if TYPE_CHECKING:
     from .dependency_graph import DependencyGraph, ExecutionPlan
 
-# 统一数据存储
-from shared.contracts.store import DataStore, ReferenceResolver
-
-
-# 步骤引用模式：steps.<step_name>.outputs.parameters.<param_name>
-# 作为模块级常量，供多处复用
-REF_PATTERN = re.compile(r"^steps\.(?P<step>[^.]+)\.outputs\.parameters\.(?P<param>[^.]+)$")
+# 统一数据存储与引用异常
+from shared.contracts.store import DataStore, ReferenceResolver, ReferenceNotFoundError
+from .runtime_models import FlowRun, StepRun, RunStatus, RetryPolicy, FailurePolicy
 
 
 @dataclass
@@ -42,6 +39,8 @@ class StepSpec:
     raw_parameters: Dict[str, Any] = field(default_factory=dict)
     outputs: List[StepOutput] = field(default_factory=list)
     depends_on: List[str] = field(default_factory=list)  # 显式依赖声明
+    retry_policy: RetryPolicy | None = None
+    failure_policy: FailurePolicy | None = None
 
 
 @dataclass
@@ -61,6 +60,10 @@ class PipelineContext:
 
     # 运行时状态
     _runtime_state: Dict[str, Any] = field(default_factory=dict)
+
+    # Flow / Step 运行视图（v4.0 运行时模型）
+    _flow_run: Optional[FlowRun] = field(default=None, repr=False)
+    _step_runs: Dict[str, StepRun] = field(default_factory=dict, repr=False)
 
     # 统一数据存储（单一真相源）
     _data_store: Optional[DataStore] = field(default=None, repr=False)
@@ -155,18 +158,19 @@ class PipelineContext:
         Returns:
             生成的数据指纹
         """
-        # 解析 ref 获取 step 和 param
-        m = REF_PATTERN.match(ref)
-        if m:
-            step_id = m.group('step')
-            param_id = m.group('param')
+        # 优先通过 ReferenceResolver 的路由解析 ref
+        parsed = self.resolver.parse_ref(ref) or {}
+        step_id = parsed.get('step')
+        param_id = parsed.get('param')
+
+        if step_id and param_id:
             key = self.dataset_name(step_id, param_id)
             entry = self.data_store.put(key, value, ref=ref, producer_step=step_id)
             return entry.fingerprint
-        else:
-            # 非标准格式：直接使用 ref 作为 key
-            entry = self.data_store.put(ref, value, ref=ref)
-            return entry.fingerprint
+
+        # 非标准格式：直接使用 ref 作为 key
+        entry = self.data_store.put(ref, value, ref=ref)
+        return entry.fingerprint
 
     def get_reference(self, ref: str) -> Optional[Any]:
         """获取引用值
@@ -190,18 +194,67 @@ class PipelineContext:
         """
         return self.data_store.get_by_hash(h)
 
-    def resolve_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def resolve_references(self, params: Dict[str, Any], *, strict: bool = False) -> Dict[str, Any]:
         """解析参数中的引用
 
-        使用 ReferenceResolver 递归解析参数。
+        使用 ReferenceResolver + 上下文信息递归解析参数。
+
+        支持三类引用：
+        - steps.*: 通过 DataStore 按 ref/hash 查找上游输出
+        - config.*: 从 ctx.config 读取配置值
+        - env.*: 从环境变量读取值
 
         Args:
             params: 包含引用的参数字典
+            strict: 严格模式；为 True 时，引用未解析将抛出 ReferenceNotFoundError
 
         Returns:
             解析后的参数字典
         """
-        return self.resolver.resolve(params, strict=False)
+
+        ref_key = self.resolver.REF_KEY
+        hash_key_name = self.resolver.HASH_KEY
+
+        def _walk(value: Any) -> Any:
+            # 引用字典: {"__ref__": "...", "__hash__": "..."}
+            if isinstance(value, dict) and ref_key in value:
+                ref = value.get(ref_key, '')
+                h = value.get(hash_key_name, '')
+
+                # 1) config.* → 从配置中读取
+                if isinstance(ref, str) and ref.startswith('config.'):
+                    # 形如 config.section.key[.subkey...]
+                    parts = ref.split('.', 2)
+                    if len(parts) >= 3:
+                        section, key = parts[1], parts[2]
+                        section_obj = self.config.get(section) or {}
+                        if isinstance(section_obj, dict) and key in section_obj:
+                            return section_obj[key]
+
+                # 2) env.* → 环境变量
+                if isinstance(ref, str) and ref.startswith('env.'):
+                    var_name = ref[len('env.') :]
+                    env_val = os.environ.get(var_name)
+                    if env_val is not None:
+                        return env_val
+
+                # 3) 其它引用统一委托给 ReferenceResolver (DataStore)
+                resolved = self.resolver.resolve_ref(str(ref), str(h) if h else '')
+                if resolved is None:
+                    if strict:
+                        raise ReferenceNotFoundError(str(ref))
+                    return None
+                return resolved
+
+            # 普通 dict / list 递归处理
+            if isinstance(value, dict):
+                return {k: _walk(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [_walk(v) for v in value]
+
+            return value
+
+        return _walk(params)
 
     def set_runtime_value(self, key: str, value: Any):
         """设置运行时状态值"""
@@ -210,6 +263,65 @@ class PipelineContext:
     def get_runtime_value(self, key: str, default: Any = None) -> Any:
         """获取运行时状态值"""
         return self._runtime_state.get(key, default)
+
+    # ================== 运行时视图（FlowRun / StepRun） ==================
+
+    def start_flow_run(self, run_id: Optional[str] = None) -> FlowRun:
+        """创建并启动 FlowRun
+
+        Args:
+            run_id: 运行 ID，可选；未提供时自动生成
+        """
+        if run_id is None:
+            run_id = f"flow-{datetime.now().isoformat()}"
+        flow_run = FlowRun(run_id=run_id)
+        flow_run.step_order = list(self.execution_order)
+        flow_run.mark_started()
+        self._flow_run = flow_run
+        self._runtime_state['flow_run_id'] = run_id
+        return flow_run
+
+    def get_flow_run(self) -> Optional[FlowRun]:
+        """获取当前 FlowRun（可能为 None）"""
+        return self._flow_run
+
+    def finish_flow_run(self, status: RunStatus, error: Optional[str] = None) -> None:
+        """结束 FlowRun 并设置状态"""
+        if not self._flow_run:
+            # 如果不存在，创建一个最小视图
+            self._flow_run = FlowRun(run_id=f"flow-{datetime.now().isoformat()}")
+            self._flow_run.mark_started()
+        self._flow_run.mark_finished(status=status, error=error)
+
+    def get_or_create_step_run(self, name: str) -> StepRun:
+        """获取或创建 StepRun"""
+        if name not in self._step_runs:
+            self._step_runs[name] = StepRun(name=name)
+        return self._step_runs[name]
+
+    def mark_step_started(self, name: str) -> StepRun:
+        step = self.get_or_create_step_run(name)
+        step.mark_started()
+        return step
+
+    def mark_step_finished(
+        self,
+        name: str,
+        status: RunStatus,
+        *,
+        error: Optional[str] = None,
+        duration_ms: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> StepRun:
+        step = self.get_or_create_step_run(name)
+        step.mark_finished(status=status, error=error, duration_ms=duration_ms)
+        if metadata:
+            step.metadata.update(metadata)
+        return step
+
+    def get_step_runs(self) -> Dict[str, StepRun]:
+        """获取所有 StepRun 视图"""
+        return self._step_runs
 
     # ================== 高级状态管理 ==================
 
@@ -222,6 +334,8 @@ class PipelineContext:
         self.steps.clear()
         self.execution_order.clear()
         self._runtime_state.clear()
+        self._flow_run = None
+        self._step_runs.clear()
         if self._data_store is not None:
             self._data_store.clear()
 
@@ -240,6 +354,9 @@ class PipelineContext:
             execution_order=list(self.execution_order),
         )
         new_ctx._runtime_state = copy.deepcopy(self._runtime_state)
+        # 运行视图为新的空实例，避免在不同上下文间共享引用
+        new_ctx._flow_run = None
+        new_ctx._step_runs = {}
         new_ctx._data_store = DataStore()
         new_ctx._resolver = ReferenceResolver(new_ctx._data_store)
         new_ctx._resolver.register_pattern(
@@ -269,6 +386,8 @@ class PipelineContext:
             'dependency_graph_nodes': len(graph) if graph else 0,
             'execution_plan_depth': plan.depth if plan else 0,
             'max_parallelism': plan.max_parallelism if plan else 0,
+            'has_flow_run': self._flow_run is not None,
+            'step_run_count': len(self._step_runs),
         }
 
-__all__ = ['PipelineContext', 'StepSpec', 'StepOutput', 'REF_PATTERN']
+__all__ = ['PipelineContext', 'StepSpec', 'StepOutput']

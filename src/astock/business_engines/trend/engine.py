@@ -12,8 +12,6 @@
 from __future__ import annotations
 
 import logging
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -25,8 +23,6 @@ try:
 except ImportError:
     HAS_DUCKDB = False
 
-# orchestrator path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent))
 from orchestrator.decorators.register import register_method
 
 # 🌟 集成统一命名规范系统

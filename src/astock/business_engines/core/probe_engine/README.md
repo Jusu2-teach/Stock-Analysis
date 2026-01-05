@@ -39,8 +39,8 @@
                     ┌──────────────┴──────────────┐
                     ▼                              ▼
 ┌────────────────────────────────┐ ┌────────────────────────────────┐
-│     ThresholdEvaluator         │ │         T.R.U.T.H.             │
-│  (规则驱动 → Pass/Fail)        │ │  (模型驱动 → 六维基因)         │
+│   TrendEvaluator (阈值评估)    │ │         T.R.U.T.H.             │
+│  (规则驱动 → 评分/标签)        │ │  (模型驱动 → 六维基因)         │
 └────────────────────────────────┘ └────────────────────────────────┘
 ```
 
@@ -48,12 +48,31 @@
 
 ```
 probe_engine/
-├── __init__.py          # 模块入口，导出所有公共API
+├── __init__.py          # 模块入口，导出 ProbeEngine/ProbeOutputs 等公共 API
 ├── interface.py         # 探针协议定义 (ProbeProtocol, BaseProbe)
-├── registry.py          # 探针注册中心 (ProbeRegistry)
-├── engine.py            # 探针执行引擎 (ProbeEngine)
-└── builders.py          # 输出构建器 (ProbeOutputBuilder, ProbeOutputs)
+├── specs.py             # 探针规格与元数据 (类别、标签等)
+├── builders.py          # 输出构建器 (ProbeOutputBuilder, ProbeOutputs, MultiIndicatorProbeOutputs)
+└── unified.py           # 统一入口 (ProbeEngine.with_default_probes 等工厂函数)
 ```
+
+> 说明：早期文档中的 `registry.py` / `engine.py` 已收敛进 `unified.py`
+> 与 `interface.py`/`builders.py`，当前以 "统一入口 + 明确职责文件" 的形式对外暴露。
+
+## 与评估器 / T.R.U.T.H. 的集成
+
+在当前架构下，ProbeEngine 是 **analyzers/trend (纯数学层)** 与
+两条上层业务链路之间的桥梁：
+
+- `evaluators/threshold.TrendEvaluator`
+    - 输入：单指标或多指标的 `ProbeOutputs` / `MultiIndicatorProbeOutputs`
+    - 输出：打分结果、选股标签等业务评价数据
+- `truth.Processor` / `process_truth`
+    - 输入：8 个核心指标的 `MultiIndicatorProbeOutputs`
+    - 输出：六维基因 + 三大求解器结果 (`TruthProcessResult`)
+
+在 pipeline 中，这两条链路分别通过 `Generate_Comprehensive_Report`
+和 `Process_Truth_System` / `Generate_Truth_Report` 等步骤对外暴露，
+实现从探针 → 评估/基因 → 报告的完整闭环。
 
 ## 核心组件
 
@@ -292,13 +311,13 @@ company_outputs = MultiIndicatorProbeOutputBuilder.from_batch_results(
 ### 与评估器集成
 
 ```python
-from astock.business_engines.evaluators import ThresholdEvaluator
+from astock.business_engines.evaluators.threshold.engine import TrendEvaluator
 
 # 创建评估器
-evaluator = ThresholdEvaluator.with_default_rules()
+evaluator = TrendEvaluator.with_default_rules()
 
-# 评估
-result = evaluator.evaluate(outputs)
+# 评估 (以单指标 ProbeOutputs 为例)
+result = evaluator.evaluate_indicator(outputs)
 print(f"通过: {result.passes}")
 print(f"分数: {result.score:.1f}")
 print(f"等级: {result.grade}")

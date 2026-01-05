@@ -12,15 +12,10 @@
 - 完全基于 EventBus 架构
 - Orchestrator 仍为必需依赖
 """
-import sys
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
-
-# 路径注入
-sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Orchestrator 依赖
 from orchestrator import AStockOrchestrator
@@ -157,7 +152,8 @@ class ExecuteManager:
         self._event_bus.emit(PipelineStartedEvent(
             pipeline_name=pipeline_name,
             config_path=self.config_path or '',
-            step_names=step_names,
+            total_steps=len(step_names),
+            execution_order=step_names,
         ))
 
         auto_info = self._build_auto_kedro_config()
@@ -165,11 +161,12 @@ class ExecuteManager:
         result['mode'] = 'hybrid'
 
         # 发布 Pipeline 完成事件
+        total_duration_ms = result.get('metrics', {}).get('total_duration_ms', 0)
         self._event_bus.emit(PipelineCompletedEvent(
             pipeline_name=pipeline_name,
             status=result.get('status', 'unknown'),
-            executed_steps=result.get('executed_steps', []),
-            duration_ms=result.get('metrics', {}).get('total_duration_ms', 0),
+            duration_sec=total_duration_ms / 1000.0 if total_duration_ms else 0.0,
+            executed_steps=len(result.get('executed_steps', [])),
         ))
 
         return result

@@ -11,9 +11,9 @@ Evaluators Module
     ProbeOutputs (统一接口)
         ↓
     ┌─────────────────────────────────┐
-    │         Evaluators               │
+    │         Evaluators              │
     ├─────────────────────────────────┤
-    │ ThresholdEvaluator (本模块)      │
+    │ TrendEvaluator (规则引擎包装)   │
     │   - 规则驱动                    │
     │   - 29+ 业务规则                │
     │   - 4 投资策略                  │
@@ -27,10 +27,10 @@ Evaluators Module
     └─────────────────────────────────┘
 
 使用示例：
-    from astock.business_engines.evaluators import ThresholdEvaluator
+    from astock.business_engines.evaluators import TrendEvaluator
 
     # 创建评估器
-    evaluator = ThresholdEvaluator.with_default_rules()
+    evaluator = TrendEvaluator()
 
     # 评估
     result = evaluator.evaluate(probe_outputs)
@@ -39,28 +39,28 @@ Evaluators Module
 
 from .threshold import (
     # Engine
-    ThresholdEvaluator,
-    ThresholdEvaluatorConfig,
-    # Models
-    ThresholdEvaluationResult,
+    RuleEngine,
+    TrendEvaluator,
+    EvaluationResult,
+    RuleOutcome,
+    # Models & Context
+    StrategyMatchResult,
     RuleResult,
     RuleCategory,
-    ThresholdRule,
-    StrategyMatchResult,
-    # Context
     EvaluationContext,
     EvaluationContextBuilder,
 )
 
 __all__ = [
-    # Threshold Evaluator
-    "ThresholdEvaluator",
-    "ThresholdEvaluatorConfig",
-    "ThresholdEvaluationResult",
+    # 规则引擎主入口
+    "RuleEngine",
+    "TrendEvaluator",
+    "EvaluationResult",
+    "RuleOutcome",
+    # 模型与上下文
+    "StrategyMatchResult",
     "RuleResult",
     "RuleCategory",
-    "ThresholdRule",
-    "StrategyMatchResult",
     "EvaluationContext",
     "EvaluationContextBuilder",
 ]

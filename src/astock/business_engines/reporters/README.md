@@ -150,41 +150,49 @@
 
 ---
 
-## 🔧 兼容模式说明
+## 🔧 使用模式说明（仅专业模式）
 
-报告生成器支持两种模式：
+报告系统在 v5.0 起只支持 **单一官方链路**：
 
-### 1. 专业模式（推荐）
+1. 通过 `Process_Truth_System` 步骤调用 `business_engine: truth`，
+   接收 8 个趋势探针分析结果，生成 `Truth_Processed_Results`。
+2. 报告引擎 `report_truth` / `report_truth_single` 只接受
+   `truth_processed` 作为入口，不再直接消费探针 DataFrame。
 
-通过 `Process_Truth_System` 步骤预处理数据：
+推荐的 analysis.yaml 片段如下：
 
 ```yaml
-# analysis.yaml
+# Step 1: T.R.U.T.H. 处理
 - name: "Process_Truth_System"
   component: "business_engine"
   engine: "truth"
   method: ["process_truth"]
   parameters:
-    roic_data: "steps.Analyze_ROIC_Trend.outputs..."
-    # ... 其他7个指标
+    roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
+    roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
+    roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
+    gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
+    net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
+    revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
+    profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
+    ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+  outputs:
+    parameters:
+      - name: Truth_Processed_Results
 
+# Step 2: T.R.U.T.H. 报告
 - name: "Generate_Truth_Report"
+  component: "business_engine"
+  engine: "reporting"
+  method: ["report_truth"]
   parameters:
-    truth_processed: "steps.Process_Truth_System.outputs..."
+    truth_processed: "steps.Process_Truth_System.outputs.parameters.Truth_Processed_Results"
+    output_path: "data/truth_analysis_report.md"
 ```
 
-### 2. 兼容模式
-
-直接将探针数据传给报告生成器（向后兼容旧配置）：
-
-```yaml
-- name: "Generate_Truth_Report"
-  parameters:
-    roic_data: "steps.Analyze_ROIC_Trend.outputs..."
-    # ... 直接传探针数据
-```
-
----
+> 注意：旧版本中“直接传探针 DataFrame” 的兼容模式已废弃，
+> 报告系统不再从 CSV 或中间 DataFrame 直接构建 T.R.U.T.H.，
+> 以保证 T.R.U.T.H. 口径与 TruthProcessor 完全一致。
 │                   │                                             │
 │               ──→ 🟢 速度求解器 (velocity_solver)                │
 │                   │  输入: γ(成长动能), β(资本密度)              │

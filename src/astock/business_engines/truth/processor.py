@@ -47,6 +47,8 @@ import numpy as np
 import pandas as pd
 import logging
 
+from shared.naming_convention import METRIC_PREFIX_MAP as NAMING_METRIC_PREFIX_MAP
+
 from .config import TruthConfig, get_default_truth_config
 from .models import CompanyGenome, TruthResult
 # 导入探针结果模型（从trend/models.py）
@@ -190,26 +192,27 @@ class DataFrameToProbeConverter:
     - 探针结果对象: LogTrendResult, VolatilityResult, CyclicalPatternResult 等
     """
 
-    # 指标名到 DataFrame 前缀的映射 - 使用统一命名规范
-    # 从 shared.naming_convention 导入时会自动使用，这里作为回退
-    METRIC_PREFIX_MAP = {
-        'roic': 'roic',
-        'roe': 'roe',
-        'roiic': 'roiic',
-        'gross_margin': 'grossprofit_margin',
-        'net_margin': 'netprofit_margin',
-        'revenue': 'total_revenue_ps',
-        'profit': 'eps',
-        'ocf': 'ocfps',
-    }
-
     def __init__(self):
-        """初始化转换器，尝试加载统一命名规范"""
-        try:
-            from shared.naming_convention import METRIC_PREFIX_MAP as UNIFIED_MAP
-            self.METRIC_PREFIX_MAP = UNIFIED_MAP
-        except ImportError:
-            pass  # 使用类级别的默认映射
+        """初始化转换器，强制使用统一命名规范并进行自检"""
+        self.metric_prefix_map = NAMING_METRIC_PREFIX_MAP
+
+        # 自检：确保所有关键指标在命名映射中存在
+        required_metrics = (
+            'roic',
+            'roe',
+            'roiic',
+            'gross_margin',
+            'net_margin',
+            'revenue',
+            'profit',
+            'ocf',
+        )
+        missing = [m for m in required_metrics if m not in self.metric_prefix_map]
+        if missing:
+            raise KeyError(
+                f"缺少必要的指标前缀映射: {missing}，"
+                "请检查 shared.naming_convention.METRIC_PREFIX_MAP 配置。"
+            )
 
     def convert_row_to_probe_outputs(
         self,
@@ -226,7 +229,7 @@ class DataFrameToProbeConverter:
         Returns:
             ProbeOutputs 对象（包含专业的探针结果结构）
         """
-        prefix = self.METRIC_PREFIX_MAP.get(metric_key, metric_key)
+        prefix = self.metric_prefix_map.get(metric_key, metric_key)
 
         # 创建各探针结果对象
         log_trend = self._build_log_trend(row, prefix)
@@ -406,565 +409,7 @@ class DataFrameToProbeConverter:
             recent_r_squared=float(self._safe_get(row, f'{prefix}_inflection_recent_r2', 0.0)),
             warnings=[],
         )
-
-
 # ============================================================================
-# 指标数据提取器（旧版，保留兼容性）
-# ============================================================================
-
-class IndicatorExtractor:
-    """
-    从探针 DataFrame 中提取单个指标的数据
-
-    使用统一命名规范系统获取列名前缀
-    """
-
-    def __init__(self):
-        """初始化提取器，加载统一命名规范"""
-        try:
-            from shared.naming_convention import METRIC_PREFIX_MAP
-            self._prefix_map = METRIC_PREFIX_MAP
-        except ImportError:
-            # 回退到默认映射
-            self._prefix_map = {
-                'roic': 'roic',
-                'roe': 'roe',
-                'roiic': 'roiic',
-                'gross_margin': 'grossprofit_margin',
-                'net_margin': 'netprofit_margin',
-                'revenue': 'total_revenue_ps',
-                'profit': 'eps',
-                'ocf': 'ocfps',
-            }
-
-    def _get_prefix(self, metric_name: str) -> str:
-        """获取指标对应的列名前缀"""
-        return self._prefix_map.get(metric_name, metric_name)
-
-    def extract_for_company(
-        self,
-        df: pd.DataFrame,
-        ts_code: str,
-        metric_name: str
-    ) -> Dict[str, Any]:
-        """
-        提取单个公司的指标数据
-
-        Returns:
-            包含趋势、波动性、周期性等信息的字典
-        """
-        if df is None or df.empty:
-            return {}
-
-        row = df[df['ts_code'] == ts_code]
-        if row.empty:
-            return {}
-
-        row = row.iloc[0]
-
-        # 🌟 使用统一命名规范获取前缀
-        prefix = self._get_prefix(metric_name)
-
-        return {
-            'metric_name': metric_name,
-            'ts_code': ts_code,
-            # 趋势信息 (使用前缀化列名)
-            'log_slope': row.get(f'{prefix}_log_slope', 0.0),
-            'r_squared': row.get(f'{prefix}_r_squared', 0.0),
-            'cagr': row.get(f'{prefix}_cagr', row.get(f'{prefix}_cagr_approx', 0.0)),
-            # 波动性信息
-            'cv': row.get(f'{prefix}_cv', 0.0),
-            'detrended_cv': row.get(f'{prefix}_detrended_cv', 0.0),
-            # 周期性信息
-            'is_cyclical': row.get(f'{prefix}_is_cyclical', False),
-            'cyclical_confidence': row.get(f'{prefix}_cyclical_confidence', 0.0),
-            'peak_trough_ratio': row.get(f'{prefix}_peak_trough_ratio', 1.0),
-            # 衰退信息
-            'deterioration_prob': row.get(f'{prefix}_deterioration_probability', 0.0),
-            'has_deterioration': row.get(f'{prefix}_has_deterioration', False),
-            # 近期动态
-            'recent_trend': row.get(f'{prefix}_recent_3y_slope', 0.0),
-            'momentum': row.get(f'{prefix}_trend_acceleration', 0.0),
-            # 原始值
-            'mean_value': row.get(f'{prefix}_mean_value', 0.0),
-            'latest_value': row.get(f'{prefix}_latest_value', 0.0),
-        }
-
-
-# ============================================================================
-# 专业基因-指标映射器
-# ============================================================================
-
-class ProfessionalGeneMapper:
-    """
-    专业基因-指标映射器
-
-    实现专业的映射关系：
-    - α (周期性): 效率指标 (ROIC, ROE)，使用max聚合
-    - β (资本密度): ROIC单一来源
-    - γ (成长动能): 增长指标 (营收, 利润)，使用调和平均
-    - δ_fraud (欺诈熵): 利润vs现金流，逻辑OR
-    - δ_decay (衰退熵): 所有效率指标，使用max
-    - V (验证): 现金流单一来源
-    """
-
-    def __init__(self, config: TruthConfig = None):
-        self.config = config or get_default_truth_config()
-
-    def extract_alpha(
-        self,
-        roic_data: Dict[str, Any],
-        roe_data: Dict[str, Any],
-    ) -> GeneExtractionResult:
-        """
-        提取 α (周期性) 基因
-
-        来源: ROIC, ROE (效率指标)
-        聚合: max - 选择周期性最强的
-        逻辑: 公司周期性由最强的周期性指标决定
-        """
-        alpha_values = []
-        source_indicators = []
-        breakdown = {}
-
-        # 从 ROIC 提取 α
-        if roic_data:
-            roic_alpha = self._compute_single_alpha(roic_data)
-            alpha_values.append(roic_alpha)
-            source_indicators.append('ROIC')
-            breakdown['roic_alpha'] = roic_alpha
-
-        # 从 ROE 提取 α
-        if roe_data:
-            roe_alpha = self._compute_single_alpha(roe_data)
-            alpha_values.append(roe_alpha)
-            source_indicators.append('ROE')
-            breakdown['roe_alpha'] = roe_alpha
-
-        if not alpha_values:
-            return GeneExtractionResult(
-                gene_name='alpha',
-                value=0.5,
-                source_indicators=[],
-                aggregation_method='default',
-                is_degraded=True,
-                degradation_reason='缺少效率指标数据'
-            )
-
-        # max 聚合：周期性最强的那个
-        final_alpha = max(alpha_values)
-        breakdown['aggregation'] = 'max'
-        breakdown['final'] = final_alpha
-
-        return GeneExtractionResult(
-            gene_name='alpha',
-            value=final_alpha,
-            source_indicators=source_indicators,
-            aggregation_method='max',
-            breakdown=breakdown
-        )
-
-    def _compute_single_alpha(self, data: Dict[str, Any]) -> float:
-        """从单个指标计算 α 值"""
-        # 核心指标：去趋势CV, 周期置信度, R²
-        detrended_cv = float(data.get('detrended_cv', 0.0))
-        cyclical_conf = float(data.get('cyclical_confidence', 0.0))
-        r_squared = float(data.get('r_squared', 0.5))
-        pt_ratio = float(data.get('peak_trough_ratio', 1.0))
-
-        # v2.0 Signal Fusion 公式（简化版）
-        # α = 0.4×CV_norm + 0.3×P_cyc + 0.2×(1-R²) + 0.1×PT_norm
-        cv_norm = min(detrended_cv * 2, 1.0)  # CV饱和在0.5
-        pt_norm = min((pt_ratio - 1) / 3, 1.0)  # PT饱和在4
-        low_r2 = 1 - r_squared
-
-        alpha = (
-            0.4 * cv_norm +
-            0.3 * cyclical_conf +
-            0.2 * low_r2 +
-            0.1 * pt_norm
-        )
-
-        return max(0.0, min(1.0, alpha))
-
-    def extract_beta(
-        self,
-        roic_data: Dict[str, Any],
-        ocf_data: Dict[str, Any] = None,
-        profit_data: Dict[str, Any] = None,
-        revenue_data: Dict[str, Any] = None,
-    ) -> GeneExtractionResult:
-        """
-        提取 β (资本密度) 基因
-
-        来源: ROIC (主), OCF波动性, 利润/营收DOL
-        逻辑: 检测"隐性重资产"
-        """
-        breakdown = {}
-        source_indicators = ['ROIC']
-
-        if not roic_data:
-            return GeneExtractionResult(
-                gene_name='beta',
-                value=0.5,
-                source_indicators=[],
-                aggregation_method='default',
-                is_degraded=True,
-                degradation_reason='缺少ROIC数据'
-            )
-
-        # 1. ROIC波动性 (40%)
-        roic_cv = float(roic_data.get('detrended_cv', 0.0))
-        vol_score = min(roic_cv / 0.15, 1.0)  # 饱和在15%
-        breakdown['roic_volatility'] = roic_cv
-        breakdown['vol_score'] = vol_score
-
-        # 2. OCF波动性 (30%)
-        ocf_cv = float(ocf_data.get('cv', 0.0)) if ocf_data else 0.3
-        ocf_score = min(ocf_cv / 0.5, 1.0)  # OCF波动性更高
-        breakdown['ocf_cv'] = ocf_cv
-        breakdown['ocf_score'] = ocf_score
-        if ocf_data:
-            source_indicators.append('OCF')
-
-        # 3. DOL 经营杠杆检测 (30%)
-        # 利润波动/营收波动 > 1 表示高经营杠杆
-        dol_score = 0.5
-        if profit_data and revenue_data:
-            profit_cv = float(profit_data.get('cv', 0.0))
-            revenue_cv = float(revenue_data.get('cv', 0.01))
-            if revenue_cv > 0.001:
-                dol = profit_cv / revenue_cv
-                dol_score = min(dol / 3, 1.0)  # DOL > 3 视为高杠杆
-                breakdown['dol'] = dol
-                source_indicators.extend(['Profit', 'Revenue'])
-        breakdown['dol_score'] = dol_score
-
-        # 加权计算
-        beta = 0.4 * vol_score + 0.3 * ocf_score + 0.3 * dol_score
-        breakdown['final'] = beta
-
-        return GeneExtractionResult(
-            gene_name='beta',
-            value=max(0.0, min(1.0, beta)),
-            source_indicators=source_indicators,
-            aggregation_method='weighted',
-            breakdown=breakdown
-        )
-
-    def extract_gamma(
-        self,
-        revenue_data: Dict[str, Any],
-        profit_data: Dict[str, Any],
-        ocf_data: Dict[str, Any] = None,
-    ) -> GeneExtractionResult:
-        """
-        提取 γ (成长动能) 基因
-
-        来源: 营收, 利润, OCF (增长指标)
-        聚合: 调和平均 - 惩罚不平衡增长
-        逻辑: 真正的增长应该是营收/利润/现金流同步
-        """
-        growth_values = []
-        source_indicators = []
-        breakdown = {}
-
-        # 营收增长 (权重0.4)
-        if revenue_data:
-            rev_gamma = self._compute_single_gamma(revenue_data)
-            growth_values.append(('revenue', rev_gamma, 0.4))
-            source_indicators.append('Revenue')
-            breakdown['revenue_gamma'] = rev_gamma
-
-        # 利润增长 (权重0.4)
-        if profit_data:
-            profit_gamma = self._compute_single_gamma(profit_data)
-            growth_values.append(('profit', profit_gamma, 0.4))
-            source_indicators.append('Profit')
-            breakdown['profit_gamma'] = profit_gamma
-
-        # 现金流增长 (权重0.2)
-        if ocf_data:
-            ocf_gamma = self._compute_single_gamma(ocf_data)
-            growth_values.append(('ocf', ocf_gamma, 0.2))
-            source_indicators.append('OCF')
-            breakdown['ocf_gamma'] = ocf_gamma
-
-        if not growth_values:
-            return GeneExtractionResult(
-                gene_name='gamma',
-                value=0.3,
-                source_indicators=[],
-                aggregation_method='default',
-                is_degraded=True,
-                degradation_reason='缺少增长指标数据'
-            )
-
-        # 调和平均（惩罚不平衡）
-        # 如果只有部分数据，重新归一化权重
-        total_weight = sum(w for _, _, w in growth_values)
-        weighted_sum = sum(v * (w / total_weight) for _, v, w in growth_values)
-
-        # 计算一致性惩罚
-        values = [v for _, v, _ in growth_values]
-        if len(values) >= 2:
-            consistency = 1 - np.std(values)  # 标准差越小，一致性越好
-            final_gamma = weighted_sum * (0.8 + 0.2 * consistency)
-        else:
-            final_gamma = weighted_sum
-
-        breakdown['weighted_avg'] = weighted_sum
-        breakdown['consistency'] = consistency if len(values) >= 2 else 1.0
-        breakdown['final'] = final_gamma
-        breakdown['aggregation'] = 'harmonic_weighted'
-
-        return GeneExtractionResult(
-            gene_name='gamma',
-            value=max(0.0, min(1.0, final_gamma)),
-            source_indicators=source_indicators,
-            aggregation_method='harmonic_weighted',
-            breakdown=breakdown
-        )
-
-    def _compute_single_gamma(self, data: Dict[str, Any]) -> float:
-        """从单个指标计算 γ 值"""
-        cagr = float(data.get('cagr', 0.0))
-        recent_trend = float(data.get('recent_trend', 0.0))
-        momentum = float(data.get('momentum', 0.0))
-
-        # 映射 CAGR 到 [0, 1]
-        # -10% → 0.1, 0% → 0.3, 15% → 0.6, 30% → 0.9
-        if cagr <= -0.1:
-            base_gamma = 0.1
-        elif cagr <= 0:
-            base_gamma = 0.1 + 0.2 * ((cagr + 0.1) / 0.1)
-        elif cagr <= 0.15:
-            base_gamma = 0.3 + 0.3 * (cagr / 0.15)
-        elif cagr <= 0.30:
-            base_gamma = 0.6 + 0.3 * ((cagr - 0.15) / 0.15)
-        else:
-            base_gamma = 0.9 + 0.1 * min((cagr - 0.30) / 0.20, 1)
-
-        # 动量调整 (±10%)
-        momentum_adj = 0.1 * np.sign(momentum) * min(abs(momentum), 1.0)
-
-        return max(0.0, min(1.0, base_gamma + momentum_adj))
-
-    def extract_delta_fraud(
-        self,
-        profit_data: Dict[str, Any],
-        ocf_data: Dict[str, Any],
-        roic_data: Dict[str, Any] = None,
-        roe_data: Dict[str, Any] = None,
-    ) -> GeneExtractionResult:
-        """
-        提取 δ_fraud (欺诈熵) 基因
-
-        来源: 利润 vs 现金流, ROE vs ROIC
-        聚合: 逻辑OR - 任一异常即触发
-        逻辑: 欺诈信号是"或"关系，一处可疑就需警惕
-        """
-        fraud_signals = []
-        breakdown = {}
-        source_indicators = []
-
-        # 1. 利润 vs 现金流 背离 (最重要)
-        if profit_data and ocf_data:
-            profit_cagr = float(profit_data.get('cagr', 0.0))
-            ocf_cagr = float(ocf_data.get('cagr', 0.0))
-
-            # 利润增长但现金流下降 = 红旗
-            if profit_cagr > 0.05 and ocf_cagr < -0.05:
-                divergence = profit_cagr - ocf_cagr
-                fraud_score = min(divergence / 0.3, 1.0)  # 30%背离满分
-                fraud_signals.append(fraud_score)
-                breakdown['profit_ocf_divergence'] = divergence
-                breakdown['profit_ocf_fraud'] = fraud_score
-            source_indicators.extend(['Profit', 'OCF'])
-
-        # 2. ROE vs ROIC 背离 (杠杆操纵)
-        if roe_data and roic_data:
-            roe_val = float(roe_data.get('mean_value', 0.15))
-            roic_val = float(roic_data.get('mean_value', 0.10))
-
-            # ROE >> ROIC 说明高杠杆驱动
-            if roe_val > roic_val * 2 and roe_val > 0.15:
-                leverage_signal = min((roe_val / roic_val - 1) / 2, 1.0)
-                fraud_signals.append(leverage_signal * 0.5)  # 权重较低
-                breakdown['leverage_signal'] = leverage_signal
-            source_indicators.extend(['ROE', 'ROIC'])
-
-        # 3. 趋势一致性检查
-        # 如果利润趋势和现金流趋势方向相反超过3年
-        if profit_data and ocf_data:
-            profit_slope = float(profit_data.get('log_slope', 0.0))
-            ocf_slope = float(ocf_data.get('log_slope', 0.0))
-
-            if (profit_slope > 0.05 and ocf_slope < -0.05) or \
-               (profit_slope < -0.05 and ocf_slope > 0.05):
-                trend_divergence = abs(profit_slope - ocf_slope)
-                fraud_signals.append(min(trend_divergence / 0.2, 1.0) * 0.3)
-                breakdown['trend_divergence'] = trend_divergence
-
-        # 逻辑OR聚合：取最大值
-        if fraud_signals:
-            final_fraud = max(fraud_signals)
-        else:
-            final_fraud = 0.0
-
-        breakdown['fraud_signals'] = fraud_signals
-        breakdown['final'] = final_fraud
-        breakdown['aggregation'] = 'logical_or_max'
-
-        return GeneExtractionResult(
-            gene_name='delta_fraud',
-            value=max(0.0, min(1.0, final_fraud)),
-            source_indicators=source_indicators,
-            aggregation_method='logical_or_max',
-            breakdown=breakdown
-        )
-
-    def extract_delta_decay(
-        self,
-        roic_data: Dict[str, Any],
-        roe_data: Dict[str, Any],
-        gross_margin_data: Dict[str, Any],
-        net_margin_data: Dict[str, Any],
-    ) -> GeneExtractionResult:
-        """
-        提取 δ_decay (衰退熵) 基因
-
-        来源: 所有效率指标
-        聚合: max - 最严重的衰退信号
-        逻辑: 一处衰退可能蔓延全局
-        """
-        decay_values = []
-        breakdown = {}
-        source_indicators = []
-
-        for name, data in [
-            ('ROIC', roic_data),
-            ('ROE', roe_data),
-            ('GrossMargin', gross_margin_data),
-            ('NetMargin', net_margin_data),
-        ]:
-            if data:
-                decay = self._compute_single_decay(data)
-                decay_values.append(decay)
-                source_indicators.append(name)
-                breakdown[f'{name.lower()}_decay'] = decay
-
-        if not decay_values:
-            return GeneExtractionResult(
-                gene_name='delta_decay',
-                value=0.3,
-                source_indicators=[],
-                aggregation_method='default',
-                is_degraded=True,
-                degradation_reason='缺少效率指标数据'
-            )
-
-        # max 聚合：最严重的衰退
-        final_decay = max(decay_values)
-        breakdown['max_decay'] = final_decay
-        breakdown['aggregation'] = 'max'
-
-        return GeneExtractionResult(
-            gene_name='delta_decay',
-            value=max(0.0, min(1.0, final_decay)),
-            source_indicators=source_indicators,
-            aggregation_method='max',
-            breakdown=breakdown
-        )
-
-    def _compute_single_decay(self, data: Dict[str, Any]) -> float:
-        """从单个指标计算衰退分数"""
-        deterioration_prob = float(data.get('deterioration_prob', 0.0))
-        has_deterioration = data.get('has_deterioration', False)
-        recent_trend = float(data.get('recent_trend', 0.0))
-        log_slope = float(data.get('log_slope', 0.0))
-
-        # 综合衰退信号
-        decay_score = 0.0
-
-        # 恶化概率 (50%)
-        decay_score += 0.5 * deterioration_prob
-
-        # 近期趋势下行 (30%)
-        if recent_trend < 0:
-            decay_score += 0.3 * min(abs(recent_trend) / 0.1, 1.0)
-
-        # 长期斜率下行 (20%)
-        if log_slope < 0:
-            decay_score += 0.2 * min(abs(log_slope) / 0.1, 1.0)
-
-        return decay_score
-
-    def extract_verification(
-        self,
-        ocf_data: Dict[str, Any],
-        profit_data: Dict[str, Any] = None,
-    ) -> GeneExtractionResult:
-        """
-        提取 V (验证因子) 基因
-
-        来源: 现金流
-        逻辑: 现金是最终的验证
-        """
-        breakdown = {}
-
-        if not ocf_data:
-            return GeneExtractionResult(
-                gene_name='verification',
-                value=0.5,
-                source_indicators=[],
-                aggregation_method='default',
-                is_degraded=True,
-                degradation_reason='缺少现金流数据'
-            )
-
-        # OCF趋势
-        ocf_slope = float(ocf_data.get('log_slope', 0.0))
-        ocf_cagr = float(ocf_data.get('cagr', 0.0))
-
-        # 现金流质量
-        v_score = 0.5  # 基准
-
-        # 正向现金流趋势加分
-        if ocf_slope > 0:
-            v_score += 0.3 * min(ocf_slope / 0.1, 1.0)
-        else:
-            v_score -= 0.3 * min(abs(ocf_slope) / 0.1, 1.0)
-
-        # CAGR调整
-        if ocf_cagr > 0:
-            v_score += 0.2 * min(ocf_cagr / 0.15, 1.0)
-
-        breakdown['ocf_slope'] = ocf_slope
-        breakdown['ocf_cagr'] = ocf_cagr
-        breakdown['v_score'] = v_score
-
-        # 利润/现金流比率（如果有利润数据）
-        if profit_data:
-            profit_cagr = float(profit_data.get('cagr', 0.0))
-            if abs(profit_cagr) > 0.01:
-                cash_ratio = ocf_cagr / profit_cagr if profit_cagr != 0 else 1.0
-                # 现金增长 >= 利润增长 是好的
-                if cash_ratio >= 1:
-                    v_score = min(v_score + 0.1, 1.0)
-                breakdown['cash_profit_ratio'] = cash_ratio
-
-        breakdown['final'] = v_score
-
-        return GeneExtractionResult(
-            gene_name='verification',
-            value=max(0.0, min(1.0, v_score)),
-            source_indicators=['OCF'],
-            aggregation_method='single_source',
-            breakdown=breakdown
-        )
-
-
 # ============================================================================
 # 因果网络验证器
 # ============================================================================
@@ -1076,10 +521,6 @@ class TruthProcessor:
         self.config = config or get_default_truth_config()
         self.df_converter = DataFrameToProbeConverter()  # DataFrame → ProbeOutputs
         self.probe_adapter = ProbeAdapter()              # ProbeOutputs → GenomeInput
-        # 保留旧组件兼容
-        self.gene_mapper = ProfessionalGeneMapper(self.config)
-        self.causal_validator = CausalNetworkValidator()
-        self.extractor = IndicatorExtractor()
 
     def process_company(
         self,
@@ -1112,8 +553,9 @@ class TruthProcessor:
             if multi_probe_outputs is None:
                 result.warnings.append("⚠️ 无法提取探针数据")
                 result.processing_notes.append("DataFrame → ProbeOutputs 转换失败")
-                # 回退到旧版处理
-                return self._process_company_fallback(ts_code, probe_data, company_name)
+                # 无法获取探针数据时直接返回错误结果
+                self._compute_final_assessment(result)
+                return result
 
             result.processing_notes.append("✓ DataFrame → ProbeOutputs 完成")
 
@@ -1131,28 +573,16 @@ class TruthProcessor:
             self._run_solvers_professional(result, probe_data)
             result.processing_notes.append("✓ 三大求解器执行完成")
 
-            # Step 5: 提取旧版指标数据用于因果验证
-            indicator_data = self._extract_all_indicators(ts_code, probe_data)
-            if indicator_data:
-                causal = self.causal_validator.validate(
-                    revenue_data=indicator_data.get('revenue', {}),
-                    profit_data=indicator_data.get('profit', {}),
-                    ocf_data=indicator_data.get('ocf', {}),
-                    roic_data=indicator_data.get('roic', {}),
-                    roe_data=indicator_data.get('roe', {}),
-                )
-                result.causal_validation = causal
-                result.warnings.extend(causal.warnings)
-
-            # Step 6: 综合评分
+            # Step 5: 综合评分
             self._compute_final_assessment(result)
 
         except Exception as e:
             logger.error(f"处理公司 {ts_code} 失败: {e}")
             result.warnings.append(f"处理异常: {str(e)}")
             result.processing_notes.append(f"✗ 处理失败: {e}")
-            # 尝试回退处理
-            return self._process_company_fallback(ts_code, probe_data, company_name)
+            # 发生异常时不再回退到旧链路，直接给出错误评估结果
+            self._compute_final_assessment(result)
+            return result
 
         return result
 
@@ -1267,200 +697,6 @@ class TruthProcessor:
 
         if has_warning:
             result.warnings.append(warning_msg)
-
-    def _process_company_fallback(
-        self,
-        ts_code: str,
-        probe_data: Dict[str, pd.DataFrame],
-        company_name: str = "",
-    ) -> TruthProcessResult:
-        """
-        回退处理（使用旧版 ProfessionalGeneMapper）
-
-        当专业处理链失败时使用
-        """
-        result = TruthProcessResult(ts_code=ts_code, company_name=company_name)
-        result.processing_notes.append("⚠️ 使用回退模式（旧版基因映射）")
-
-        # 使用旧版提取逻辑
-        indicator_data = self._extract_all_indicators(ts_code, probe_data)
-        if not indicator_data:
-            result.warnings.append("⚠️ 无法提取指标数据")
-            return result
-
-        # 使用旧版基因映射
-        gene_extractions = self._extract_all_genes(indicator_data)
-        result.gene_extractions = gene_extractions
-
-        # 构建基因组
-        genome = self._build_genome(ts_code, company_name, gene_extractions)
-        result.genome = genome
-
-        # 运行求解器（使用旧版）
-        solver_results = self._run_solvers(genome, indicator_data)
-        result.solver_results = solver_results
-
-        # 因果验证
-        causal = self.causal_validator.validate(
-            revenue_data=indicator_data.get('revenue', {}),
-            profit_data=indicator_data.get('profit', {}),
-            ocf_data=indicator_data.get('ocf', {}),
-            roic_data=indicator_data.get('roic', {}),
-            roe_data=indicator_data.get('roe', {}),
-        )
-        result.causal_validation = causal
-        result.warnings.extend(causal.warnings)
-
-        self._compute_final_assessment(result)
-
-        return result
-
-    def _extract_all_indicators(
-        self,
-        ts_code: str,
-        probe_data: Dict[str, pd.DataFrame],
-    ) -> Dict[str, Dict[str, Any]]:
-        """提取所有指标数据"""
-        indicator_mapping = {
-            'roic': 'roic',
-            'roe': 'roe',
-            'roiic': 'roiic',
-            'gross_margin': 'gross_margin',
-            'net_margin': 'net_margin',
-            'revenue': 'revenue',
-            'profit': 'profit',
-            'ocf': 'ocf',
-        }
-
-        result = {}
-        for key, metric_name in indicator_mapping.items():
-            df = probe_data.get(key)
-            if df is not None and not df.empty:
-                data = self.extractor.extract_for_company(df, ts_code, metric_name)
-                if data:
-                    result[key] = data
-
-        return result
-
-    def _extract_all_genes(
-        self,
-        indicator_data: Dict[str, Dict[str, Any]],
-    ) -> Dict[str, GeneExtractionResult]:
-        """提取所有六维基因"""
-        genes = {}
-
-        # α (周期性)
-        genes['alpha'] = self.gene_mapper.extract_alpha(
-            roic_data=indicator_data.get('roic', {}),
-            roe_data=indicator_data.get('roe', {}),
-        )
-
-        # β (资本密度)
-        genes['beta'] = self.gene_mapper.extract_beta(
-            roic_data=indicator_data.get('roic', {}),
-            ocf_data=indicator_data.get('ocf', {}),
-            profit_data=indicator_data.get('profit', {}),
-            revenue_data=indicator_data.get('revenue', {}),
-        )
-
-        # γ (成长动能)
-        genes['gamma'] = self.gene_mapper.extract_gamma(
-            revenue_data=indicator_data.get('revenue', {}),
-            profit_data=indicator_data.get('profit', {}),
-            ocf_data=indicator_data.get('ocf', {}),
-        )
-
-        # δ_fraud (欺诈熵)
-        genes['delta_fraud'] = self.gene_mapper.extract_delta_fraud(
-            profit_data=indicator_data.get('profit', {}),
-            ocf_data=indicator_data.get('ocf', {}),
-            roic_data=indicator_data.get('roic', {}),
-            roe_data=indicator_data.get('roe', {}),
-        )
-
-        # δ_decay (衰退熵)
-        genes['delta_decay'] = self.gene_mapper.extract_delta_decay(
-            roic_data=indicator_data.get('roic', {}),
-            roe_data=indicator_data.get('roe', {}),
-            gross_margin_data=indicator_data.get('gross_margin', {}),
-            net_margin_data=indicator_data.get('net_margin', {}),
-        )
-
-        # V (验证因子)
-        genes['verification'] = self.gene_mapper.extract_verification(
-            ocf_data=indicator_data.get('ocf', {}),
-            profit_data=indicator_data.get('profit', {}),
-        )
-
-        return genes
-
-    def _build_genome(
-        self,
-        ts_code: str,
-        company_name: str,
-        gene_extractions: Dict[str, GeneExtractionResult],
-    ) -> CompanyGenome:
-        """构建基因组对象"""
-        # 计算数据质量
-        degraded_count = sum(
-            1 for g in gene_extractions.values() if g.is_degraded
-        )
-        data_quality = 1.0 - (degraded_count * 0.15)
-
-        return CompanyGenome(
-            ts_code=ts_code,
-            company_name=company_name,
-            alpha=gene_extractions['alpha'].value,
-            beta=gene_extractions['beta'].value,
-            gamma=gene_extractions['gamma'].value,
-            delta_fraud=gene_extractions['delta_fraud'].value,
-            delta_decay=gene_extractions['delta_decay'].value,
-            verification=gene_extractions['verification'].value,
-            data_quality_score=data_quality,
-        )
-
-    def _run_solvers(
-        self,
-        genome: CompanyGenome,
-        indicator_data: Dict[str, Dict[str, Any]],
-    ) -> Dict[str, SolverExecutionResult]:
-        """运行三大求解器"""
-        results = {}
-
-        # 1. 重力求解器 (ROIC阈值)
-        gravity_result = gravity_solver(genome, self.config)
-        results['gravity'] = SolverExecutionResult(
-            solver_name='gravity',
-            result=gravity_result,
-            input_genes={'alpha': genome.alpha, 'beta': genome.beta},
-            interpretation=f"动态ROIC阈值: {gravity_result.final_threshold:.1%}"
-        )
-
-        # 2. 速度求解器 (增长边界)
-        velocity_result = velocity_solver(genome, self.config)
-        results['velocity'] = SolverExecutionResult(
-            solver_name='velocity',
-            result=velocity_result,
-            input_genes={'gamma': genome.gamma},
-            interpretation=f"最大可持续增长: {velocity_result.max_sustainable_growth:.1%}"
-        )
-
-        # 3. 结构求解器 (斜率预测)
-        # structure_solver 签名: (genome, config) -> SlopeResult
-        structure_result = structure_solver(genome, self.config)
-
-        # 生成警告
-        has_warning = structure_result.expected_slope < -0.03
-        warning_msg = f"预期斜率: {structure_result.expected_slope:.1%}/年"
-
-        results['structure'] = SolverExecutionResult(
-            solver_name='structure',
-            result=structure_result,
-            input_genes={'delta_decay': genome.delta_decay, 'beta': genome.beta},
-            interpretation=warning_msg if has_warning else "斜率稳定"
-        )
-
-        return results
 
     def _compute_final_assessment(self, result: TruthProcessResult) -> None:
         """计算最终评估"""

@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from shared.naming_convention import MetricRegistry
+
 # Import ExecuteManager (assuming path is set up by caller)
 try:
     from pipeline.core.execute_manager import ExecuteManager
@@ -205,6 +207,64 @@ class AStockCLI:
         else:
             print(f'[CACHE] 未知操作: {args.action}')
             sys.exit(1)
+        sys.exit(0)
+
+    def cmd_validate(self, args) -> None:
+        """[CHECK] 校验 workflow 中的指标命名是否符合统一规范"""
+        if not getattr(args, 'config', None):
+            print('[VALIDATE] 需要提供 -c/--config 配置文件路径')
+            sys.exit(1)
+
+        self._init_manager(args.config)
+        cfg = self.manager.ctx.config or {}
+        steps = cfg.get('pipeline', {}).get('steps', []) or []
+
+        errors = []
+        warnings = []
+
+        def _check_metric(step_name: str, field: str, value: str) -> None:
+            ok, recommended, msg, suggestion = MetricRegistry.validate_metric_name(value)
+            prefix = f"[VALIDATE] step={step_name} field={field} value='{value}'"
+            if not ok:
+                errors.append(f"{prefix} -> {msg}")
+            elif not recommended:
+                detail = f"{msg}" if suggestion is None else f"{msg} (suggested='{suggestion}')"
+                warnings.append(f"{prefix} -> {detail}")
+
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            name = step.get('name') or '<unnamed>'
+            params = step.get('parameters') or {}
+
+            metric_name = params.get('metric_name')
+            if isinstance(metric_name, str):
+                _check_metric(name, 'metric_name', metric_name)
+
+            metrics = params.get('metrics')
+            if isinstance(metrics, (list, tuple)):
+                for m in metrics:
+                    if isinstance(m, str):
+                        _check_metric(name, 'metrics[]', m)
+
+            ref_metrics = params.get('reference_metrics')
+            if isinstance(ref_metrics, (list, tuple)):
+                for m in ref_metrics:
+                    if isinstance(m, str):
+                        _check_metric(name, 'reference_metrics[]', m)
+
+        print(f"[VALIDATE] steps={len(steps)} warnings={len(warnings)} errors={len(errors)}")
+
+        for w in warnings:
+            print(f"⚠️  {w}")
+        for e in errors:
+            print(f"❌ {e}")
+
+        if errors:
+            print("[VALIDATE] 存在命名错误，请根据提示修正后重试。")
+            sys.exit(1)
+
+        print("[VALIDATE] 所有指标命名均可解析，已通过统一命名规范校验。")
         sys.exit(0)
 
     def cmd_metrics(self, args) -> None:
@@ -425,6 +485,10 @@ Examples:
     metrics_parser.add_argument('--top', type=int, help='Show top N slow nodes (default 5)')
     metrics_parser.add_argument('--format', choices=['text','json','markdown'], default='text', help='Output format (text|json|markdown)')
 
+    # validate command - 指标命名自检
+    validate_parser = subparsers.add_parser('validate', help='[CHECK] Validate metric names in workflow config')
+    validate_parser.add_argument('-c', '--config', required=True, help='Configuration file path')
+
     # graph command - 新增依赖图可视化
     graph_parser = subparsers.add_parser('graph', help='[VIZ] Visualize dependency graph')
     graph_parser.add_argument('--config', '-c', required=True, help='Configuration file path')
@@ -452,6 +516,7 @@ def main():
             'cache': cli.cmd_cache,
             'metrics': cli.cmd_metrics,
             'graph': cli.cmd_graph,
+            'validate': cli.cmd_validate,
         }
 
         if args.command in command_map:

@@ -4,7 +4,7 @@ EventBus 核心模型定义
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Any, List, TYPE_CHECKING
-from enum import Enum, auto
+from enum import Enum, IntEnum, auto
 from datetime import datetime
 import uuid
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from ..events import Event
 
 
-class EventPriority(Enum):
+class EventPriority(IntEnum):
     """事件处理器优先级
 
     数值越小越先执行（类似 CSS z-index）。
@@ -37,7 +37,7 @@ class HandlerInfo:
     """处理器信息"""
     handler: Callable  # 处理器函数
     event_type: str = ""  # 事件类型
-    priority: int = 0  # 整数优先级（越大越先执行）
+    priority: int = 0  # 整数优先级（数值越小越先执行）
     once: bool = False  # 是否只执行一次
     handler_type: HandlerType = HandlerType.SYNC
     filter_fn: Optional[Callable[['Event'], bool]] = None

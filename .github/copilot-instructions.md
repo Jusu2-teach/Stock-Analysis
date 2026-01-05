@@ -1,127 +1,46 @@
 # AStock Analysis - AI Agent 开发指南
 
-## 架构概览 (四层解耦)
+## 架构速览
+```text
+workflow/*.yaml → pipeline/core/execute_manager.py → orchestrator.AStockOrchestrator → src/astock/business_engines/*
 ```
-workflow/*.yaml → pipeline/core/execute_manager.py → orchestrator/registry → src/astock/business_engines/*/engine.py
-```
+- Orchestrator：统一方法注册与路由（`@register_method` + 策略选择），核心在 `orchestrator/orchestrator.py`、`orchestrator/decorators/register.py`、`orchestrator/registry/*`。
+- Pipeline：YAML 驱动、依赖图 + Prefect/Kedro 混合执行，入口 `pipeline/cli.py`，核心在 `pipeline/core/execute_manager.py` 与 `pipeline/core/services/*`。
+- Business Engines：纯业务逻辑（趋势探针、T.R.U.T.H. 基因、报告），位于 `src/astock/business_engines/*`，按 `analyzers/`、`truth/`、`reporters/` 分层。
+- Shared：事件总线、数据契约、命名规范，位于 `shared/*`；通过 EventBus 与 DataStore/ReferenceResolver 串联各层。
 
-| 层 | 职责 | 关键文件 |
-|----|------|----------|
-| **Orchestrator** | `@register_method` 装饰器自动注册，5种路由策略 | `orchestrator/decorators/register.py` |
-| **Pipeline** | YAML配置驱动，断点续传(`--resume`)，指纹缓存 | `pipeline/core/execute_manager.py`, `pipeline/core/context.py` |
-| **Business Engines** | 纯业务逻辑: 8种探针 + T.R.U.T.H.六维基因 | `src/astock/business_engines/*/engine.py` |
-| **Shared** | EventBus跨层通信，Contracts数据契约，MetricRegistry命名 | `shared/` |
-
-## 核心开发模式
-
-### 1. 添加业务方法
+## 常见开发任务
+- 新增业务方法：在 `src/astock/business_engines/{module}/engine.py`（或具体子模块内）实现函数，并用 `register_method` 注册，例如：
 ```python
-# src/astock/business_engines/{module}/engine.py
 from orchestrator.decorators.register import register_method
 
 @register_method(
-    component_type="business_engine",  # datahub | data_engine | business_engine
-    engine_type="duckdb",              # duckdb | polars | tushare | truth | reporting
-    engine_name="my_analysis",         # YAML引用名 (默认=函数名)
+    component_type="business_engine",   # 如 duckdb/truth/reporting 等业务引擎
+    engine_type="duckdb",
+    engine_name="analyze_metric_trend", # 在 workflow 中通过 method 引用
 )
-def my_analysis(data: pd.DataFrame, **params) -> pd.DataFrame: ...
+def analyze_metric_trend(data, **params): ...
 ```
+- 新增工作流步骤：在 `workflow/*.yaml` 中添加 `steps` 条目，`component/engine/method` 对应 Orchestrator 注册信息，参数通过 `steps.{Step}.outputs.parameters.{Name}` 传递；参考 `workflow/analysis.yaml` 中 `Analyze_ROIC_Trend` 与 `Process_Truth_System` 的写法。
+- 指标命名：通过 `shared/naming_convention.py` 中的 `MetricRegistry` 与 `ColumnBuilder` 统一管理（如 `ColumnBuilder.analysis_column("roic", "slope")`）；新增业务指标时优先扩展 `MetricRegistry._METRICS`，保持 `metric_name`（如 `roic/revenue/net_margin`）与底层列映射一致。
+- 事件与跨层通信：使用 `shared/event_bus` 中的 `EventBus` 与标准事件（如 `pipeline.node.started`、`pipeline.node.completed`），不要从业务层直接调用 Pipeline/Orchestrator 内部类。
+- 数据存储与引用：Pipeline 通过 `shared/contracts/store` 的 `DataStore` 和 `ReferenceResolver` 管理 `steps.X.outputs.parameters.Y` 引用，不要手写字符串解析或自建全局字典；相关设计见 `shared/contracts/README.md` 与 `pipeline/core/context.py`。
 
-### 2. 添加工作流步骤 (YAML)
-```yaml
-# workflow/analysis.yaml
-- name: "My_Step"
-  component: "business_engine"
-  engine: "duckdb"
-  method: ["my_analysis"]
-  parameters:
-    data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"  # 跨步骤引用
-  outputs:
-    parameters:
-      - name: My_Result
-```
+## 运行与调试
+- 运行主分析工作流：`python -m pipeline run -c workflow/analysis.yaml`（默认顺序执行全部步骤）。
+- 断点续跑 / 子集执行：使用 `--resume`、`--only`、`--exclude` 等参数（详见 `pipeline/README.md`），便于只重跑新增/修改节点。
+- 调试模式：`ASTOCK_DEBUG=1 python -m pipeline run -c workflow/analysis.yaml`，开启更详细日志与事件输出。
+- 查看已注册方法：`python -m pipeline engines`，用于确认 `component_type/engine_type/engine_name` 是否正确暴露给 Orchestrator。
+- 可视化依赖图与指标：通过 `python -m pipeline graph ...`、`python -m pipeline metrics ...`，快速理解当前 workflow 的执行结构与性能热点。
 
-### 3. 指标命名 (必须使用)
-```python
-from shared.naming_convention import MetricRegistry, ColumnBuilder
-MetricRegistry.get('roic')                       # 已定义: roic, roe, revenue, profit, gross_margin, net_margin, ocf, roiic
-ColumnBuilder.analysis_column('roic', 'slope')   # → 'roic_slope'
-# 新增指标: shared/naming_convention.py → MetricRegistry._METRICS
-```
+## 关键约束与约定
+- 分层依赖：`src/astock/*` 不得反向导入 `orchestrator/` 或 `pipeline/`（唯一例外是 `register_method` 装饰器）；`shared/*` 作为基础设施层可被各层引用。
+- 数据处理：大数据路径在 `data/10yd_base`、`data/5yd_base`，业务引擎优先使用 DuckDB/Polars 进行批量计算，避免 pandas 一次性加载完整 CSV。
+- Orchestrator 校验：通过环境变量 `ASTOCK_VALIDATION_MODE=strict|warn|off`、`ASTOCK_INPUT_STYLE`、`ASTOCK_CONFLICT_MODE` 配置签名与调用校验；默认推荐 `warn` + `strict_single`，以在开发期暴露参数不一致问题。
+- Pipeline 数据流：入口通常为 `data/polars/*` 归一化数据，中间结果写入 `data/filter_middle/*_trend_analysis.csv`，最终报告输出到 `data/comprehensive_analysis_report.md` 与 `data/truth_analysis_report.*`。
+- 测试与质量：pytest/coverage 已在 `pyproject.toml` 预配置，单元测试应放在根目录 `tests/` 下；`shared/event_bus`、`shared/contracts`、`orchestrator` 等基础模块优先补齐/更新测试。
+- 参考文档：深入设计见 `docs/ORCHESTRATOR_ARCHITECTURE.md`、`docs/PIPELINE_ARCHITECTURE.md`、`docs/TRUTH_SYSTEM_DESIGN.md`、`shared/event_bus/README.md`、`src/astock/business_engines/README.md`。
 
-### 4. 跨层通信 (EventBus)
-```python
-from shared.event_bus import EventBus, NodeStartedEvent
-bus = EventBus.get()
-bus.emit(NodeStartedEvent(step_name="My_Step"))
-
-@bus.on("pipeline.node.completed")
-def on_completed(event): ...
-```
-
-### 5. 数据存储与引用 (Contracts/Store)
-```python
-from shared.contracts.store import DataStore, ReferenceResolver
-
-store = DataStore()
-store.put('key', data, ref='steps.step.outputs.parameters.output')
-data = store.get_by_ref('steps.step.outputs.parameters.output')
-
-resolver = ReferenceResolver(store)
-resolved = resolver.resolve({'data': {'__ref__': 'steps.Load.outputs.parameters.Raw'}})
-```
-
-## 常用命令
-```bash
-python pipeline/main.py run -c workflow/analysis.yaml          # 运行工作流
-python pipeline/main.py run -c workflow/analysis.yaml --resume # 断点续传
-python pipeline/main.py engines                                # 查看已注册方法
-python scripts/validate_yaml_naming.py                         # 验证YAML命名规范
-ASTOCK_DEBUG=1 python pipeline/main.py run -c workflow/analysis.yaml  # 调试模式
-```
-
-## 关键约束
-1. **循环依赖禁止**: `src/astock/` 禁止导入 `orchestrator/` 或 `pipeline/` (仅 `@register_method` 除外)
-2. **跨层通信**: 使用 `shared/event_bus/` EventBus，不直接依赖
-3. **验证模式**: `ASTOCK_VALIDATION_MODE=strict|warn|off` 控制签名验证
-4. **大数据集**: 优先 DuckDB (SQL) 或 Polars (向量化)，避免 pandas 全量加载
-
-## 路径速查
-| 任务 | 路径 |
-|------|------|
-| 添加业务方法 | `src/astock/business_engines/*/engine.py` |
-| 添加/修改工作流 | `workflow/analysis.yaml` |
-| 添加新指标 | `shared/naming_convention.py` → `MetricRegistry._METRICS` |
-| 8种数学探针 | `src/astock/business_engines/trend/probes/*.py` |
-| T.R.U.T.H.六维基因 | `src/astock/business_engines/truth/core/genes/` |
-| 三大求解器 | `src/astock/business_engines/truth/core/solvers/` |
-| 数据存储组件 | `shared/contracts/store/` |
-| Pipeline上下文 | `pipeline/core/context.py` (PipelineContext, DataStore集成) |
-| 引擎专用服务 | `pipeline/engine_services/` (CacheService, EventPublisher) |
-| 核心服务 | `pipeline/core/services/` (ConfigService, FlowExecutor, ResultAssembler) |
-
-## Pipeline 服务目录结构 (v3.0)
-```
-pipeline/
-├── engine_services/     # 引擎专用服务 (KedroEngine 使用)
-│   ├── cache_service.py    # 缓存管理 (指纹/签名)
-│   └── event_publisher.py  # 事件发布 (EventBus封装)
-└── core/
-    └── services/        # Pipeline 核心服务
-        ├── config_service.py      # 配置加载
-        ├── flow_executor.py       # 流程执行
-        ├── result_assembler.py    # 结果组装
-        └── runtime_param_service.py  # 运行时参数
-```
-
-## 数据流
-```
-data/10yd_base/*.csv (原始) → data/polars/*.csv (聚合) → data/filter_middle/*.csv (分析) → data/*_report.md (报告)
-```
-
-## 文档索引
-- [ORCHESTRATOR_ARCHITECTURE.md](docs/ORCHESTRATOR_ARCHITECTURE.md) - 方法注册与路由
-- [PIPELINE_ARCHITECTURE.md](docs/PIPELINE_ARCHITECTURE.md) - YAML工作流引擎
-- [TRUTH_SYSTEM_DESIGN.md](docs/TRUTH_SYSTEM_DESIGN.md) - T.R.U.T.H.六维基因
-- [CONTRACTS_ARCHITECTURE.md](docs/CONTRACTS_ARCHITECTURE.md) - PGCS数据契约
-- [trend/README.md](src/astock/business_engines/trend/README.md) - 8种探针详解
+## RD-Agent 子目录说明
+- 仓库下的 `RD-Agent/` 为上游开源项目 `microsoft/RD-Agent` 的完整副本，具有独立的 `pyproject.toml`、`requirements` 与 `test/` 结构。
+- 如需在 `RD-Agent/` 内改动，请遵循其自带的 README、Makefile 与测试/格式化规范；在实现 AStock 功能时，默认不要大范围重构该子目录，仅在确有需要时局部扩展或调用其能力。

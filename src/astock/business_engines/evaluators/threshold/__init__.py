@@ -45,21 +45,13 @@ from .engine import (
     TrendEvaluator,
     EvaluationResult,
     RuleOutcome,
-    # 向后兼容别名
-    ThresholdEvaluator,
-    ThresholdEvaluatorConfig,
-    TrendRuleEngine,
-    trend_rule_engine,
 )
 
 # 数据模型
 from .models import (
     StrategyMatchResult,
-    # 向后兼容别名
-    ThresholdEvaluationResult,
     RuleResult,
     RuleCategory,
-    ThresholdRule,
 )
 
 # 统一配置
@@ -141,15 +133,9 @@ __all__ = [
     "get_default_strategies",
     "StrategyResult",
 
-    # ===== 向后兼容 API =====
-    "ThresholdEvaluator",
-    "ThresholdEvaluatorConfig",
-    "TrendRuleEngine",
-    "trend_rule_engine",
-    "ThresholdEvaluationResult",
+    # ===== 模型与结果类型 =====
     "RuleResult",
     "RuleCategory",
-    "ThresholdRule",
     "StrategyMatchResult",
 
     # ===== 配置模块 =====

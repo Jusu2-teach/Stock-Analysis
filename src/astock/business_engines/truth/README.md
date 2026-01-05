@@ -17,15 +17,9 @@
 │  │  │  ROIC   │ │   ROE   │ │  ROIIC  │ │ 毛利率  │                     │   │
 │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘                     │   │
 │  │  ┌────┴────┐ ┌────┴────┐ ┌────┴────┐ ┌────┴────┐                     │   │
-│  │  │ 净利率  │ │  营收   │ │  利润   │ │  OCF    │   8个探针DataFrame  │   │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘                     │   │
-│  └───────┼──────────┼──────────┼──────────┼─────────────────────────────┘   │
-│          │          │          │          │                                 │
-│          ▼          ▼          ▼          ▼                                 │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                 DataFrameToProbeConverter (桥接层)                    │   │
-│  │                                                                       │   │
-│  │  DataFrame行 ──→ LogTrendResult, VolatilityResult,                   │   │
+│  │  8个 Analyze_XXX_Trend 步骤输出的 ProbeOutputs                       │   │
+│  │  (通过 pipeline + DataStore 在内存中传递)                            │   │
+│  │  DataFrame 行 ──→ LogTrendResult, VolatilityResult,                  │   │
 │  │                  CyclicalPatternResult, RecentDeteriorationResult... │   │
 │  │                                      ↓                                │   │
 │  │                              ProbeOutputs                             │   │
@@ -125,7 +119,7 @@
     output_path: "data/truth_analysis_report.md"
 ```
 
-### 完整数据流
+### 完整数据流（无 CSV 依赖）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -133,31 +127,31 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ① Load_Financial_Data                                                      │
-│     │  读取: data/polars/10yd_final_industry.csv                            │
+│     │  读取: 原始财务数据 (DuckDB/Polars)                                   │
 │     ▼                                                                       │
 │  ② 8个探针分析步骤 (并行处理)                                                │
-│     ├─ Analyze_ROIC_Trend    → roic_trend_analysis.csv                      │
-│     ├─ Analyze_ROE_Trend     → roe_trend_analysis.csv                       │
-│     ├─ Analyze_ROIIC_Trend   → roiic_trend_analysis.csv                     │
-│     ├─ Analyze_GrossMargin   → gross_margin_trend_analysis.csv              │
-│     ├─ Analyze_NetMargin     → net_margin_trend_analysis.csv                │
-│     ├─ Analyze_Revenue       → revenue_trend_analysis.csv                   │
-│     ├─ Analyze_Profit        → profit_trend_analysis.csv                    │
-│     └─ Analyze_OCF           → ocf_trend_analysis.csv                       │
-│     │                                                                       │
+│     ├─ Analyze_ROIC_Trend                                                   │
+│     ├─ Analyze_ROE_Trend                                                    │
+│     ├─ Analyze_ROIIC_Trend                                                  │
+│     ├─ Analyze_GrossMargin_Trend                                            │
+│     ├─ Analyze_NetMargin_Trend                                              │
+│     ├─ Analyze_Revenue_Trend                                                │
+│     ├─ Analyze_Profit_Trend                                                 │
+│     └─ Analyze_OCF_Trend                                                    │
+│     │   每个步骤输出: `XXX_Trend_Result` (存入 DataStore)                   │
 │     ▼                                                                       │
 │  ③ Generate_Comprehensive_Report (规则驱动报告)                              │
-│     │  输出: data/comprehensive_analysis_report.md                          │
+│     │  通过引用 `steps.*.outputs.parameters.*` 读取探针结果                 │
 │     │                                                                       │
 │  ④ Process_Truth_System  ← 【T.R.U.T.H. 核心处理】                          │
-│     │  - 8个DataFrame → ProbeOutputs → GenomeInput                          │
+│     │  - 8个 `XXX_Trend_Result` 通过 DataStore 注入                         │
+│     │  - ProbeAdapter → GenomeInput                                         │
 │     │  - compute_genome_from_probes() 专业基因计算                           │
 │     │  - 三大求解器执行                                                      │
 │     │  输出: Truth_Processed_Results                                        │
-│     │                                                                       │
 │     ▼                                                                       │
 │  ⑤ Generate_Truth_Report                                                    │
-│     │  输出: data/truth_analysis_report.md                                  │
+│     │  只消费 Truth_Processed_Results，生成报告                              │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -479,20 +473,22 @@ python -m pipeline.main workflow/analysis.yaml
 ### 方式二：直接调用 TruthProcessor
 
 ```python
-import pandas as pd
-from src.astock.business_engines.truth.processor import TruthProcessor
+from astock.business_engines.truth.processor import TruthProcessor
 
 # 初始化处理器
 processor = TruthProcessor()
 
-# 准备探针数据（从 Pipeline 分析结果）
+# 准备探针数据（来自 Pipeline / ProbeEngine 的内存 DataFrame）
+# 假设你已经通过 analyzers/trend + ProbeEngine 得到了以下 DataFrame：
+#   roic_trend_df, roe_trend_df, gross_margin_trend_df,
+#   revenue_trend_df, profit_trend_df, ocf_trend_df
 probe_data = {
-    'roic': pd.read_csv('data/filter_middle/roic_trend_analysis.csv'),
-    'roe': pd.read_csv('data/filter_middle/roe_trend_analysis.csv'),
-    'gross_margin': pd.read_csv('data/filter_middle/gross_margin_trend_analysis.csv'),
-    'revenue': pd.read_csv('data/filter_middle/revenue_trend_analysis.csv'),
-    'profit': pd.read_csv('data/filter_middle/profit_trend_analysis.csv'),
-    'ocf': pd.read_csv('data/filter_middle/ocf_trend_analysis.csv'),
+    'roic': roic_trend_df,
+    'roe': roe_trend_df,
+    'gross_margin': gross_margin_trend_df,
+    'revenue': revenue_trend_df,
+    'profit': profit_trend_df,
+    'ocf': ocf_trend_df,
 }
 
 # 处理单个公司
@@ -515,10 +511,12 @@ print(f"评级: {result.grade}")
 print(f"处理流程: {result.processing_notes}")
 ```
 
+> 注意：`probe_data` 应来自 Pipeline / ProbeEngine 的内存结果，不推荐通过 `pd.read_csv` 直接从 `data/filter_middle/*.csv` 构造。
+
 ### 方式三：批量处理
 
 ```python
-# 批量处理所有公司
+# 批量处理所有公司（重用同一批探针 DataFrame）
 batch_result = processor.process_batch(probe_data)
 
 # 获取结果 DataFrame

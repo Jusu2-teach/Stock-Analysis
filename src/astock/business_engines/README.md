@@ -119,39 +119,48 @@ duckdb_engine.py
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Business Engines                              │
+│                          Business Engines                          │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                      Analyzers (分析器)                       │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │   │
-│  │  │    Trend     │  │   Quality    │  │  Valuation   │       │   │
-│  │  │  趋势分析     │  │   质量分析    │  │   估值分析    │       │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘       │   │
+│  │                  analyzers/trend (纯数学层)                  │   │
+│  │  ┌──────────────┐                                          │   │
+│  │  │  Probes      │  Log/Robust/Cyclical/... 探针             │   │
+│  │  └──────────────┘  ┌──────────────┐  ┌──────────────┐      │   │
+│  │                    │  models     │  │  config      │      │   │
+│  │                    └──────────────┘  └──────────────┘      │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                              │                                      │
 │                              ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                      Scorers (评分器)                         │   │
-│  │  ┌──────────────┐  ┌──────────────┐                         │   │
-│  │  │  Quality     │  │   Generic    │                         │   │
-│  │  │  质量评分     │  │   通用评分    │                         │   │
-│  │  └──────────────┘  └──────────────┘                         │   │
+│  │               core/probe_engine (探针编排层)                 │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │   │
+│  │  │  ProbeSpecs  │  │ ProbeEngine  │  │ ProbeOutputs │       │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
+│                    │                                │              │
+│                    ▼                                ▼              │
+│  ┌────────────────────────────────┐   ┌─────────────────────────┐  │
+│  │ evaluators/threshold (规则评估) │   │     truth (T.R.U.T.H.) │  │
+│  │  ┌──────────────┐             │   │  ┌──────────────┐      │  │
+│  │  │  Rules       │ veto/penalty│   │  │ Genes &      │      │  │
+│  │  ├──────────────┤ bonus/...   │   │  │ Solvers      │      │  │
+│  │  │ Strategies   │ 选股策略     │   │  └──────────────┘      │  │
+│  │  └──────────────┘             │   └─────────────────────────┘  │
+│  └────────────────────────────────┘                                │
 │                              │                                      │
 │                              ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    Reporters (报告生成)                       │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │   │
-│  │  │ Comprehensive│  │   Generic    │  │   Custom     │       │   │
-│  │  │   综合报告    │  │   通用报告    │  │   自定义报告  │       │   │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘       │   │
+│  │                 reporters (报告生成)                         │   │
+│  │  ┌──────────────┐  ┌──────────────┐                        │   │
+│  │  │ Comprehensive│  │ Truth Report │ 综合/Truth 报告         │   │
+│  │  └──────────────┘  └──────────────┘                        │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │                        Core (核心)                            │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │   │
-│  │  │ config_loader│  │ duckdb_utils │  │  interfaces  │       │   │
-│  │  │   配置加载    │  │  DuckDB工具   │  │   接口定义    │       │   │
+│  │  │ duckdb_utils │  │ probe_engine│  │  interfaces  │       │   │
+│  │  │  DuckDB 工具  │  │  探针框架    │  │   接口定义    │       │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -300,76 +309,68 @@ src/astock/business_engines/
 
 | 模块 | 职责 | 输入 | 输出 |
 | ---- | ---- | ---- | ---- |
-| `analyzers/trend` | 趋势分析 | 财务数据 + 配置 | TrendResult |
-| `evaluators/threshold` | 规则评估 | TrendResult | 评估结果 |
-| `truth` | T.R.U.T.H.六维评估 | ProbeOutputs | 六维基因 + 求解器结果 |
-| `reporters` | 报告生成 | 分析结果 | Markdown/JSON |
-| `core` | 基础设施 | - | 工具函数 |
+| `analyzers/trend` | 趋势分析与特征提取 (Probes) | 原始财务数据 + 配置 | TrendVector / Probe 原始输出 |
+| `core/probe_engine` | 探针编排与统一输出 | Probe 原始输出 | ProbeOutputs / MultiIndicatorProbeOutputs |
+| `evaluators/threshold` | 规则评估 (排雷 + 选优) | ProbeOutputs | 评分/标签/选股结果 |
+| `truth` | T.R.U.T.H. 六维评估 | ProbeOutputs / MultiIndicatorProbeOutputs | 六维基因 + 求解器结果 |
+| `reporters` | 报告生成 | 评估结果 + TruthProcessResult | Markdown/JSON 报告 |
+| `core` | DuckDB/ProbeEngine/接口等基础设施 | - | 工具函数与通用接口 |
 
-### 3.2 接口定义
+### 3.2 接口定义（core/interfaces.py）
 
 ```python
-# core/interfaces.py
-
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Union
+from typing import Any, Dict
 import pandas as pd
+from abc import ABC, abstractmethod
+
 
 @dataclass
 class AnalysisResult:
-    """分析结果基类"""
+    """标准化的分析结果."""
     data: pd.DataFrame
     metric_name: str
     metadata: Dict[str, Any]
 
+
+@dataclass
+class ScoreResult:
+    """标准化的评分/评估结果."""
+    data: pd.DataFrame
+    score_col: str
+    grade_col: str
+    metadata: Dict[str, Any]
+
+
 class IAnalyzer(ABC):
-    """分析器接口"""
+    """业务分析引擎接口 (如 DuckDB 趋势分析)."""
 
     @abstractmethod
-    def analyze(self, data: Union[str, pd.DataFrame], config: dict) -> AnalysisResult:
-        """执行分析
+    def analyze(self, data: Any, config: Dict[str, Any]) -> AnalysisResult:
+        """执行分析并返回标准化结果."""
+        raise NotImplementedError
 
-        Args:
-            data: 输入数据（文件路径或 DataFrame）
-            config: 分析配置
-
-        Returns:
-            分析结果
-        """
-        pass
 
 class IScorer(ABC):
-    """评分器接口"""
+    """通用评分/评估引擎接口.
+
+    当前具体实现主要由 `evaluators/threshold` 提供, 该接口作为
+    统一抽象, 便于后续扩展其他评分引擎。
+    """
 
     @abstractmethod
-    def score(self, data: pd.DataFrame, config: dict) -> pd.DataFrame:
-        """执行评分
+    def score(self, result: AnalysisResult, config: Dict[str, Any]) -> ScoreResult:
+        """对分析结果应用评分/规则, 产生 ScoreResult."""
+        raise NotImplementedError
 
-        Args:
-            data: 分析结果数据
-            config: 评分配置
-
-        Returns:
-            带评分的数据
-        """
-        pass
 
 class IReporter(ABC):
-    """报告器接口"""
+    """报告生成引擎接口."""
 
     @abstractmethod
-    def generate(self, data: Dict[str, Any], output_path: str) -> str:
-        """生成报告
-
-        Args:
-            data: 报告数据
-            output_path: 输出路径
-
-        Returns:
-            报告文件路径
-        """
-        pass
+    def generate(self, result: ScoreResult, config: Dict[str, Any]) -> str:
+        """基于 ScoreResult 生成可读报告 (如 Markdown 文件路径)."""
+        raise NotImplementedError
 ```
 
 ---

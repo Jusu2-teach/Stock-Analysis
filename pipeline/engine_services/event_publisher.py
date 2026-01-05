@@ -170,7 +170,8 @@ class EventPublisher:
             self._bus.emit(PipelineStartedEvent(
                 pipeline_name=pipeline_name,
                 config_path=config_path,
-                step_names=step_names,
+                total_steps=len(step_names) if step_names else 0,
+                execution_order=step_names or [],
             ))
         except Exception as e:
             self._logger.debug(f"PipelineStartedEvent 发布失败: {e}")
@@ -195,8 +196,8 @@ class EventPublisher:
             self._bus.emit(PipelineCompletedEvent(
                 pipeline_name=pipeline_name,
                 status=status,
-                executed_steps=executed_steps,
-                duration_ms=duration_ms,
+                duration_sec=duration_ms / 1000.0 if duration_ms else 0.0,
+                executed_steps=len(executed_steps) if executed_steps else 0,
             ))
         except Exception as e:
             self._logger.debug(f"PipelineCompletedEvent 发布失败: {e}")
