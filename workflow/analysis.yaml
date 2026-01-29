@@ -38,7 +38,7 @@
 pipeline:
   name: "DuckDB财务基线筛选管道"
   orchestration:
-    granularity: node
+    granularity: task  # 按单个任务调度
     soft_fail: true
     task_runner: "sequential"
     max_workers: 4
@@ -315,24 +315,48 @@ pipeline:
         format: "csv"
         data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
 
-    # ========== 综合报告生成 (Cross-Analysis Report) ==========
-    # 直接使用探针分析结果，无需读取CSV文件
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 📊 规则评估 + 综合报告 (Evaluators → Comprehensive Report)
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 数据流: 8个探针结果 → Evaluators (规则评估) → 综合报告
+    #
+    # 评估体系:
+    # ├─ 否决规则 (Veto): 连续亏损、严重恶化、断崖下跌
+    # ├─ 扣分规则 (Penalty): 趋势恶化、波动过大、交叉验证失败
+    # ├─ 加分规则 (Bonus): 高位稳定、持续改善、趋势显著
+    # └─ 投资策略: 高成长、困境反转、稳定分红、周期底部、护城河
+    # ═══════════════════════════════════════════════════════════════════════════
 
-    # 🔵 规则驱动报告（基于预设阈值）
+    # 🔵 Step 1: 规则评估（29条规则 + 5种策略）
+    - name: "Run_Evaluator"
+      component: "business_engine"
+      engine: "evaluator"
+      method: ["run_evaluator"]
+      depends_on:  # 🔑 显式依赖声明
+        - "Analyze_ROIC_Trend"
+        - "Analyze_ROE_Trend"
+        - "Analyze_ROIIC_Trend"
+        - "Analyze_GrossMargin_Trend"
+        - "Analyze_NetMargin_Trend"
+        - "Analyze_Revenue_Trend"
+        - "Analyze_Profit_Trend"
+        - "Analyze_OCF_Trend"
+      parameters:
+        # 🌟 PDDA 自动注入 aggregated_trends 参数
+        {}  # 空参数字典，让 PDDA 自动聚合
+      outputs:
+        parameters:
+          - name: Evaluator_Result
+
+    # 🔵 Step 2: 综合报告生成（使用评估结果）
     - name: "Generate_Comprehensive_Report"
       component: "business_engine"
       engine: "reporting"
       method: ["report_comprehensive"]
       parameters:
-        # 直接接收探针分析结果
-        roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
-        roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
-        gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
-        net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
-        revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
-        profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
-        ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+        # 使用 Evaluator 处理后的结果
+        evaluator_result: "steps.Run_Evaluator.outputs.parameters.Evaluator_Result"
         output_path: "data/comprehensive_analysis_report.md"
       outputs:
         parameters:
@@ -363,34 +387,114 @@ pipeline:
     #     周期性波动
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # 🧬 Step 1: T.R.U.T.H. 处理（专业基因提取 + 求解器）
-    - name: "Process_Truth_System"
+    # 🧬 Step 1: TRUTH 处理（六因子 + 三求解器）
+    - name: "Run_TRUTH"
       component: "business_engine"
       engine: "truth"
-      method: ["process_truth"]
+      method: ["run_truth"]
+      depends_on:  # 🔑 显式依赖声明
+        - "Analyze_ROIC_Trend"
+        - "Analyze_ROE_Trend"
+        - "Analyze_ROIIC_Trend"
+        - "Analyze_GrossMargin_Trend"
+        - "Analyze_NetMargin_Trend"
+        - "Analyze_Revenue_Trend"
+        - "Analyze_Profit_Trend"
+        - "Analyze_OCF_Trend"
       parameters:
-        # 接收探针分析结果 (roiic_data 已禁用)
-        roic_data: "steps.Analyze_ROIC_Trend.outputs.parameters.ROIC_Trend_Result"
-        roe_data: "steps.Analyze_ROE_Trend.outputs.parameters.ROE_Trend_Result"
-        roiic_data: "steps.Analyze_ROIIC_Trend.outputs.parameters.ROIIC_Trend_Result"
-        gross_margin_data: "steps.Analyze_GrossMargin_Trend.outputs.parameters.GrossMargin_Trend_Result"
-        net_margin_data: "steps.Analyze_NetMargin_Trend.outputs.parameters.NetMargin_Trend_Result"
-        revenue_data: "steps.Analyze_Revenue_Trend.outputs.parameters.Revenue_Trend_Result"
-        profit_data: "steps.Analyze_Profit_Trend.outputs.parameters.Profit_Trend_Result"
-        ocf_data: "steps.Analyze_OCF_Trend.outputs.parameters.OCF_Trend_Result"
+        # 🌟 PDDA 自动注入 aggregated_trends 参数
+        # 系统会自动收集前面8个 analyze_metric_trend 的输出
+        {}  # 空参数字典，让 PDDA 自动聚合
       outputs:
         parameters:
-          - name: Truth_Processed_Results
+          - name: Truth_Result
 
-    # 🟢 Step 2: T.R.U.T.H. 报告生成（使用处理后的数据）
+    # 🟢 Step 2: TRUTH 报告生成（使用 TRUTH 结果）
     - name: "Generate_Truth_Report"
       component: "business_engine"
       engine: "reporting"
       method: ["report_truth"]
       parameters:
-        # 使用 T.R.U.T.H. 处理后的结果
-        truth_processed: "steps.Process_Truth_System.outputs.parameters.Truth_Processed_Results"
+        # 使用 TRUTH 处理后的结果
+        truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
         output_path: "data/truth_analysis_report.md"
       outputs:
         parameters:
           - name: Truth_Report_Path
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 📊 估值分析模块 (Valuation Analysis)
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 估值模块集成基本面分析与市场价格：
+    # - DCF: 现金流折现估值
+    # - PE-Band: 历史估值带分位数
+    # - Relative: PE/PB/PS/PEG相对估值
+    # - FairValue: 多方法加权融合
+    #
+    # 注意:
+    # - 估值模块需要市场数据（价格、市值、PE等）
+    # - 可选步骤：如果没有市场数据，可注释掉
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 💰 综合估值评估（需要市场数据）
+    # - name: "Evaluate_Fair_Value"
+    #   component: "business_engine"
+    #   engine: "valuation"
+    #   method: ["evaluate_fair_value"]
+    #   parameters:
+    #     current_price: 100.0  # 示例：从市场数据获取
+    #     # DCF参数
+    #     base_fcf: 1000000000  # 基准自由现金流
+    #     growth_rates: [0.15, 0.12, 0.10, 0.08, 0.05]  # 5年增长率
+    #     shares_outstanding: 1000000000  # 总股本
+    #     # PE-Band参数
+    #     current_pe: 25.0
+    #     historical_pes: [20, 22, 25, 28, 30, 27, 24]  # 历史PE
+    #     # 相对估值参数
+    #     market_cap: 100000000000
+    #     net_profit: 4000000000
+    #     book_value: 50000000000
+    #     revenue: 80000000000
+    #     growth_rate: 0.15
+    #   outputs:
+    #     parameters:
+    #       - name: Fair_Value_Result
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🌍 宏观经济分析模块 (Macroeconomic Analysis)
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 宏观模块提供经济环境分析：
+    # - Indicators: GDP/CPI/PMI/M2等关键指标
+    # - Cycle: 经济周期检测 (扩张/繁荣/收缩/衰退)
+    #
+    # 注意:
+    # - 需要宏观数据源（tushare/wind）
+    # - 可选步骤：如果没有宏观数据，可注释掉
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 📈 宏观指标计算（需要宏观数据）
+    # - name: "Calculate_Macro_Indicators"
+    #   component: "business_engine"
+    #   engine: "macro"
+    #   method: ["calculate_macro_indicators"]
+    #   parameters:
+    #     data: "path/to/macro_data.csv"  # 宏观数据文件
+    #     reference_date: "2024-12-31"    # 参考日期
+    #   outputs:
+    #     parameters:
+    #       - name: Macro_Indicators_Result
+
+    # 🔄 经济周期检测（需要宏观数据）
+    # - name: "Detect_Economic_Cycle"
+    #   component: "business_engine"
+    #   engine: "macro"
+    #   method: ["detect_economic_cycle"]
+    #   parameters:
+    #     macro_data: "path/to/macro_data.csv"
+    #     reference_date: "2024-12-31"
+    #     lookback_months: 12
+    #   outputs:
+    #     parameters:
+    #       - name: Economic_Cycle_Result

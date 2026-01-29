@@ -1,60 +1,77 @@
 """
-Threshold Evaluator Module (v2.0 重构版)
+Threshold Evaluator Module (v2.0 纯净版)
 ========================================
 
-阈值评估器模块，提供基于规则的趋势质量评估。
+阈值评估器模块 - 企业级 DDD + Protocol-based 架构。
 
-重构变更 (2025-12-19):
-- 统一参数配置到 rule_config.py
-- 规则整合从 36 条降至 23 条
-- 单一引擎架构 (移除双引擎)
-- 规则按类型分组到 rules/ 目录
+✅ 重构完成 (2026-01-10):
+- DDD 领域驱动设计
+- Protocol-based 接口
+- 工厂模式 + 自动发现
+- 23条规则全部类化
+- 统一错误处理
+- 纯净架构 (无向后兼容层)
 
-模块结构:
-- rule_config.py: 统一参数配置中心
-- rules/: 规则实现
-  - veto.py: 6 条一票否决规则
-  - penalty.py: 8 条扣分规则
-  - bonus.py: 5 条加分规则
-  - validation.py: 4 条交叉验证规则
-- engine.py: 统一规则引擎
-- models.py: 数据模型
-- strategies.py: 5 个投资策略
-- context.py: 评估上下文
-- industry_config.py: 行业配置
-- metric_thresholds.py: 指标阈值配置
+快速开始:
+    >>> from evaluators.threshold import (
+    ...     TrendContext, RuleEngine, get_default_factory
+    ... )
+    >>> engine = RuleEngine()
+    >>> result = engine.evaluate(context)
 
-架构位置:
-    ProbeOutputs (from analyzers/trend/probes)
-        ↓
-    RuleEngine (本模块)
-        ↓
-    EvaluationResult
-        ↓
-    Threshold Report
-
-设计原则:
-- 探针层 (analyzers/trend/probes): 纯数学计算，返回 ProbeOutputs
-- 评估层 (本模块): 业务阈值判断，返回 Pass/Fail/Score
-- 两层分离，探针可复用，阈值可配置
+作者: AStock Analysis System
+日期: 2026-01-10
+版本: 2.0.0
 """
 
-# 引擎 (统一入口)
-from .engine import (
-    RuleEngine,
-    TrendEvaluator,
-    EvaluationResult,
-    RuleOutcome,
+# 领域模型
+from .domain_models import (
+    TrendContext,
+    TrendMetrics,
+    VolatilityMetrics,
+    DeteriorationMetrics,
+    InflectionMetrics,
+    CyclicalMetrics,
+    DataQualityMetrics,
+    ReferenceMetric,
+    TrendDirection,
+    VolatilityRegime,
+    CyclePhase,
+    DeteriorationSeverity,
 )
 
-# 数据模型
-from .models import (
-    StrategyMatchResult,
-    RuleResult,
-    RuleCategory,
+# Protocol 接口
+from .protocols import (
+    RuleProtocol,
+    StrategyProtocol,
+    RuleEngineProtocol,
+    RuleFactoryProtocol,
 )
 
-# 统一配置
+# 结果数据类
+from .results import (
+    RuleResultImpl,
+    StrategyResultImpl,
+    EvaluationResultImpl,
+    create_veto_result,
+    create_penalty_result,
+    create_bonus_result,
+    create_info_result,
+)
+
+# 向后兼容别名
+RuleResult = RuleResultImpl
+StrategyResult = StrategyResultImpl
+EvaluationResult = EvaluationResultImpl
+
+# 工厂
+from .factories import (
+    RuleFactory,
+    get_default_factory,
+    reset_default_factory,
+)
+
+# 配置
 from .rule_config import (
     RuleConfig,
     ScoringConfig,
@@ -62,42 +79,39 @@ from .rule_config import (
     PenaltyThresholds,
     BonusThresholds,
     ValidationThresholds,
+    RuleCategory,
     DEFAULT_CONFIG,
 )
 
-# 规则模块 (按类型分组)
-from .rules import (
-    ALL_RULES,
-    ALL_VETO_RULES,
-    ALL_PENALTY_RULES,
-    ALL_BONUS_RULES,
-    ALL_VALIDATION_RULES,
-    # 单独导出便于测试
-    Rule,
-    RuleResult as NewRuleResult,
+# 引擎
+from .engine import (
+    RuleEngine,
+    TrendEvaluator,
+    RuleExecutionSummary,
 )
 
-# 策略模块
+# 策略
 from .strategies import (
-    TrendStrategy,
-    BaseStrategy,
-    StrategyResult,
     HighGrowthStrategy,
     TurnaroundStrategy,
     StableDividendStrategy,
     CyclicalBottomStrategy,
     MoatDefenseStrategy,
+    create_all_strategies,
     get_default_strategies,
-    get_strategy_by_name,
 )
 
-# 上下文
-from .context import (
-    EvaluationContext,
-    EvaluationContextBuilder,
+# 错误处理
+from .warnings import (
+    WarningLevel,
+    WarningCode,
+    EvaluatorWarning,
+    WarningCollector,
+    create_warning,
+    log_warning,
 )
 
-# 配置模块
+# 业务配置
 from .industry_config import (
     INDUSTRY_CATEGORY_MAP,
     CYCLICAL_INDUSTRIES,
@@ -107,6 +121,7 @@ from .industry_config import (
     get_roic_thresholds,
     get_roiic_thresholds,
 )
+
 from .metric_thresholds import (
     MetricCategory,
     MetricThresholdConfig,
@@ -117,55 +132,73 @@ from .metric_thresholds import (
 
 
 __all__ = [
-    # ===== 核心 API (推荐使用) =====
-    # 引擎
-    "RuleEngine",
-    "TrendEvaluator",
-    "EvaluationResult",
-    "RuleOutcome",
+    # 领域模型
+    "TrendContext",
+    "TrendMetrics",
+    "VolatilityMetrics",
+    "DeteriorationMetrics",
+    "InflectionMetrics",
+    "CyclicalMetrics",
+    "DataQualityMetrics",
+    "ReferenceMetric",
+    "TrendDirection",
+    "VolatilityRegime",
+    "CyclePhase",
+    "DeteriorationSeverity",
+
+    # Protocol 接口
+    "RuleProtocol",
+    "StrategyProtocol",
+    "RuleEngineProtocol",
+    "RuleFactoryProtocol",
+
+    # 结果数据类
+    "RuleResultImpl",
+    "StrategyResultImpl",
+    "EvaluationResultImpl",
+    "create_veto_result",
+    "create_penalty_result",
+    "create_bonus_result",
+    "create_info_result",
+
+    # 工厂
+    "RuleFactory",
+    "get_default_factory",
+    "reset_default_factory",
+
     # 配置
     "RuleConfig",
     "DEFAULT_CONFIG",
-    # 规则
-    "ALL_RULES",
-    "Rule",
-    # 策略
-    "get_default_strategies",
-    "StrategyResult",
-
-    # ===== 模型与结果类型 =====
-    "RuleResult",
-    "RuleCategory",
-    "StrategyMatchResult",
-
-    # ===== 配置模块 =====
     "ScoringConfig",
     "VetoThresholds",
     "PenaltyThresholds",
     "BonusThresholds",
     "ValidationThresholds",
+    "RuleCategory",
 
-    # ===== 规则分组 =====
-    "ALL_VETO_RULES",
-    "ALL_PENALTY_RULES",
-    "ALL_BONUS_RULES",
-    "ALL_VALIDATION_RULES",
+    # 引擎
+    "RuleEngine",
+    "TrendEvaluator",
+    "RuleExecutionSummary",
 
-    # ===== 策略 =====
-    "TrendStrategy",
-    "BaseStrategy",
+    # 策略
     "HighGrowthStrategy",
     "TurnaroundStrategy",
     "StableDividendStrategy",
     "CyclicalBottomStrategy",
     "MoatDefenseStrategy",
-    "get_strategy_by_name",
+    "create_all_strategies",
+    "get_default_strategies",
 
-    # ===== 上下文 =====
-    "EvaluationContext",
-    "EvaluationContextBuilder",
+    # 错误处理
+    "WarningLevel",
+    "WarningCode",
+    "EvaluatorWarning",
+    "WarningCollector",
+    "create_warning",
+    "log_warning",
 
-    # ===== 行业配置 =====
+    # 业务配置
     "INDUSTRY_CATEGORY_MAP",
     "CYCLICAL_INDUSTRIES",
     "get_industry_category",
@@ -173,8 +206,6 @@ __all__ = [
     "get_category_thresholds",
     "get_roic_thresholds",
     "get_roiic_thresholds",
-
-    # ===== 指标阈值 =====
     "MetricCategory",
     "MetricThresholdConfig",
     "METRIC_THRESHOLDS",

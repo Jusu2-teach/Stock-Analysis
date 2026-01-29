@@ -13,8 +13,7 @@ from .metrics import MetricsService
 from .executor import MethodExecutor
 from .discovery import ModuleLoader, Scanner
 
-# 统一事件总线（必需依赖）
-from shared import EventBus, MethodRegisteredEvent, RegistryRefreshedEvent
+from ..telemetry import OrchestratorObserver, default_observer
 
 logger = logging.getLogger(__name__)
 
@@ -32,24 +31,40 @@ class Registry:
     _instance: Optional['Registry'] = None
     _lock = threading.Lock()
 
-    def __init__(self, config: Optional[RegistryConfig] = None):
+    def __init__(
+        self,
+        config: Optional[RegistryConfig] = None,
+        *,
+        observer: Optional[OrchestratorObserver] = None,
+    ):
         self.config = config or RegistryConfig()
         self.index = RegistryIndex()
         self.metrics = MetricsService()
-        self.executor = MethodExecutor(self.metrics)
+        self._observer: OrchestratorObserver = observer or default_observer()
+        self.executor = MethodExecutor(self.metrics, observer=self._observer)
         self.loader = ModuleLoader(self.index, self.config)
         self.scanner = Scanner(self)
-        self._event_bus = EventBus.get()
 
     # ---------------- Singleton (Thread-Safe) -----------------
     @classmethod
-    def get(cls) -> 'Registry':
+    def get(
+        cls,
+        config: Optional[RegistryConfig] = None,
+        *,
+        observer: Optional[OrchestratorObserver] = None,
+    ) -> 'Registry':
         """获取单例实例（线程安全）"""
         if cls._instance is None:
             with cls._lock:
                 # Double-check locking
                 if cls._instance is None:
-                    cls._instance = cls()
+                    cls._instance = cls(config=config, observer=observer)
+        elif observer is not None:
+            # Instance already exists; keep behavior stable while allowing late wiring.
+            with cls._lock:
+                if cls._instance is not None:
+                    cls._instance._observer = observer
+                    cls._instance.executor.set_observer(observer)
         return cls._instance
 
     @classmethod
@@ -70,17 +85,7 @@ class Registry:
             # warn: 覆盖
         self.index.add(reg)
 
-        # 发布方法注册事件
-        self._event_bus.emit(MethodRegisteredEvent(
-            component=reg.component_type,
-            method=reg.engine_name,
-            engine_type=reg.engine_type,
-            engine_name=reg.engine_name,
-            version=reg.version,
-            priority=reg.priority,
-            full_key=full_key,
-            source='orchestrator.registry'
-        ))
+        self._observer.on_method_registered(reg, source='orchestrator.registry')
         return True
 
     def scan(self, module: Any, component_type: str, engine_type: str, **kwargs) -> int:
@@ -95,12 +100,12 @@ class Registry:
         """刷新注册表（清空索引 -> 重新加载）"""
         self.index.clear()
         self.auto_load(hot_reload=hot_reload)
-        # 发布刷新事件
-        self._event_bus.emit(RegistryRefreshedEvent(
+
+        self._observer.on_registry_refreshed(
             mode='full',
             method_count=len(self.index.by_full_key),
-            source='orchestrator.registry'
-        ))
+            source='orchestrator.registry',
+        )
 
     # ---------------- Selection -----------------
     def select(self, component_type: str, method_name: str, *, strategy: str = 'default', preferred_engine: Optional[str] = None) -> MethodRegistration:

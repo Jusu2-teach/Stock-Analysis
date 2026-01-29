@@ -1,46 +1,101 @@
-# AStock Analysis - AI Agent 开发指南
+# AStock Analysis - Copilot 指令
 
-## 架构速览
-```text
-workflow/*.yaml → pipeline/core/execute_manager.py → orchestrator.AStockOrchestrator → src/astock/business_engines/*
+## 架构总览（四层解耦）
+
 ```
-- Orchestrator：统一方法注册与路由（`@register_method` + 策略选择），核心在 `orchestrator/orchestrator.py`、`orchestrator/decorators/register.py`、`orchestrator/registry/*`。
-- Pipeline：YAML 驱动、依赖图 + Prefect/Kedro 混合执行，入口 `pipeline/cli.py`，核心在 `pipeline/core/execute_manager.py` 与 `pipeline/core/services/*`。
-- Business Engines：纯业务逻辑（趋势探针、T.R.U.T.H. 基因、报告），位于 `src/astock/business_engines/*`，按 `analyzers/`、`truth/`、`reporters/` 分层。
-- Shared：事件总线、数据契约、命名规范，位于 `shared/*`；通过 EventBus 与 DataStore/ReferenceResolver 串联各层。
+workflow/*.yaml → pipeline/ → orchestrator/ → src/astock/business_engines/
+  (声明式)      (DAG/缓存/PDDA)  (注册/路由)      (纯业务逻辑)
+```
 
-## 常见开发任务
-- 新增业务方法：在 `src/astock/business_engines/{module}/engine.py`（或具体子模块内）实现函数，并用 `register_method` 注册，例如：
+**核心数据流**：`trend`（8探针趋势分析）→ PDDA 聚合 → `evaluators`（规则评分）与 `truth`（T.R.U.T.H 六因子）**并行** → `reporters` 生成 Markdown 报告。
+
+## 改代码的正确姿势
+
+| 改动类型 | 改哪里 | 参考文件 |
+|---------|--------|---------|
+| 业务算法/规则 | `src/astock/business_engines/**` | `trend/engine.py`, `evaluators/engine.py` |
+| 新增指标 | `shared/naming_convention.py` 的 `MetricRegistry` | 搜索 `MetricConfig` |
+| 工作流配置 | `workflow/analysis.yaml` | 复制现有 step 模板 |
+| 框架扩展 | `pipeline/` 或 `orchestrator/` | 各自 README.md |
+
+**方法注册模板**（所有业务方法必须用 `@register_method` 装饰器注册）：
+
 ```python
 from orchestrator.decorators.register import register_method
+from shared.aggregation import AggregatableResult
 
 @register_method(
-    component_type="business_engine",   # 如 duckdb/truth/reporting 等业务引擎
-    engine_type="duckdb",
-    engine_name="analyze_metric_trend", # 在 workflow 中通过 method 引用
+    component_type="business_engine",  # datahub | data_engine | business_engine
+    engine_type="duckdb",              # duckdb | polars | pandas
+    engine_name="my_step"              # workflow YAML 中 method: [xxx] 引用的名称
 )
-def analyze_metric_trend(data, **params): ...
+def my_step(data, **params) -> AggregatableResult[str, "pd.DataFrame"]:
+    return AggregatableResult(key="roic", value=df, namespace="trends")
 ```
-- 新增工作流步骤：在 `workflow/*.yaml` 中添加 `steps` 条目，`component/engine/method` 对应 Orchestrator 注册信息，参数通过 `steps.{Step}.outputs.parameters.{Name}` 传递；参考 `workflow/analysis.yaml` 中 `Analyze_ROIC_Trend` 与 `Process_Truth_System` 的写法。
-- 指标命名：通过 `shared/naming_convention.py` 中的 `MetricRegistry` 与 `ColumnBuilder` 统一管理（如 `ColumnBuilder.analysis_column("roic", "slope")`）；新增业务指标时优先扩展 `MetricRegistry._METRICS`，保持 `metric_name`（如 `roic/revenue/net_margin`）与底层列映射一致。
-- 事件与跨层通信：使用 `shared/event_bus` 中的 `EventBus` 与标准事件（如 `pipeline.node.started`、`pipeline.node.completed`），不要从业务层直接调用 Pipeline/Orchestrator 内部类。
-- 数据存储与引用：Pipeline 通过 `shared/contracts/store` 的 `DataStore` 和 `ReferenceResolver` 管理 `steps.X.outputs.parameters.Y` 引用，不要手写字符串解析或自建全局字典；相关设计见 `shared/contracts/README.md` 与 `pipeline/core/context.py`。
 
-## 运行与调试
-- 运行主分析工作流：`python -m pipeline run -c workflow/analysis.yaml`（默认顺序执行全部步骤）。
-- 断点续跑 / 子集执行：使用 `--resume`、`--only`、`--exclude` 等参数（详见 `pipeline/README.md`），便于只重跑新增/修改节点。
-- 调试模式：`ASTOCK_DEBUG=1 python -m pipeline run -c workflow/analysis.yaml`，开启更详细日志与事件输出。
-- 查看已注册方法：`python -m pipeline engines`，用于确认 `component_type/engine_type/engine_name` 是否正确暴露给 Orchestrator。
-- 可视化依赖图与指标：通过 `python -m pipeline graph ...`、`python -m pipeline metrics ...`，快速理解当前 workflow 的执行结构与性能热点。
+## PDDA 聚合系统
 
-## 关键约束与约定
-- 分层依赖：`src/astock/*` 不得反向导入 `orchestrator/` 或 `pipeline/`（唯一例外是 `register_method` 装饰器）；`shared/*` 作为基础设施层可被各层引用。
-- 数据处理：大数据路径在 `data/10yd_base`、`data/5yd_base`，业务引擎优先使用 DuckDB/Polars 进行批量计算，避免 pandas 一次性加载完整 CSV。
-- Orchestrator 校验：通过环境变量 `ASTOCK_VALIDATION_MODE=strict|warn|off`、`ASTOCK_INPUT_STYLE`、`ASTOCK_CONFLICT_MODE` 配置签名与调用校验；默认推荐 `warn` + `strict_single`，以在开发期暴露参数不一致问题。
-- Pipeline 数据流：入口通常为 `data/polars/*` 归一化数据，中间结果写入 `data/filter_middle/*_trend_analysis.csv`，最终报告输出到 `data/comprehensive_analysis_report.md` 与 `data/truth_analysis_report.*`。
-- 测试与质量：pytest/coverage 已在 `pyproject.toml` 预配置，单元测试应放在根目录 `tests/` 下；`shared/event_bus`、`shared/contracts`、`orchestrator` 等基础模块优先补齐/更新测试。
-- 参考文档：深入设计见 `docs/ORCHESTRATOR_ARCHITECTURE.md`、`docs/PIPELINE_ARCHITECTURE.md`、`docs/TRUTH_SYSTEM_DESIGN.md`、`shared/event_bus/README.md`、`src/astock/business_engines/README.md`。
+- **生产者**：返回 `AggregatableResult(key=..., value=..., namespace=...)`
+- **消费者**：函数签名声明 `aggregated_trends: Dict[str, pd.DataFrame]`，自动注入
+- **实现**：`shared/aggregation/` (协议) + `pipeline/aggregation/core.py` (运行时)
 
-## RD-Agent 子目录说明
-- 仓库下的 `RD-Agent/` 为上游开源项目 `microsoft/RD-Agent` 的完整副本，具有独立的 `pyproject.toml`、`requirements` 与 `test/` 结构。
-- 如需在 `RD-Agent/` 内改动，请遵循其自带的 README、Makefile 与测试/格式化规范；在实现 AStock 功能时，默认不要大范围重构该子目录，仅在确有需要时局部扩展或调用其能力。
+## 命名规范（三层映射）
+
+YAML `metric_name: 'roic'` → `MetricRegistry.get('roic').source_column` → 输出列 `ColumnBuilder.analysis_column("roic", "slope")` = `roic_slope`
+
+## 常用命令
+
+```bash
+python -m pipeline run -c workflow/analysis.yaml              # 执行完整工作流
+python -m pipeline run -c workflow/analysis.yaml --only Analyze_ROIC_Trend  # 单步调试
+python -m pipeline validate -c workflow/analysis.yaml         # 校验 YAML 语法
+python -m pipeline graph -c workflow/analysis.yaml            # 生成 DAG 可视化
+python -m pipeline engines                                    # 列出所有已注册方法
+python -m pipeline cache --clear                              # 清理缓存
+python test_pipeline_complete.py                              # 集成测试 (46 用例)
+```
+
+## 环境变量
+
+| 变量 | 值 | 说明 |
+|------|---|------|
+| `ASTOCK_VALIDATION_MODE` | `strict\|warn\|off` | 注册签名校验级别 |
+| `ASTOCK_DEBUG` | `1` | 开启详细调试日志 |
+
+## 关键路径
+
+| 类型 | 路径 |
+|------|------|
+| 输入数据 | `data/polars/10yd_final_industry.csv`（10年）、`5yd_final_industry.csv`（5年） |
+| 中间产物 | `data/filter_middle/*.csv`（8个探针 CSV） |
+| 输出报告 | `data/comprehensive_analysis_report.md`、`data/truth_analysis_report.md` |
+
+## 硬性约束 ⚠️
+
+1. **`evaluators` 与 `truth` 禁止互相 import**——并行独立的两条分析路径
+2. **`reporters` 只消费上游结果**——不硬编码业务规则
+3. **业务层不反向依赖框架层**——`business_engines/` 仅可 import `@register_method` 装饰器
+4. **不要修改 `RD-Agent/`**——只读参考副本
+
+## 8 个趋势探针
+
+`roic`, `roe`, `roiic`, `revenue`(→total_revenue_ps), `profit`(→eps), `gross_margin`, `net_margin`, `ocf`(→ocfps)
+
+## YAML Step 模板
+
+```yaml
+- name: "Analyze_XXX_Trend"
+  component: "business_engine"
+  engine: "duckdb"
+  method: ["analyze_metric_trend"]
+  parameters:
+    data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+    group_cols: 'ts_code'
+    metric_name: 'roic'           # MetricRegistry 业务键
+    min_periods: 5
+    window_size: 5                # 不配置=使用全量数据
+    reference_metrics: ["roe"]    # 交叉验证
+  outputs:
+    parameters:
+      - name: XXX_Trend_Result
+```

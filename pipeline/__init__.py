@@ -1,134 +1,246 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-AStock Pipeline System
-=====================
+Pipeline - Enterprise-grade workflow execution engine.
 
-Configuration-driven workflow execution system with intelligent orchestration.
+Architecture:
+    Config (YAML) → Core (Spec/Run/State) → Execution (Runner/Executor) → Data (Catalog)
 
-Core Components:
-- ExecuteManager: Pipeline 执行管理器
-- PipelineContext: 共享执行上下文
-- DependencyGraph: 专业级依赖图管理
-- HookManager: 事件钩子系统
+Modules:
+    - core/: 核心模型 (FlowSpec, TaskSpec, FlowRun, TaskRun, State, DAG, Container)
+    - events/: 企业级事件总线 (EventBus, HookSpec, EventMiddleware, EventStore)
+    - aggregation/: PDDA 数据聚合框架 (Scope, Collector, Injector, Lineage)
+    - execution/: 执行引擎 (FlowRunner, TaskExecutor, ExecutionMiddlewareBase)
+    - catalog/: 数据目录管理
+    - cache/: 缓存后端
+    - config/: 配置加载
 
-Engine Services (专供引擎层使用):
-- CacheService: 缓存管理（指纹计算、签名持久化）
-- EventPublisher: 事件发布（统一 EventBus 封装）
+Usage:
+    from pipeline import load_flow, FlowRunner
+    from pipeline.core.container import get_container
 
-Core Services (Pipeline 核心服务):
-- ConfigService: 配置加载与步骤解析
-- FlowExecutor: 流程执行协调
-- ResultAssembler: 结果组装
+    # Load and run with DI
+    spec = load_flow("workflow/analysis.yaml")
+    container = get_container()
+    runner = FlowRunner(container=container)
+    result = runner.run(spec)
 
-Engines:
-- PrefectEngine: Hybrid Prefect+Kedro 运行时
+    # Check result
+    print(result.state)  # FlowState.SUCCESS
 
-Usage Example:
-    from pipeline import ExecuteManager, create_pipeline
+    # Events (via Container)
+    from pipeline.events import EventBus
+    bus = container.resolve(EventBus)
+    bus.on("task.completed", lambda e: print(e))
 
-    # Basic usage
-    manager = ExecuteManager()
-    manager.load_config('pipeline.yaml')
-    result = manager.execute_pipeline()
-
-    # Access dependency graph
-    graph = manager.ctx.get_dependency_graph()
-    print(graph.to_mermaid())
-
-Author: Your Name
-Version: 1.0.0 (与 pyproject.toml 对齐)
+    # PDDA (via Scoped Container)
+    from pipeline.aggregation import AggregatableResult, Collector
+    with container.create_scope() as scope:
+        collector = scope.resolve(Collector)
+        result = AggregatableResult(key="metric", value=df)
+        collector.collect(result, scope=scope)
 """
-from __future__ import annotations
 
-# Core Components
-from .core.execute_manager import ExecuteManager
-from .core.context import PipelineContext, StepSpec, StepOutput
-from .core.dependency_graph import (
-    DependencyGraph,
-    DependencyType,
-    DependencyEdge,
-    ExecutionPlan,
-    ExecutionLayer,
-    CyclicDependencyError,
-    MissingDependencyError,
+__version__ = "2.0.0"
+
+# Core models
+from pipeline.core.spec import FlowSpec, TaskSpec, TaskInputSpec, TaskOutputSpec
+from pipeline.core.run import FlowRun, TaskRun
+from pipeline.core.state import TaskState, FlowState
+from pipeline.core.policy import RetryPolicy
+from pipeline.core.dag import DAG
+
+# Data catalog
+from pipeline.catalog.catalog import DataCatalog
+from pipeline.catalog.entry import DataEntry
+
+# Events (v2.0 - 层级路由 + 类型安全)
+from pipeline.events.bus import (
+    EventBus,
+    Event,
+    Priority,
+    Subscription,
+    on,
+)
+from pipeline.events.types import (
+    FlowPayload,
+    TaskPayload,
+    FlowEvents,
+    TaskEvents,
+    DataEvents,
+    EventType,
+)
+from pipeline.events.middleware import (
+    LoggingMiddleware,
+    MetricsMiddleware,
+    RetryMiddleware,
 )
 
-# Engines
-from .engines.prefect_engine import PrefectEngine
+# Aggregation (v2.0 - PDDA 智能注入)
+from pipeline.aggregation.core import (
+    AggregatableResult,
+    AggregationScope,
+    ScopeManager,
+    Collector,
+    ConflictStrategy,
+)
+from pipeline.aggregation.inject import (
+    Injector,
+    inject,
+    Aggregated,
+)
+from pipeline.aggregation.lineage import (
+    DataLineage,
+    LineageTracker,
+    LineageQuery,
+)
 
-# Services (Advanced)
-from .core.services.hook_manager import HookManager
+# Execution
+from pipeline.execution.middleware import ExecutionMiddlewareBase, ExecutionMiddlewareChain
+from pipeline.execution.executor import TaskExecutor
+from pipeline.execution.runner import FlowRunner, RunnerConfig, DryRunResult
 
-# Engine Services (专供引擎使用)
-from .engine_services import CacheService, EventPublisher
+# Protocols (新架构 - 推荐使用)
+from pipeline.protocols import (
+    # Core Protocols
+    ExecutableProtocol,
+    ExecutionResult,
+    ExecutionStatus,
+    ResolvableProtocol,
+    ResolveResult,
+    ConfigurableProtocol,
+    ConfigSchema,
+    SerializableProtocol,
 
-PREFECT_AVAILABLE = True  # always true in trimmed hybrid mode
+    # Domain Protocols
+    TaskProtocol,
+    TaskInfo,
+    TaskCapabilities,
+    IOProtocol,
+    InputSpec,
+    OutputSpec,
+    ResourceProtocol,
+    ResourceSpec,
+    ContextProtocol,
+    ExecutionContext,
 
-# 与项目版本/作者信息对齐（见 pyproject.toml）
-__version__ = "1.0.0"
-__author__ = "Your Name"
+    # Integration Protocols
+    MethodResolverProtocol,
+    MethodInfo,
+    MethodSelectorProtocol,
+    StorageBackendProtocol,
+    StorageResult,
+    NotificationChannelProtocol,
+    NotificationPayload,
+    MetricCollectorProtocol,
+    MetricValue,
+)
 
-# Export main classes and functions
+# Cache
+from pipeline.cache.backends import (
+    CacheBackend,
+    NullCacheBackend,
+    MemoryCacheBackend,
+    FileCacheBackend,
+    TieredCacheBackend,
+)
+
+from pipeline.cache.router import CacheBackendRouter
+
+# Config
+from pipeline.config.loader import YAMLLoader, load_flow, load_flow_string
+from pipeline.config.resolver import ReferenceResolver
+
 __all__ = [
     # Core
-    'ExecuteManager',
-    'PipelineContext',
-    'StepSpec',
-    'StepOutput',
-    # Dependency Graph
-    'DependencyGraph',
-    'DependencyType',
-    'DependencyEdge',
-    'ExecutionPlan',
-    'ExecutionLayer',
-    'CyclicDependencyError',
-    'MissingDependencyError',
-    # Engines
-    'PrefectEngine',
-    # Services
-    'HookManager',
-    # Engine Services
-    'CacheService',
-    'EventPublisher',
-    # Functions
-    'create_pipeline',
-    'get_system_info',
+    "FlowSpec",
+    "TaskSpec",
+    "TaskInputSpec",
+    "TaskOutputSpec",
+    "FlowRun",
+    "TaskRun",
+    "TaskState",
+    "FlowState",
+    "RetryPolicy",
+    "DAG",
+    # Data Catalog
+    "DataCatalog",
+    "DataEntry",
+    # Events (v2.0)
+    "EventBus",
+    "Event",
+    "Priority",
+    "Subscription",
+    "on",
+    "FlowPayload",
+    "TaskPayload",
+    "FlowEvents",
+    "TaskEvents",
+    "DataEvents",
+    "EventType",
+    "LoggingMiddleware",
+    "MetricsMiddleware",
+    "RetryMiddleware",
+    # Aggregation (v2.0 PDDA)
+    "AggregatableResult",
+    "AggregationScope",
+    "ScopeManager",
+    "Collector",
+    "ConflictStrategy",
+    "Injector",
+    "inject",
+    "Aggregated",
+    "DataLineage",
+    "LineageTracker",
+    "LineageQuery",
+    # Execution
+    "ExecutionMiddlewareBase",
+    "ExecutionMiddlewareChain",
+    "TaskExecutor",
+    "FlowRunner",
+    "RunnerConfig",
+    "DryRunResult",
+
+    # Protocols - Core
+    "ExecutableProtocol",
+    "ExecutionResult",
+    "ExecutionStatus",
+    "ResolvableProtocol",
+    "ResolveResult",
+    "ConfigurableProtocol",
+    "ConfigSchema",
+    "SerializableProtocol",
+
+    # Protocols - Domain
+    "TaskProtocol",
+    "TaskInfo",
+    "TaskCapabilities",
+    "IOProtocol",
+    "InputSpec",
+    "OutputSpec",
+    "ResourceProtocol",
+    "ResourceSpec",
+    "ContextProtocol",
+    "ExecutionContext",
+
+    # Protocols - Integration (向后兼容)
+    "MethodResolverProtocol",
+    "MethodInfo",
+    "MethodSelectorProtocol",
+    "StorageBackendProtocol",
+    "StorageResult",
+    "NotificationChannelProtocol",
+    "NotificationPayload",
+    "MetricCollectorProtocol",
+    "MetricValue",
+    # Cache
+    "CacheBackend",
+    "NullCacheBackend",
+    "MemoryCacheBackend",
+    "FileCacheBackend",
+    "TieredCacheBackend",
+    "CacheBackendRouter",
+    # Config
+    "YAMLLoader",
+    "load_flow",
+    "load_flow_string",
+    "ReferenceResolver",
 ]
-
-
-def create_pipeline(config_path: str, **kwargs) -> ExecuteManager:
-    """创建并初始化 Pipeline 管理器
-
-    Args:
-        config_path: YAML 配置文件路径
-        **kwargs: 传递给 ExecuteManager 的额外参数
-
-    Returns:
-        已加载配置的 ExecuteManager 实例
-    """
-    mgr = ExecuteManager(config_path, **kwargs)
-    mgr.load_config(config_path)
-    return mgr
-
-
-def get_system_info() -> dict:
-    """获取系统信息
-
-    Returns:
-        包含版本、作者、可用引擎等信息的字典
-    """
-    return {
-        'version': __version__,
-        'author': __author__,
-        'engines': {
-            'hybrid_prefect_kedro': True,
-        },
-        'features': [
-            'dependency_graph',
-            'execution_plan',
-            'hook_system',
-            'mermaid_visualization',
-            'graphviz_export',
-        ]
-    }

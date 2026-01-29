@@ -22,6 +22,10 @@
     - WindowStrategy: 窗口策略配置
     - classify_metric: 指标自动分类函数
 
+财务上下文探针 (v3.1 新增):
+    - FinancialContextProbe: 提取资产结构和风险检测字段 (用于 β/δ_fraud 因子)
+    - FinancialContextResult: 财务上下文结果模型
+
 所有探针遵循统一协议 (ProbeProtocol):
     - compute(values, **kwargs) -> Result
     - default() -> Result
@@ -50,6 +54,12 @@ from .multi_horizon_probe import (
     METRIC_STRATEGIES,
     classify_metric,
 )
+from .financial_context_probe import (
+    FinancialContextProbe,
+    FinancialContextResult,
+    create_financial_context_probe,
+    compute_financial_context,
+)
 
 __all__ = [
     # 基础工具
@@ -66,6 +76,7 @@ __all__ = [
     "RollingProbe",
     "RobustTrendProbe",
     "MultiHorizonProbe",
+    "FinancialContextProbe",  # v3.1 新增
 
     # 周期性辅助
     "check_cyclical_preconditions",
@@ -84,4 +95,9 @@ __all__ = [
     "WindowStrategy",
     "METRIC_STRATEGIES",
     "classify_metric",
+
+    # v3.1 财务上下文
+    "FinancialContextResult",
+    "create_financial_context_probe",
+    "compute_financial_context",
 ]

@@ -67,35 +67,51 @@ class ModuleLoader:
         return discovered
 
     def _discover_modules(self, component_package: str) -> List[str]:
-        """Discover modules within a component package."""
+        """Discover modules within a component package (recursive).
+
+        Returns fully-qualified module paths (e.g. "astock.business_engines.trend.engine").
+        """
+        return self._walk_module_paths(component_package, skip_engines=True)
+
+    def _walk_module_paths(self, package_name: str, *, skip_engines: bool) -> List[str]:
         try:
-            pkg = importlib.import_module(component_package)
-            mods = []
-            for _, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
-                if ispkg or modname.startswith('_'):
-                    continue
-                if any(p in modname.lower() for p in self.config.skip_patterns):
-                    continue
-                mods.append(modname)
-            return mods
+            pkg = importlib.import_module(package_name)
         except ImportError:
             return []
 
+        mods: List[str] = []
+        prefix = f"{pkg.__name__}."
+
+        # Walk recursively through subpackages to support layouts like:
+        #   astock.business_engines.trend.engine
+        #   astock.business_engines.analysis.data_loaders
+        for module_info in pkgutil.walk_packages(pkg.__path__, prefix=prefix):
+            _, fullname, ispkg = module_info
+
+            if ispkg:
+                continue
+
+            # Skip any private modules
+            leaf = fullname.rsplit('.', 1)[-1]
+            if leaf.startswith('_'):
+                continue
+
+            lowered = fullname.lower()
+            if any(p in lowered for p in self.config.skip_patterns):
+                continue
+
+            # Avoid double-loading engine modules that will be discovered by _discover_engines.
+            if skip_engines and '.engines.' in lowered:
+                continue
+
+            mods.append(fullname)
+
+        return mods
+
     def _discover_engines(self, component_name: str) -> List[str]:
-        """Discover engine modules within a component."""
+        """Discover engine modules within a component (recursive)."""
         engines_pkg_name = f"{self.config.base_package}.{component_name}.engines"
-        try:
-            eng_pkg = importlib.import_module(engines_pkg_name)
-            mods = []
-            for _, modname, ispkg in pkgutil.iter_modules(eng_pkg.__path__):
-                if ispkg or modname.startswith('_'):
-                    continue
-                if any(p in modname.lower() for p in self.config.skip_patterns):
-                    continue
-                mods.append(modname)
-            return mods
-        except ImportError:
-            return []
+        return self._walk_module_paths(engines_pkg_name, skip_engines=False)
 
     def load_all(self, hot_reload: bool = False) -> int:
         """Load all discovered modules.
@@ -109,11 +125,11 @@ class ModuleLoader:
         discovered = self.discover_components()
         count = 0
         for comp, info in discovered.items():
-            for m in info['modules']:
-                self._import(f"{self.config.base_package}.{comp}.{m}", hot_reload)
+            for module_path in info['modules']:
+                self._import(module_path, hot_reload)
                 count += 1
-            for m in info['engines']:
-                self._import(f"{self.config.base_package}.{comp}.engines.{m}", hot_reload)
+            for module_path in info['engines']:
+                self._import(module_path, hot_reload)
                 count += 1
         return count
 

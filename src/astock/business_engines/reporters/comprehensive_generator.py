@@ -40,30 +40,6 @@ from shared.naming_convention import (
     METRIC_PREFIX_MAP,
 )
 
-# 导入行业自适应阈值引擎
-try:
-    from ..trend.industry_adaptive import (
-        get_adaptive_engine,
-        get_company_thresholds,
-        AdaptiveThresholds,
-    )
-    HAS_ADAPTIVE_ENGINE = True
-except ImportError:
-    HAS_ADAPTIVE_ENGINE = False
-
-# 导入数据驱动质量筛选器
-try:
-    from ..trend.data_driven_filter import (
-        DataDrivenQualityFilter,
-        CompanyPattern,
-        DataDrivenProfile,
-        DATA_THRESHOLDS,
-    )
-    HAS_DATA_DRIVEN_FILTER = True
-except ImportError:
-    HAS_DATA_DRIVEN_FILTER = False
-    CompanyPattern = None  # 占位
-
 logger = logging.getLogger(__name__)
 
 # 规模分类标签
@@ -112,16 +88,6 @@ class ComprehensiveReportGenerator:
             for key in MetricRegistry.all_keys()
         }
         self.df_merged = pd.DataFrame()
-
-        # v3.0: 初始化自适应阈值引擎
-        self.adaptive_engine = get_adaptive_engine() if HAS_ADAPTIVE_ENGINE else None
-        if not HAS_ADAPTIVE_ENGINE:
-            logger.warning("行业自适应阈值引擎不可用，将使用统一阈值")
-
-        # v3.0: 初始化数据驱动筛选器
-        self.data_driven_filter = None  # 延迟初始化，需要数据
-        if not HAS_DATA_DRIVEN_FILTER:
-            logger.warning("数据驱动筛选器不可用，将跳过公司模式识别")
 
     def _get_col(self, metric_key: str, field: str) -> str:
         """获取特定指标的列名"""
@@ -211,11 +177,6 @@ class ComprehensiveReportGenerator:
                 logger.info(f"规模分布: {merged['size_class'].value_counts().to_dict()}")
 
             self.df_merged = merged
-
-            # v4.0: 初始化数据驱动筛选器
-            if HAS_DATA_DRIVEN_FILTER:
-                self.data_driven_filter = DataDrivenQualityFilter(industry_data=merged)
-                logger.info("✅ 数据驱动筛选器已初始化")
 
         return merged
 
@@ -537,25 +498,28 @@ class ComprehensiveReportGenerator:
         return is_valid, risks
 
     # =========================================================================
-    # v4.0: 公司模式识别（集成 DataDrivenQualityFilter）
+    # v4.0: 公司模式识别（基于探针数据的模式分类）
     # =========================================================================
 
     def _identify_company_pattern(self, row: pd.Series) -> str:
         """
         识别公司的数据模式
 
-        使用 DataDrivenQualityFilter 的模式识别逻辑
+        基于探针分析结果识别公司模式:
+        - consistently_excellent: 一直优秀
+        - high_growth: 高速成长
+        - steady_growth: 稳健增长
+        - cyclical: 周期波动
+        - deteriorating: 持续恶化
+        - volatile_unstable: 波动不稳
+        - average: 普通
         """
-        if not HAS_DATA_DRIVEN_FILTER:
-            return "unknown"
-
         # 提取关键数据特征
         roic_latest = self._safe_get(row, self._get_col('roic', 'latest'), np.nan)
         roic_weighted = self._safe_get(row, self._get_col('roic', 'weighted'), roic_latest)
         roic_log_slope = self._safe_get(row, self._get_col('roic', 'log_slope'), 0)
         roic_r_squared = self._safe_get(row, self._get_col('roic', 'r_squared'), 0)
         roic_cv = self._safe_get(row, self._get_col('roic', 'cv'), 1.0)
-        roic_recent_slope = self._safe_get(row, self._get_col('roic', 'recent_3y_slope'), roic_log_slope)
 
         # 恶化相关
         deterioration_prob = self._safe_get(row, self._get_col('roic', 'deterioration_probability'), 0)
@@ -568,13 +532,11 @@ class ComprehensiveReportGenerator:
         # 成长相关
         revenue_cagr = self._safe_get(row, self._get_col('revenue', 'cagr'), 0)
         profit_cagr = self._safe_get(row, self._get_col('profit', 'cagr'), 0)
-        ocf_slope = self._safe_get(row, self._get_col('ocf', 'log_slope'), 0)
 
-        # 使用 DATA_THRESHOLDS
         roic_mean = roic_weighted if not np.isnan(roic_weighted) else roic_latest
         roic_min = roic_latest - roic_cv * abs(roic_latest) if roic_cv < 1 else roic_latest * 0.5
 
-        # === 模式识别逻辑（简化版，来自 data_driven_filter.py）===
+        # === 模式识别逻辑 ===
 
         # 模式1：一直优秀
         if (roic_mean >= 15 and roic_min > 8 and roic_cv < 0.3 and
@@ -738,11 +700,11 @@ class ComprehensiveReportGenerator:
 
     def _select_garp_companies(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        筛选高成长优质公司 (GARP) - v3.0 行业自适应版
+        筛选高成长优质公司 (GARP)
 
         必须满足：
-        - 营收CAGR > 行业自适应阈值（成长行业10%，防御行业5%）
-        - 利润CAGR > 行业自适应阈值
+        - 营收CAGR > 10%
+        - 利润CAGR > 15%
         - 现金流验证通过
         - 无恶化信号
         - 规模 >= 中型
@@ -755,29 +717,11 @@ class ComprehensiveReportGenerator:
         col_ocf = self._get_col('ocf', 'log_slope')
         col_det = self._get_col('roic', 'deterioration_probability')
 
-        # v3.0: 行业自适应筛选
-        if self.adaptive_engine and 'industry' in candidates.columns:
-            # 使用行业内相对排名
-            if col_rev_cagr in candidates.columns:
-                # 行业内营收增长排名前50%
-                rev_rank = self.adaptive_engine.calculate_industry_relative_score(
-                    candidates, col_rev_cagr, 'industry'
-                )
-                candidates = candidates[rev_rank > 50]  # 行业内前50%
-
-            if col_prof_cagr in candidates.columns:
-                # 行业内利润增长排名前40%
-                prof_rank = self.adaptive_engine.calculate_industry_relative_score(
-                    candidates, col_prof_cagr, 'industry'
-                )
-                candidates = candidates[prof_rank > 60]  # 行业内前40%
-
-        else:
-            # 回退到统一阈值
-            if col_rev_cagr in candidates.columns:
-                candidates = candidates[candidates[col_rev_cagr] > 0.10]
-            if col_prof_cagr in candidates.columns:
-                candidates = candidates[candidates[col_prof_cagr] > 0.15]
+        # 统一阈值筛选
+        if col_rev_cagr in candidates.columns:
+            candidates = candidates[candidates[col_rev_cagr] > 0.10]
+        if col_prof_cagr in candidates.columns:
+            candidates = candidates[candidates[col_prof_cagr] > 0.15]
 
         # 现金流健康
         if col_ocf in candidates.columns:
@@ -799,12 +743,12 @@ class ComprehensiveReportGenerator:
 
     def _select_quality_moat_companies(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        筛选白马护城河公司 (Quality Moat) - v3.0 行业自适应版
+        筛选白马护城河公司 (Quality Moat)
 
         必须满足：
-        - ROIC > 行业自适应阈值（品牌行业15%，重资产行业8%）
-        - ROE > 行业自适应阈值
-        - 毛利率 > 行业中位数
+        - ROIC > 12%
+        - ROE > 15%
+        - 毛利率 > 25%
         - R² > 0.5 (趋势稳定)
         - 无杠杆陷阱
         - 规模 >= 中型
@@ -817,45 +761,13 @@ class ComprehensiveReportGenerator:
         col_gm = self._get_col('gross_margin', 'latest')
         col_r2 = self._get_col('roic', 'r_squared')
 
-        # v3.0: 行业自适应筛选
-        if self.adaptive_engine and 'industry' in candidates.columns:
-            # 方法1：使用行业自适应阈值
-            def apply_adaptive_roic_filter(row):
-                industry = row.get('industry', '')
-                size_class = row.get('size_class', 'mid')
-                ts_code = row.get('ts_code', '')
-                roic_val = row.get(col_roic, np.nan) if col_roic in row.index else np.nan
-
-                if pd.isna(roic_val):
-                    return False
-
-                thresholds, _ = get_company_thresholds(industry, size_class, ts_code)
-                return roic_val > thresholds.min_roic * 100  # ROIC是百分比形式
-
-            candidates = candidates[candidates.apply(apply_adaptive_roic_filter, axis=1)]
-
-            # 方法2：行业内相对排名（ROE）
-            if col_roe in candidates.columns:
-                roe_rank = self.adaptive_engine.calculate_industry_relative_score(
-                    candidates, col_roe, 'industry'
-                )
-                candidates = candidates[roe_rank > 60]  # 行业内前40%
-
-            # 方法3：毛利率使用行业中位数比较
-            if col_gm in candidates.columns:
-                gm_rank = self.adaptive_engine.calculate_industry_relative_score(
-                    candidates, col_gm, 'industry'
-                )
-                candidates = candidates[gm_rank > 50]  # 行业内前50%
-
-        else:
-            # 回退到统一阈值
-            if col_roic in candidates.columns:
-                candidates = candidates[candidates[col_roic] > 12]
-            if col_roe in candidates.columns:
-                candidates = candidates[candidates[col_roe] > 15]
-            if col_gm in candidates.columns:
-                candidates = candidates[candidates[col_gm] > 25]
+        # 统一阈值筛选
+        if col_roic in candidates.columns:
+            candidates = candidates[candidates[col_roic] > 12]
+        if col_roe in candidates.columns:
+            candidates = candidates[candidates[col_roe] > 15]
+        if col_gm in candidates.columns:
+            candidates = candidates[candidates[col_gm] > 25]
 
         # 趋势稳定
         if col_r2 in candidates.columns:
@@ -935,12 +847,11 @@ class ComprehensiveReportGenerator:
         df['score_safety'] = self._calc_safety_score(df)
 
         # 识别公司模式
-        if HAS_DATA_DRIVEN_FILTER and self.data_driven_filter is not None:
-            df['company_pattern'] = df.apply(
-                lambda row: self._identify_company_pattern(row), axis=1
-            )
-            df['pattern_label'] = df['company_pattern'].apply(self._get_pattern_label)
-            logger.info(f"✅ 公司模式识别完成，分布: {df['company_pattern'].value_counts().to_dict()}")
+        df['company_pattern'] = df.apply(
+            lambda row: self._identify_company_pattern(row), axis=1
+        )
+        df['pattern_label'] = df['company_pattern'].apply(self._get_pattern_label)
+        logger.info(f"✅ 公司模式识别完成，分布: {df['company_pattern'].value_counts().to_dict()}")
 
         lines = []
 
@@ -1315,22 +1226,3 @@ class ComprehensiveReportGenerator:
         lines.append("")
 
         return lines
-
-
-# 保持向后兼容的入口函数
-def report_comprehensive(
-    data_dir: str = "data/filter_middle",
-    output_path: str = "data/comprehensive_analysis_report.md",
-    **kwargs
-) -> str:
-    """
-    生成综合分析报告（规则驱动，基于预设阈值）
-
-    Args:
-        data_dir: 数据目录
-        output_path: 输出报告路径
-
-    注：如需T.R.U.T.H.数据驱动报告，请使用 report_truth 方法
-    """
-    generator = ComprehensiveReportGenerator(data_dir)
-    return generator.generate_report(output_path)

@@ -1,13 +1,14 @@
 """
-投资策略 (Strategies)
-=====================
+投资策略 v2.0 (Strategies - Refactored)
+======================================
 
-投资策略定义：模式匹配和投资建议。
+使用 Protocol-based 架构的投资策略系统。
 
-重构说明:
-- 清理了与规则重叠的逻辑
-- 策略专注于模式识别，规则专注于硬性筛选
-- 策略不再重复规则的加分逻辑
+设计原则:
+- 实现 StrategyProtocol 接口
+- 使用新的 domain_models
+- 工厂模式创建
+- 模式识别而非评分
 
 策略清单 (5个):
 1. HighGrowthStrategy - 高增长/优质护城河
@@ -17,75 +18,76 @@
 5. MoatDefenseStrategy - 护城河防守
 
 作者: AStock Analysis System
-日期: 2025-12-19
+日期: 2026-01-10
+版本: 2.0.0
 """
 
-from dataclasses import dataclass, field
-from typing import List, Protocol, Optional, Dict, Any
-import math
+from typing import List, Optional
+import logging
 
-# 从 trend 导入数据模型
-from ...trend.models import TrendContext
+from .domain_models import (
+    TrendContext,
+    TrendDirection,
+    VolatilityRegime,
+    CyclePhase,
+    DeteriorationSeverity,
+)
+from .protocols import StrategyProtocol
+from .results import StrategyResultImpl
 
-
-@dataclass
-class StrategyResult:
-    """策略评估结果"""
-    name: str
-    matched: bool
-    reason: str = ""
-    score_boost: float = 0.0
-    confidence: float = 0.0
-    recommendations: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+logger = logging.getLogger(__name__)
 
 
-class TrendStrategy(Protocol):
-    """策略协议定义"""
-    name: str
-    description: str
+# ============================================================================
+# 辅助函数
+# ============================================================================
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        """评估当前上下文是否符合策略定义"""
-        ...
+def is_efficiency_metric(metric_name: str) -> bool:
+    """判断是否为效率/比率类指标"""
+    keywords = ["roic", "roe", "margin", "rate", "ratio", "yield", "percent"]
+    return any(k in metric_name.lower() for k in keywords)
 
 
-class BaseStrategy:
-    """策略基类"""
-
-    def _is_efficiency_metric(self, metric_name: str) -> bool:
-        """判断是否为效率/比率类指标"""
-        keywords = ["roic", "roe", "margin", "rate", "ratio", "yield", "percent"]
-        return any(k in metric_name.lower() for k in keywords)
-
-    def _get_robust_growth_rate(self, context: TrendContext) -> float:
-        """获取稳健增长率"""
-        if context.cv < 0.15:
-            return context.log_slope
-        return context.robust_slope if context.robust_slope != 0 else context.log_slope
+def is_scale_metric(metric_name: str) -> bool:
+    """判断是否为规模类指标"""
+    keywords = ["revenue", "profit", "eps", "sales", "income", "ebit"]
+    return any(k in metric_name.lower() for k in keywords)
 
 
 # ============================================================================
 # 1. 高增长策略
 # ============================================================================
 
-class HighGrowthStrategy(BaseStrategy):
+class HighGrowthStrategy:
     """
     高增长/优质护城河策略
 
     特征:
-    - 效率指标: 高位稳定 (ROIC/ROE > 15%, 趋势稳定)
+    - 效率指标: 高位稳定 (ROIC/ROE > 15%, 低波动)
     - 规模指标: 高速成长 (CAGR > 20%, 加速增长)
+    - 无严重恶化
+
+    Examples:
+        >>> strategy = HighGrowthStrategy()
+        >>> result = strategy.evaluate(context)
     """
-    name = "high_growth"
-    description = "高增长/优质护城河"
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        if math.isnan(context.latest_value) or math.isnan(context.log_slope):
-            return StrategyResult(self.name, False)
+    name: str = "high_growth"
+    description: str = "高增长/优质护城河"
+    priority: int = 100
+    enabled: bool = True
 
-        metric_type = "efficiency" if self._is_efficiency_metric(context.metric_name) else "scale"
-        growth_rate = self._get_robust_growth_rate(context)
+    def evaluate(self, context: TrendContext) -> Optional[StrategyResultImpl]:
+        """评估策略匹配"""
+
+        # 排除严重恶化
+        if context.deterioration.severity in {
+            DeteriorationSeverity.SEVERE,
+            DeteriorationSeverity.CATASTROPHIC
+        }:
+            return None
+
+        metric_type = "efficiency" if is_efficiency_metric(context.metric_name) else "scale"
 
         # === 效率指标: 护城河模式 ===
         if metric_type == "efficiency":
@@ -95,305 +97,308 @@ class HighGrowthStrategy(BaseStrategy):
             elif "gross_margin" in context.metric_name.lower():
                 min_value = 40.0
 
-            if context.latest_value < min_value:
-                return StrategyResult(self.name, False)
+            # 高位稳定
+            if (context.quality.latest_value >= min_value and
+                context.volatility.is_stable and
+                context.trend.trend_direction != TrendDirection.DOWNWARD):
 
-            if growth_rate < -0.02:
-                return StrategyResult(self.name, False)
+                confidence = min(
+                    (context.quality.latest_value / min_value) * 0.4 +
+                    (1 - context.volatility.cv) * 0.3 +
+                    (1 if context.trend.log_slope > 0 else 0.5) * 0.3,
+                    1.0
+                )
 
-            # 稳健性检查
-            min_r2 = 0.4
-            if context.mann_kendall_tau > 0.4:
-                min_r2 = 0.2
+                return StrategyResultImpl(
+                    name=self.name,
+                    matched=True,
+                    reason=f"护城河: {context.metric_name}高位稳定({context.quality.latest_value:.1f})",
+                    confidence=confidence,
+                    recommendations=["长期持有", "核心资产"],
+                    metadata={
+                        "latest_value": context.quality.latest_value,
+                        "cv": context.volatility.cv,
+                    }
+                )
 
-            if context.r_squared < min_r2 and context.cv > 0.2:
-                return StrategyResult(self.name, False)
+        # === 规模指标: 高增长模式 ===
+        elif metric_type == "scale":
+            cagr = context.trend.cagr_approx
 
-            return StrategyResult(
-                self.name, True,
-                f"优质护城河({context.latest_value:.1f}>{min_value}, 趋势稳定)",
-                score_boost=10.0,
-                confidence=0.8,
-                recommendations=["长期持有", "关注护城河持续性"]
-            )
+            # 高速成长
+            if (cagr > 0.20 and
+                context.trend.is_accelerating and
+                not context.deterioration.has_deterioration):
 
-        # === 规模指标: 成长模式 ===
-        else:
-            min_growth = 0.20
+                confidence = min(cagr / 0.30, 1.0)  # CAGR 30%+ 满分
 
-            if growth_rate < min_growth:
-                return StrategyResult(self.name, False)
+                return StrategyResultImpl(
+                    name=self.name,
+                    matched=True,
+                    reason=f"高增长: {context.metric_name} CAGR {cagr:.1%}",
+                    confidence=confidence,
+                    recommendations=["成长股投资", "关注持续性"],
+                    metadata={
+                        "cagr": cagr,
+                        "accelerating": context.trend.is_accelerating,
+                    }
+                )
 
-            # 防止假增长
-            if context.cv > 0.3 and context.mann_kendall_tau <= 0:
-                return StrategyResult(self.name, False)
-
-            # 高波动但非显著趋势
-            if growth_rate > 0.3 and context.mann_kendall_p_value > 0.1:
-                return StrategyResult(self.name, False, "增长不显著")
-
-            return StrategyResult(
-                self.name, True,
-                f"高速成长(CAGR={growth_rate:.1%})",
-                score_boost=10.0,
-                confidence=0.75,
-                recommendations=["关注增长持续性", "警惕估值过高"]
-            )
+        return None
 
 
 # ============================================================================
 # 2. 困境反转策略
 # ============================================================================
 
-class TurnaroundStrategy(BaseStrategy):
+class TurnaroundStrategy:
     """
     困境反转策略
 
     特征:
-    - 曾经亏损或大幅下跌
-    - 当前已恢复到安全区域
-    - 近期趋势强劲 (近3年斜率 > 15%)
+    - 有明显拐点 (从负转正)
+    - 近期改善明显 (WLS > OLS)
+    - 当前位置不高 (价值洼地)
+
+    Examples:
+        >>> strategy = TurnaroundStrategy()
+        >>> result = strategy.evaluate(context)
     """
-    name = "turnaround"
-    description = "困境反转/由亏转盈"
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        if math.isnan(context.latest_value):
-            return StrategyResult(self.name, False)
+    name: str = "turnaround"
+    description: str = "困境反转"
+    priority: int = 110
+    enabled: bool = True
 
-        # 设定恢复门槛
-        recovery_threshold = 5.0
-        if "net_margin" in context.metric_name.lower():
-            recovery_threshold = 2.0
-        elif "gross_margin" in context.metric_name.lower():
-            recovery_threshold = 15.0
+    def evaluate(self, context: TrendContext) -> Optional[StrategyResultImpl]:
+        """评估策略匹配"""
 
-        # 必须已恢复
-        if context.latest_value < recovery_threshold:
-            return StrategyResult(self.name, False)
+        # 拐点恢复信号 - 使用 inflection_type 判断
+        if context.inflection.has_inflection:
+            # V型反转: 从恶化转向恢复
+            if context.inflection.is_v_shaped_recovery:
+                slope_change = abs(context.inflection.slope_change or 0)
+                confidence = min(slope_change / 0.30, 1.0)
 
-        # 动能必须强劲
-        if context.recent_3y_slope < 0.15:
-            return StrategyResult(self.name, False)
+                return StrategyResultImpl(
+                    name=self.name,
+                    matched=True,
+                    reason=f"V型反转: 斜率变化{slope_change:.2%}",
+                    confidence=confidence,
+                    recommendations=["逆向投资", "关注反转持续性"],
+                    metadata={
+                        "inflection_type": context.inflection.inflection_type,
+                        "slope_change": slope_change,
+                    }
+                )
 
-        # 防骗线: 高波动时需要趋势确认
-        if context.cv > 0.5 and context.mann_kendall_tau < -0.2:
-            return StrategyResult(self.name, False)
+        # 近期改善信号 (WLS > OLS)
+        wls_slope = context.trend.wls_slope
+        ols_slope = context.trend.log_slope
 
-        # === 反转场景识别 ===
-        is_turnaround = False
-        reason = ""
+        if wls_slope is not None:
+            diff = wls_slope - ols_slope
 
-        # 场景A: 扭亏为盈
-        if context.has_loss_years and context.latest_value > recovery_threshold:
-            is_turnaround = True
-            reason = f"扭亏为盈(曾亏损{context.loss_year_count}年)"
+            # 困境反转: OLS衰退但WLS稳定
+            if ols_slope < -0.05 and wls_slope > -0.02 and diff > 0.10:
+                confidence = min(diff / 0.20, 1.0)
 
-        # 场景B: V型反转
-        elif context.inflection_type == "deterioration_to_recovery":
-            is_turnaround = True
-            reason = f"V型反转(斜率改善{context.slope_change:.2f})"
+                return StrategyResultImpl(
+                    name=self.name,
+                    matched=True,
+                    reason=f"困境企稳: 整体下滑({ols_slope:.1%})但近期稳定({wls_slope:.1%})",
+                    confidence=confidence,
+                    recommendations=["等待确认", "分批建仓"],
+                    metadata={
+                        "wls_slope": wls_slope,
+                        "ols_slope": ols_slope,
+                        "improvement": diff,
+                    }
+                )
 
-        # 场景C: 深度底部反转
-        elif context.total_decline_pct > 30 and context.recent_3y_slope > 0.3:
-            is_turnaround = True
-            reason = f"底部反转(曾跌{context.total_decline_pct:.0f}%)"
-
-        if is_turnaround:
-            return StrategyResult(
-                self.name, True, reason,
-                score_boost=8.0,
-                confidence=0.7,
-                recommendations=["关注反转持续性", "分批建仓"]
-            )
-
-        return StrategyResult(self.name, False)
+        return None
 
 
 # ============================================================================
 # 3. 稳定分红策略
 # ============================================================================
 
-class StableDividendStrategy(BaseStrategy):
+class StableDividendStrategy:
     """
     稳定分红型策略
 
     特征:
-    - 高且稳定的盈利能力
-    - 极低波动性 (CV < 0.20)
-    - 无明显衰退趋势
+    - 低波动 (CV < 15%)
+    - 趋势平稳或缓慢上升
+    - 适用于分红/现金流指标
+
+    Examples:
+        >>> strategy = StableDividendStrategy()
+        >>> result = strategy.evaluate(context)
     """
-    name = "stable_dividend"
-    description = "稳定分红/现金奶牛"
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        if math.isnan(context.latest_value):
-            return StrategyResult(self.name, False)
+    name: str = "stable_dividend"
+    description: str = "稳定分红型"
+    priority: int = 120
+    enabled: bool = True
 
-        # 仅适用于效率指标
-        if not self._is_efficiency_metric(context.metric_name):
-            return StrategyResult(self.name, False)
+    def evaluate(self, context: TrendContext) -> Optional[StrategyResultImpl]:
+        """评估策略匹配"""
 
-        # 绝对值要求
-        min_value = 12.0
-        if context.latest_value < min_value:
-            return StrategyResult(self.name, False)
+        # 只对分红/现金流相关指标触发
+        metric_lower = context.metric_name.lower()
+        if not any(k in metric_lower for k in ["dividend", "ocf", "fcf", "cash"]):
+            return None
 
-        # 稳定性要求
-        if context.cv > 0.20:
-            return StrategyResult(self.name, False)
+        # 低波动 + 平稳趋势
+        if (context.volatility.cv < 0.15 and
+            context.volatility.is_stable and
+            context.trend.log_slope >= -0.05):
 
-        # 趋势要求
-        if context.log_slope < -0.05:
-            return StrategyResult(self.name, False)
+            # 信心度基于稳定性
+            confidence = 1.0 - context.volatility.cv / 0.15
 
-        # 最新值不能大幅低于加权均值
-        if context.latest_vs_weighted_ratio < 0.85:
-            return StrategyResult(self.name, False)
+            return StrategyResultImpl(
+                name=self.name,
+                matched=True,
+                reason=f"稳定分红: {context.metric_name}低波动({context.volatility.cv:.1%})",
+                confidence=confidence,
+                recommendations=["防守型配置", "稳定现金流"],
+                metadata={
+                    "cv": context.volatility.cv,
+                    "log_slope": context.trend.log_slope,
+                }
+            )
 
-        # 计算置信度
-        confidence = min(
-            (1.0 - context.cv / 0.2) * 0.4 +
-            (context.latest_value / min_value - 1.0) * 0.3 +
-            (context.latest_vs_weighted_ratio - 0.85) * 0.3,
-            1.0
-        )
-
-        return StrategyResult(
-            self.name, True,
-            f"稳定分红型(值={context.latest_value:.1f}, CV={context.cv:.1%})",
-            score_boost=6.0,
-            confidence=confidence,
-            recommendations=["适合长期持有", "关注分红率"]
-        )
+        return None
 
 
 # ============================================================================
 # 4. 周期底部策略
 # ============================================================================
 
-class CyclicalBottomStrategy(BaseStrategy):
+class CyclicalBottomStrategy:
     """
     周期底部抄底策略
 
     特征:
-    - 确认的周期性行业
-    - 当前处于周期底部区域
-    - 有复苏迹象
+    - 周期性股票
+    - 处于谷底或回升期
+    - 历史周期验证
+
+    Examples:
+        >>> strategy = CyclicalBottomStrategy()
+        >>> result = strategy.evaluate(context)
     """
-    name = "cyclical_bottom"
-    description = "周期底部抄底"
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        # 必须是周期股
-        if not context.is_cyclical:
-            return StrategyResult(self.name, False)
+    name: str = "cyclical_bottom"
+    description: str = "周期底部抄底"
+    priority: int = 130
+    enabled: bool = True
 
-        cycle_position = context.cycle_position
+    def evaluate(self, context: TrendContext) -> Optional[StrategyResultImpl]:
+        """评估策略匹配"""
 
-        if cycle_position not in ("bottom", "mid_up"):
-            return StrategyResult(self.name, False)
+        if not context.cyclical.is_cyclical:
+            return None
 
-        # 必须有复苏迹象
-        if context.current_phase != "rising":
-            return StrategyResult(self.name, False)
+        current_phase = context.cyclical.current_phase
 
-        # 近期趋势必须转正
-        if context.recent_3y_slope < 0:
-            return StrategyResult(self.name, False)
+        # 谷底机会
+        if current_phase == CyclePhase.TROUGH:
+            return StrategyResultImpl(
+                name=self.name,
+                matched=True,
+                reason=f"周期底部: {context.metric_name}处于谷底",
+                confidence=0.7,
+                recommendations=["逆向布局", "等待周期回升"],
+                metadata={"phase": current_phase.value}
+            )
 
-        # 构建置信度
-        confidence = 0.5
-        reasons = [f"周期底部({cycle_position})"]
+        # 回升期确认
+        if current_phase == CyclePhase.RECOVERY:
+            return StrategyResultImpl(
+                name=self.name,
+                matched=True,
+                reason=f"周期回升: {context.metric_name}景气向上",
+                confidence=0.8,
+                recommendations=["趋势跟随", "关注周期顶部"],
+                metadata={"phase": current_phase.value}
+            )
 
-        if context.inflection_type == "deterioration_to_recovery":
-            reasons.append("V型反转")
-            confidence += 0.2
-
-        if context.fft_dominant_period and context.fft_dominant_period > 0:
-            reasons.append(f"周期{context.fft_dominant_period:.0f}年")
-            confidence += 0.15
-
-        if context.recent_3y_slope > 0.1:
-            confidence += 0.15
-
-        return StrategyResult(
-            self.name, True,
-            ", ".join(reasons),
-            score_boost=8.0,
-            confidence=min(confidence, 1.0),
-            recommendations=["逆向投资机会", "需结合行业研究", "控制仓位"]
-        )
+        return None
 
 
 # ============================================================================
 # 5. 护城河防守策略
 # ============================================================================
 
-class MoatDefenseStrategy(BaseStrategy):
+class MoatDefenseStrategy:
     """
     护城河防守策略
 
     特征:
-    - 利润率长期高位稳定
-    - 即使行业波动也保持稳定
-    - 侧重防御性
+    - 效率指标高位
+    - 长期稳定 (5年+)
+    - 轻微回调豁免 (均值回归)
+
+    Examples:
+        >>> strategy = MoatDefenseStrategy()
+        >>> result = strategy.evaluate(context)
     """
-    name = "moat_defense"
-    description = "护城河防守/稳定盈利"
 
-    def evaluate(self, context: TrendContext) -> StrategyResult:
-        if math.isnan(context.latest_value):
-            return StrategyResult(self.name, False)
+    name: str = "moat_defense"
+    description: str = "护城河防守"
+    priority: int = 140
+    enabled: bool = True
 
-        metric = context.metric_name.lower()
+    def evaluate(self, context: TrendContext) -> Optional[StrategyResultImpl]:
+        """评估策略匹配"""
 
-        # 针对利润率指标
-        if "margin" not in metric and "roe" not in metric and "roic" not in metric:
-            return StrategyResult(self.name, False)
+        if not is_efficiency_metric(context.metric_name):
+            return None
 
-        # 护城河门槛
-        moat_threshold = 40.0 if "gross" in metric else 15.0
-        if context.latest_value < moat_threshold:
-            return StrategyResult(self.name, False)
+        # 高位稳定 + 轻微回调
+        if (context.quality.weighted_avg > 15.0 and
+            context.quality.latest_vs_weighted_ratio > 0.80 and
+            context.deterioration.severity in {
+                DeteriorationSeverity.NONE,
+                DeteriorationSeverity.MILD
+            }):
 
-        # 稳定性
-        if context.cv > 0.15:
-            return StrategyResult(self.name, False)
+            confidence = min(
+                context.quality.weighted_avg / 20.0 * 0.5 +
+                context.quality.latest_vs_weighted_ratio * 0.5,
+                1.0
+            )
 
-        # 趋势
-        if context.log_slope < -0.03:
-            return StrategyResult(self.name, False)
+            return StrategyResultImpl(
+                name=self.name,
+                matched=True,
+                reason=f"护城河坚固: {context.metric_name}长期高位({context.quality.weighted_avg:.1f})",
+                confidence=confidence,
+                recommendations=["持有核心仓位", "逢低加仓"],
+                metadata={
+                    "weighted_avg": context.quality.weighted_avg,
+                    "latest_ratio": context.quality.latest_vs_weighted_ratio,
+                }
+            )
 
-        # R² 清晰
-        if context.r_squared < 0.5:
-            return StrategyResult(self.name, False)
-
-        # 护城河强度
-        moat_strength = (context.latest_value - moat_threshold) / moat_threshold
-        confidence = min(
-            moat_strength * 0.5 +
-            (1.0 - context.cv / 0.15) * 0.3 +
-            context.r_squared * 0.2,
-            1.0
-        )
-
-        return StrategyResult(
-            self.name, True,
-            f"强护城河({context.latest_value:.1f}>{moat_threshold})",
-            score_boost=8.0,
-            confidence=confidence,
-            recommendations=["核心持仓", "关注竞争格局变化"]
-        )
+        return None
 
 
 # ============================================================================
 # 策略工厂
 # ============================================================================
 
-def get_default_strategies() -> List[TrendStrategy]:
-    """获取默认策略列表"""
-    return [
+def create_all_strategies() -> List[StrategyProtocol]:
+    """
+    创建所有策略实例
+
+    Returns:
+        策略实例列表，按优先级排序
+    """
+    strategies = [
         HighGrowthStrategy(),
         TurnaroundStrategy(),
         StableDividendStrategy(),
@@ -401,22 +406,26 @@ def get_default_strategies() -> List[TrendStrategy]:
         MoatDefenseStrategy(),
     ]
 
+    # 按优先级排序
+    return sorted(strategies, key=lambda s: s.priority)
 
-def get_strategy_by_name(name: str) -> Optional[TrendStrategy]:
-    """根据名称获取策略"""
-    strategies = {s.name: s for s in get_default_strategies()}
-    return strategies.get(name)
+
+def get_default_strategies() -> List[StrategyProtocol]:
+    """获取默认策略列表 (向后兼容)"""
+    return create_all_strategies()
 
 
 __all__ = [
-    'StrategyResult',
-    'TrendStrategy',
-    'BaseStrategy',
+    # 策略类
     'HighGrowthStrategy',
     'TurnaroundStrategy',
     'StableDividendStrategy',
     'CyclicalBottomStrategy',
     'MoatDefenseStrategy',
+    # 工厂函数
+    'create_all_strategies',
     'get_default_strategies',
-    'get_strategy_by_name',
+    # 辅助函数
+    'is_efficiency_metric',
+    'is_scale_metric',
 ]

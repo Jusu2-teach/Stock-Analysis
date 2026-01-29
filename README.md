@@ -427,10 +427,10 @@ pip install -r requirements.txt
 
 ```bash
 # 1. 运行完整的趋势分析工作流
-python pipeline/main.py run -c workflow/analysis.yaml
+python -m pipeline run -c workflow/analysis.yaml
 
 # 2. 断点续传（跳过已完成步骤）
-python pipeline/main.py run -c workflow/analysis.yaml --resume
+python -m pipeline run -c workflow/analysis.yaml --resume
 
 # 3. 查看执行状态
 python pipeline/main.py status

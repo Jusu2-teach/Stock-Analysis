@@ -1,389 +1,324 @@
 """
-规则引擎 (Rule Engine)
-======================
+规则引擎 v2.0 (Rule Engine - Refactored)
+========================================
 
-统一的规则评估引擎，执行规则链并输出评估结果。
+使用 Protocol-based 架构和工厂模式的规则引擎。
 
-重构说明:
-- 删除了原来的双引擎 (ThresholdEvaluator + TrendRuleEngine)
-- 统一为单一的 RuleEngine
-- 保持向后兼容的 TrendEvaluator 接口
+设计原则:
+- 使用 RuleFactory 创建规则
+- 责任链模式执行规则
+- 不可变结果对象
+- 类型安全
 
 作者: AStock Analysis System
-日期: 2025-12-19
+日期: 2026-01-10
+版本: 2.0.0
 """
 
-from __future__ import annotations
-
-import logging
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+import logging
 
+from .domain_models import TrendContext
+from .protocols import RuleProtocol, RuleEngineProtocol
+from .results import RuleResultImpl, EvaluationResultImpl
+from .factories import RuleFactory, get_default_factory
 from .rule_config import RuleConfig, DEFAULT_CONFIG, RuleCategory
-from .rules import (
-    Rule, RuleResult, TrendContext,
-    VETO_RULES, PENALTY_RULES, BONUS_RULES, VALIDATION_RULES, ALL_RULES
-)
-from .strategies import TrendStrategy, StrategyResult, get_default_strategies
-
-if TYPE_CHECKING:
-    from ...trend.models import TrendVector
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# 规则执行结果
-# ============================================================================
-
 @dataclass
-class RuleOutcome:
-    """规则链执行结果"""
-    passes: bool = True
-    elimination_reason: str = ""
-    penalty: float = 0.0
-    penalty_details: List[str] = field(default_factory=list)
-    bonus_details: List[str] = field(default_factory=list)
-    auxiliary_notes: List[str] = field(default_factory=list)
+class RuleExecutionSummary:
+    """规则执行汇总"""
+    veto_triggered: bool = False
+    veto_reason: str = ""
+    total_penalty: float = 0.0
+    total_bonus: float = 0.0
+    penalty_results: List[RuleResultImpl] = field(default_factory=list)
+    bonus_results: List[RuleResultImpl] = field(default_factory=list)
+    validation_results: List[RuleResultImpl] = field(default_factory=list)
 
-
-@dataclass
-class EvaluationResult:
-    """
-    完整评估结果
-
-    Attributes:
-        passes: 是否通过
-        score: 最终得分 (0-100)
-        grade: 评级 (A/B/C/D/F)
-        elimination_reason: 淘汰原因 (如果被否决)
-        penalty: 总扣分
-        penalty_details: 扣分明细
-        bonus_details: 加分明细
-        auxiliary_notes: 辅助说明
-        strategies: 命中的策略
-        strategy_reasons: 策略命中原因
-    """
-    passes: bool = True
-    score: float = 100.0
-    grade: str = "B"
-    elimination_reason: str = ""
-    penalty: float = 0.0
-    penalty_details: List[str] = field(default_factory=list)
-    bonus_details: List[str] = field(default_factory=list)
-    auxiliary_notes: List[str] = field(default_factory=list)
-    strategies: List[str] = field(default_factory=list)
-    strategy_reasons: List[str] = field(default_factory=list)
-
-    def compute_grade(self) -> str:
-        """根据分数计算等级"""
-        if self.score >= 90:
-            return "A"
-        elif self.score >= 80:
-            return "B"
-        elif self.score >= 70:
-            return "C"
-        elif self.score >= 60:
-            return "D"
-        else:
-            return "F"
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "passes": self.passes,
-            "score": round(self.score, 1),
-            "grade": self.grade,
-            "elimination_reason": self.elimination_reason,
-            "penalty": round(self.penalty, 1),
-            "penalty_details": self.penalty_details,
-            "bonus_details": self.bonus_details,
-            "auxiliary_notes": self.auxiliary_notes,
-            "strategies": self.strategies,
-            "strategy_reasons": self.strategy_reasons,
-        }
-
-
-# ============================================================================
-# 规则引擎
-# ============================================================================
 
 class RuleEngine:
     """
-    规则引擎
+    规则引擎 v2.0
 
-    执行规则链并输出评估结果。
+    职责:
+    - 使用工厂创建规则
+    - 按优先级执行规则链
+    - 汇总评估结果
 
-    规则执行顺序:
-    1. Veto Rules (否决规则) - 触发即失败
-    2. Penalty Rules (扣分规则) - 累计扣分
-    3. Bonus Rules (加分规则) - 累计加分
-    4. Validation Rules (验证规则) - 交叉验证扣分
-
-    Example:
-        engine = RuleEngine()
-        outcome = engine.run(context, config)
+    Examples:
+        >>> engine = RuleEngine()
+        >>> result = engine.evaluate(context)
+        >>> print(f"Score: {result.score}, Grade: {result.grade}")
     """
 
     def __init__(
         self,
-        rules: Optional[List[Rule]] = None,
-        enable_validation: bool = True,
+        factory: Optional[RuleFactory] = None,
+        config: Optional[RuleConfig] = None
     ):
         """
         初始化规则引擎
 
         Args:
-            rules: 自定义规则列表，默认使用 ALL_RULES
-            enable_validation: 是否启用交叉验证规则
+            factory: 规则工厂 (可选，默认使用全局工厂)
+            config: 规则配置 (可选，默认使用 DEFAULT_CONFIG)
         """
-        if rules is None:
-            self.rules = list(ALL_RULES)
-            if not enable_validation:
-                self.rules = [r for r in self.rules if r.category != RuleCategory.VALIDATION]
-        else:
-            self.rules = rules
+        self.factory = factory or get_default_factory()
+        self.config = config or DEFAULT_CONFIG
 
-        # 按优先级排序
-        self.rules.sort(key=lambda r: r.priority)
+        # 缓存规则实例
+        self._veto_rules: Optional[List[RuleProtocol]] = None
+        self._penalty_rules: Optional[List[RuleProtocol]] = None
+        self._bonus_rules: Optional[List[RuleProtocol]] = None
+        self._validation_rules: Optional[List[RuleProtocol]] = None
 
-        # 按类别分组
-        self._rules_by_category = self._group_by_category()
+    def _get_veto_rules(self) -> List[RuleProtocol]:
+        """获取否决规则 (懒加载)"""
+        if self._veto_rules is None:
+            self._veto_rules = self.factory.create_veto_rules()
+        return self._veto_rules
 
-    def _group_by_category(self) -> Dict[RuleCategory, List[Rule]]:
-        """按类别分组规则"""
-        grouped = {cat: [] for cat in RuleCategory}
-        for rule in self.rules:
-            grouped[rule.category].append(rule)
-        return grouped
+    def _get_penalty_rules(self) -> List[RuleProtocol]:
+        """获取扣分规则 (懒加载)"""
+        if self._penalty_rules is None:
+            self._penalty_rules = self.factory.create_penalty_rules()
+        return self._penalty_rules
 
-    def run(
+    def _get_bonus_rules(self) -> List[RuleProtocol]:
+        """获取加分规则 (懒加载)"""
+        if self._bonus_rules is None:
+            self._bonus_rules = self.factory.create_bonus_rules()
+        return self._bonus_rules
+
+    def _get_validation_rules(self) -> List[RuleProtocol]:
+        """获取验证规则 (懒加载)"""
+        if self._validation_rules is None:
+            self._validation_rules = self.factory.create_validation_rules()
+        return self._validation_rules
+
+    def evaluate(
         self,
         context: TrendContext,
-        config: Optional[RuleConfig] = None,
-        is_auxiliary: bool = False,
-    ) -> RuleOutcome:
+        config: Optional[RuleConfig] = None
+    ) -> EvaluationResultImpl:
         """
-        执行规则链
+        评估趋势质量
 
         Args:
             context: 趋势上下文
-            config: 规则配置
-            is_auxiliary: 是否为辅助指标 (如 ROIIC)
+            config: 规则配置 (可选，默认使用实例配置)
 
         Returns:
-            RuleOutcome: 规则执行结果
+            评估结果
         """
-        config = config or DEFAULT_CONFIG
+        cfg = config or self.config
 
-        penalty = 0.0
-        penalty_details: List[str] = []
-        bonus_details: List[str] = []
-        auxiliary_notes: List[str] = []
+        # 执行规则链
+        summary = self._execute_rule_chain(context, cfg)
 
-        # 辅助指标判断
-        metric_label = f"【{context.metric_name.upper()}辅助】" if is_auxiliary else ""
+        # 计算最终得分
+        final_score = self._calculate_score(summary, cfg)
 
-        # === Phase 1: 否决规则 ===
-        for rule in self._rules_by_category[RuleCategory.VETO]:
-            result = rule.execute(context, config)
-            if result is None:
+        # 构建结果
+        return self._build_result(summary, final_score, cfg)
+
+    def _execute_rule_chain(
+        self,
+        context: TrendContext,
+        config: RuleConfig
+    ) -> RuleExecutionSummary:
+        """
+        执行规则链 (责任链模式)
+
+        执行顺序:
+        1. 否决规则 (任一触发则终止)
+        2. 扣分规则 (累积扣分)
+        3. 加分规则 (累积加分)
+        4. 验证规则 (交叉验证)
+        """
+        summary = RuleExecutionSummary()
+
+        # === 1. 执行否决规则 ===
+        for rule in self._get_veto_rules():
+            if not rule.enabled:
                 continue
 
-            if result.kind == "veto":
-                if is_auxiliary:
-                    logger.info(f"⚠️ {metric_label}{context.group_key}: {result.message}")
-                    auxiliary_notes.append(result.message)
-                    continue
+            try:
+                result = rule.execute(context, config)
+                if result:
+                    logger.info(f"否决规则触发: {rule.name} - {result.message}")
+                    summary.veto_triggered = True
+                    summary.veto_reason = result.message
+                    return summary  # 立即终止
+            except Exception as e:
+                logger.error(f"否决规则执行失败: {rule.name}, 错误: {e}")
 
-                logger.info(f"❌ {result.log_prefix}: {context.group_key} - {result.message}")
-                return RuleOutcome(
-                    passes=False,
-                    elimination_reason=result.message,
-                    penalty=penalty,
-                    penalty_details=penalty_details,
-                    bonus_details=bonus_details,
-                    auxiliary_notes=auxiliary_notes,
-                )
-
-        # === Phase 2: 扣分规则 ===
-        for rule in self._rules_by_category[RuleCategory.PENALTY]:
-            result = rule.execute(context, config)
-            if result is None:
+        # === 2. 执行扣分规则 ===
+        for rule in self._get_penalty_rules():
+            if not rule.enabled:
                 continue
 
-            if result.kind == "penalty":
-                if is_auxiliary:
-                    auxiliary_notes.append(result.message)
-                    continue
+            try:
+                result = rule.execute(context, config)
+                if result:
+                    summary.total_penalty += result.value
+                    summary.penalty_results.append(result)
+                    logger.debug(f"扣分: {rule.name} - {result.value:.1f}")
+            except Exception as e:
+                logger.error(f"扣分规则执行失败: {rule.name}, 错误: {e}")
 
-                penalty += result.value
-                penalty_details.append(result.message)
-
-        # === Phase 3: 加分规则 ===
-        for rule in self._rules_by_category[RuleCategory.BONUS]:
-            result = rule.execute(context, config)
-            if result is None:
+        # === 3. 执行加分规则 ===
+        for rule in self._get_bonus_rules():
+            if not rule.enabled:
                 continue
 
-            if result.kind == "bonus":
-                if is_auxiliary:
-                    auxiliary_notes.append(result.message)
-                    continue
+            try:
+                result = rule.execute(context, config)
+                if result:
+                    summary.total_bonus += result.value
+                    summary.bonus_results.append(result)
+                    logger.debug(f"加分: {rule.name} + {result.value:.1f}")
+            except Exception as e:
+                logger.error(f"加分规则执行失败: {rule.name}, 错误: {e}")
 
-                penalty = max(0.0, penalty - result.value)
-                bonus_details.append(result.message)
-
-            # 周期规则可能返回 penalty
-            elif result.kind == "penalty":
-                if is_auxiliary:
-                    auxiliary_notes.append(result.message)
-                    continue
-                penalty += result.value
-                penalty_details.append(result.message)
-
-        # === Phase 4: 验证规则 ===
-        for rule in self._rules_by_category[RuleCategory.VALIDATION]:
-            result = rule.execute(context, config)
-            if result is None:
+        # === 4. 执行验证规则 ===
+        for rule in self._get_validation_rules():
+            if not rule.enabled:
                 continue
 
-            if result.kind == "penalty":
-                if is_auxiliary:
-                    auxiliary_notes.append(result.message)
-                    continue
+            try:
+                result = rule.execute(context, config)
+                if result:
+                    summary.validation_results.append(result)
+                    logger.debug(f"验证: {rule.name} - {result.message}")
+            except Exception as e:
+                logger.error(f"验证规则执行失败: {rule.name}, 错误: {e}")
 
-                penalty += result.value
-                penalty_details.append(result.message)
+        return summary
 
-        return RuleOutcome(
-            passes=True,
-            elimination_reason="",
-            penalty=penalty,
+    def _calculate_score(
+        self,
+        summary: RuleExecutionSummary,
+        config: RuleConfig
+    ) -> float:
+        """
+        计算最终得分
+
+        计算逻辑:
+        - 基础分: 100分
+        - 扣分: min(总扣分, max_penalty)
+        - 加分: min(总加分, max_bonus)
+        - 最终分: max(0, min(100, 基础分 - 扣分 + 加分))
+        """
+        if summary.veto_triggered:
+            return 0.0
+
+        base_score = config.scoring.base_score
+        penalty = min(summary.total_penalty, config.scoring.max_penalty)
+        bonus = min(summary.total_bonus, config.scoring.max_bonus)
+
+        final_score = base_score - penalty + bonus
+
+        # 限制在 [0, 100] 区间
+        return max(0.0, min(100.0, final_score))
+
+    def _build_result(
+        self,
+        summary: RuleExecutionSummary,
+        final_score: float,
+        config: RuleConfig
+    ) -> EvaluationResultImpl:
+        """构建评估结果"""
+
+        # 计算等级
+        grade = self._compute_grade(final_score, config)
+
+        # 提取详细信息
+        penalty_details = [r.message for r in summary.penalty_results]
+        bonus_details = [r.message for r in summary.bonus_results]
+        validation_notes = [r.message for r in summary.validation_results]
+
+        return EvaluationResultImpl(
+            passes=not summary.veto_triggered,
+            score=final_score,
+            grade=grade,
+            elimination_reason=summary.veto_reason,
+            penalty=summary.total_penalty,
             penalty_details=penalty_details,
             bonus_details=bonus_details,
-            auxiliary_notes=auxiliary_notes,
+            auxiliary_notes=validation_notes,
+            strategies=[],  # 策略由 StrategyEngine 处理
+            strategy_reasons=[],
         )
+
+    def _compute_grade(self, score: float, config: RuleConfig) -> str:
+        """根据分数计算等级"""
+        if score >= 90:
+            return "A"
+        elif score >= 80:
+            return "B"
+        elif score >= 70:
+            return "C"
+        elif score >= 60:
+            return "D"
+        else:
+            return "F"
+
+    def get_rule_statistics(self) -> Dict[str, Any]:
+        """
+        获取规则统计信息
+
+        Returns:
+            规则统计字典
+        """
+        return {
+            "veto_rules": len(self._get_veto_rules()),
+            "penalty_rules": len(self._get_penalty_rules()),
+            "bonus_rules": len(self._get_bonus_rules()),
+            "validation_rules": len(self._get_validation_rules()),
+            "total_rules": (
+                len(self._get_veto_rules()) +
+                len(self._get_penalty_rules()) +
+                len(self._get_bonus_rules()) +
+                len(self._get_validation_rules())
+            ),
+        }
 
 
 # ============================================================================
-# 趋势评估器 (向后兼容接口)
+# 向后兼容接口 (Facade)
 # ============================================================================
 
 class TrendEvaluator:
     """
-    趋势评估器
+    趋势评估器 (向后兼容接口)
 
-    对 TrendVector 执行规则和策略评估。
-
-    这是向后兼容的接口，内部使用 RuleEngine。
-
-    Example:
-        evaluator = TrendEvaluator()
-        result = evaluator.evaluate(
-            group_key="000001.SZ",
-            metric_name="roic",
-            config={...},
-            trend_vector=vector
-        )
+    本质上是 RuleEngine 的 Facade
     """
 
     def __init__(
         self,
-        logger: Optional[logging.Logger] = None,
-        strategies: Optional[List[TrendStrategy]] = None,
-        enable_validation: bool = True,
+        factory: Optional[RuleFactory] = None,
+        config: Optional[RuleConfig] = None
     ):
-        self.logger = logger or logging.getLogger(__name__)
-        self.strategies = strategies or get_default_strategies()
-        self.engine = RuleEngine(enable_validation=enable_validation)
+        self.engine = RuleEngine(factory, config)
 
     def evaluate(
         self,
-        group_key: str,
-        metric_name: str,
-        config: Dict[str, Any],
-        trend_vector: "TrendVector",
-    ) -> EvaluationResult:
-        """
-        评估趋势向量
+        context: TrendContext,
+        config: Optional[RuleConfig] = None
+    ) -> EvaluationResultImpl:
+        """评估趋势质量"""
+        return self.engine.evaluate(context, config)
 
-        Args:
-            group_key: 分组键（如公司代码）
-            metric_name: 指标名称
-            config: 规则配置字典
-            trend_vector: 趋势向量
-
-        Returns:
-            EvaluationResult: 评估结果
-        """
-        # 转换配置
-        rule_config = RuleConfig.from_dict(config) if config else DEFAULT_CONFIG
-
-        # 创建上下文
-        context = TrendContext.from_vector(group_key, metric_name, trend_vector)
-
-        # 判断是否辅助指标
-        is_auxiliary = metric_name.lower() == "roiic"
-
-        # 执行规则引擎
-        outcome = self.engine.run(context, rule_config, is_auxiliary=is_auxiliary)
-
-        # 执行策略
-        matched_strategies = []
-        strategy_reasons = []
-        strategy_bonus = 0.0
-
-        for strategy in self.strategies:
-            result = strategy.evaluate(context)
-            if result.matched:
-                matched_strategies.append(result.name)
-                strategy_reasons.append(result.reason)
-                strategy_bonus += result.score_boost
-                self.logger.info(f"🎯 {group_key} 命中策略 [{strategy.name}]: {result.reason}")
-
-        # 计算最终得分
-        base_score = rule_config.scoring.base_score
-        final_score = max(0.0, base_score - outcome.penalty)
-        final_score += strategy_bonus
-        final_score = min(100.0, final_score)
-
-        # 创建结果
-        result = EvaluationResult(
-            passes=outcome.passes,
-            score=final_score,
-            elimination_reason=outcome.elimination_reason,
-            penalty=outcome.penalty,
-            penalty_details=outcome.penalty_details,
-            bonus_details=outcome.bonus_details,
-            auxiliary_notes=outcome.auxiliary_notes,
-            strategies=matched_strategies,
-            strategy_reasons=strategy_reasons,
-        )
-        result.grade = result.compute_grade()
-
-        return result
-
-
-# ============================================================================
-# 默认实例
-# ============================================================================
-
-# 默认规则引擎
-default_rule_engine = RuleEngine()
-
-# 默认评估器
-default_evaluator = TrendEvaluator()
-
-
-# ============================================================================
-# 导出（仅新架构 API）
-# ============================================================================
 
 __all__ = [
     'RuleEngine',
-    'RuleOutcome',
     'TrendEvaluator',
-    'EvaluationResult',
-    'default_rule_engine',
-    'default_evaluator',
+    'RuleExecutionSummary',
+    'EvaluationResultImpl',
 ]

@@ -1,133 +1,40 @@
-"""
-T.R.U.T.H. 数据驱动报告生成器
-==============================
+"""Deprecated TRUTH report generator (kept only as an empty shell).
 
-纯数据驱动分析，无预设阈值。
+TRUTH 报告现已由 ``report_truth`` (见 reporters/engine.py) 统一生成。
 
-与 comprehensive_generator.py (规则驱动) 独立，方便对比两种模式的准确性。
-
-架构：
-    探针分析结果(DataFrame)
-        → T.R.U.T.H. 六大基因计算
-        → 三大物理求解器
-        → 动态阈值报告
-
-数据输入：直接接收探针分析结果 DataFrame
-
-每个指标都经过 T.R.U.T.H. 系统：
-- ROIC: 核心盈利能力
-- ROE: 股东回报
-- ROIIC: 增量资本效率
-- 毛利率: 护城河
-- 净利率: 盈利质量
-- 营收: 规模增长
-- 利润: 盈利增长
-- OCF: 现金流验证
-
-作者: AStock Analysis System
-日期: 2025-01
+本模块仅作为占位以避免旧文档/旧导入路径报错：
+它必须是“可被安全 import 的纯净模块”，因此不再 import 任何重依赖、
+也不在 import-time 执行任何逻辑。
 """
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Dict, List, Any
-from datetime import datetime
-import json
+from __future__ import annotations
+
 import logging
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# 导入 T.R.U.T.H. 系统
-try:
-    from ..truth import (
-        TruthEngine,
-        TruthConfig,
-        CompanyGenome,
-        TruthResult,
-        get_default_truth_config,
-        ProbeAdapter,
-        ProbeOutputs,
-        MultiIndicatorProbeOutputs,
-        compute_genome_from_probes,
-        # 求解器
-        gravity_solver,
-        velocity_solver,
-        structure_solver,
-        # 可视化
-        generate_genome_interpretation,
-        export_genome_table_markdown,
-    )
-    from ..truth.core.solvers.gravity_solver import create_gravity_result
-    from ..truth.core.solvers.velocity_solver import create_velocity_result
-    from ..truth.core.solvers.structure_solver import create_structure_result
-    HAS_TRUTH = True
-except ImportError as e:
-    logger.error(f"T.R.U.T.H. 系统导入失败: {e}")
-    HAS_TRUTH = False
+__all__: list[str] = [
+    'TruthReportGenerator',
+]
 
 
 class TruthReportGenerator:
-    """
-    T.R.U.T.H. 数据驱动报告生成器
+    """Deprecated placeholder.
 
-    特点：
-    - 无预设阈值，完全由数据驱动
-    - 每个指标独立分析，多维度评价
-    - 六大基因 + 三大求解器 + 动态阈值
+    The TRUTH reporting surface is provided by `report_truth` in `reporters/engine.py`.
+    This class remains only for backwards compatibility with old imports.
     """
 
-    # 指标配置：每个指标的前缀和权重
-    METRICS_CONFIG = {
-        "roic": {
-            "prefix": "roic",
-            "name": "ROIC",
-            "description": "投入资本回报率 - 核心盈利能力",
-            "weight": 0.20,
-        },
-        "roe": {
-            "prefix": "roe",
-            "name": "ROE",
-            "description": "净资产收益率 - 股东回报",
-            "weight": 0.15,
-        },
-        "roiic": {
-            "prefix": "roiic",
-            "name": "ROIIC",
-            "description": "增量投入资本回报率 - 增量效率",
-            "weight": 0.15,
-        },
-        "gross_margin": {
-            "prefix": "grossprofit_margin",
-            "name": "毛利率",
-            "description": "毛利率 - 护城河指标",
-            "weight": 0.10,
-        },
-        "net_margin": {
-            "prefix": "netprofit_margin",
-            "name": "净利率",
-            "description": "净利率 - 盈利质量",
-            "weight": 0.10,
-        },
-        "revenue": {
-            "prefix": "total_revenue_ps",
-            "name": "营收",
-            "description": "营收增长 - 规模扩张",
-            "weight": 0.10,
-        },
-        "profit": {
-            "prefix": "eps",
-            "name": "利润",
-            "description": "利润增长 - 盈利扩张",
-            "weight": 0.10,
-        },
-        "ocf": {
-            "prefix": "ocfps",
-            "name": "经营现金流",
-            "description": "经营现金流 - 盈利验证",
-            "weight": 0.10,
-        },
-    }
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        logger.warning(
+            "TruthReportGenerator is deprecated; use reporters.engine.report_truth instead."
+        )
+
+    def generate(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        raise NotImplementedError(
+            "TruthReportGenerator is deprecated; use reporters.engine.report_truth instead."
+        )
 
     def __init__(
         self,

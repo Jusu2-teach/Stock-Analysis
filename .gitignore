@@ -83,3 +83,5 @@ output/test/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+data/

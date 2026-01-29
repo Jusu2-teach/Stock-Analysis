@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Any, List, Callable, Dict
+from typing import Any, List, Callable
 import logging
 from .registry.registry import Registry
+from .telemetry import OrchestratorObserver
 
 # Middleware type definition
 # func(component, method, args, kwargs, next_call) -> result
@@ -22,14 +23,16 @@ class ComponentProxy:
 
 
 class AStockOrchestrator:
-    def __init__(self, *, auto_discover: bool = True):
+    def __init__(self, *, auto_discover: bool = True, observer: OrchestratorObserver | None = None):
         self.logger = logging.getLogger(__name__)
-        self.registry = Registry.get()
+        self.registry = Registry.get(observer=observer)
         self._middlewares: List[Middleware] = []
 
         if auto_discover:
             count = self.registry.auto_load(hot_reload=False)
-            self.logger.info(f"[orchestrator] auto_discover loaded modules={count} registered_methods={len(self.registry.index.by_full_key)} legacy_methods={len(getattr(self.registry,'methods',{}))}")
+            self.logger.info(
+                f"[orchestrator] auto_discover loaded modules={count} registered_methods={len(self.registry.index.by_full_key)}"
+            )
         self._build_interfaces()
 
     def add_middleware(self, middleware: Middleware):
@@ -134,18 +137,3 @@ class AStockOrchestrator:
             'registry': stats,
             'components': list(self.registry.index.by_component.keys())
         }
-
-    # --------- hooks interface ---------
-    def on_event(self, event: str, callback: Callable):
-        """订阅 Registry 事件
-
-        支持的事件:
-        - 'after_method_registered': 方法注册后触发
-        - 'after_registry_refresh': Registry 刷新后触发
-
-        Args:
-            event: 事件名称
-            callback: 回调函数
-        """
-        self.registry.hooks.on(event, callback)
-        return callback  # 支持装饰器用法

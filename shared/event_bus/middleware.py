@@ -1,612 +1,478 @@
 """
-中间件管道模块
-==============
+EventBus Middleware - 中间件系统
+================================
 
-参考 Express.js / Koa 中间件模式，提供：
-1. 可插拔的中间件架构
-2. 前置/后置处理钩子
-3. 链式调用
-4. 内置实用中间件
+可插拔的中间件管道，支持事件处理的横切关注点。
 
-使用示例：
+设计参考：
+- Express.js/Koa: 中间件链式调用
+- Python ASGI: 中间件协议
 
-    bus = EventBusV6.get()
-    
-    # 添加中间件
-    bus.use(TracingMiddleware(tracer))
-    bus.use(RetryMiddleware(max_retries=3))
-    bus.use(TimeoutMiddleware(timeout_sec=5))
-    
-    # 自定义中间件
-    @bus.middleware
-    def my_middleware(event, context, next_fn):
-        # 前置处理
-        print(f"Before: {event.event_type}")
-        
-        # 调用下一个中间件
-        result = next_fn(event, context)
-        
-        # 后置处理
-        print(f"After: {event.event_type}")
-        return result
+Features:
+1. MiddlewarePipeline - 中间件链管理
+2. 内置中间件：日志、追踪、重试、超时、验证、指标、熔断
 """
+
 from __future__ import annotations
+
+import functools
+import logging
+import time
+import threading
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import (
-    Callable, Optional, List, Any, Dict, TypeVar, Generic,
-    TYPE_CHECKING
-)
 from datetime import datetime
-import logging
-import threading
-import time
-import functools
-import traceback
-import uuid
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..events import Event
+    from .bus import Event
 
 logger = logging.getLogger(__name__)
 
-E = TypeVar('E')
-NextFn = Callable[[Any, 'MiddlewareContext'], Any]
 
+# =============================================================================
+# Context
+# =============================================================================
 
 @dataclass
 class MiddlewareContext:
     """中间件上下文
-    
-    在整个中间件链中传递的上下文对象。
-    """
-    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    event_type: str = ""
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    
-    # 追踪信息
-    trace_id: Optional[str] = None
-    span_id: Optional[str] = None
-    parent_span_id: Optional[str] = None
-    
-    # 元数据
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    # 执行信息
-    start_time: float = field(default_factory=time.time)
-    middleware_times: Dict[str, float] = field(default_factory=dict)
-    
-    # 错误信息
-    errors: List[str] = field(default_factory=list)
-    
-    # 状态标记
-    should_continue: bool = True  # 是否继续执行
-    skip_handlers: bool = False    # 是否跳过处理器
-    
-    def elapsed_ms(self) -> float:
-        """已耗时（毫秒）"""
-        return (time.time() - self.start_time) * 1000
-    
-    def set(self, key: str, value: Any):
-        """设置元数据"""
-        self.metadata[key] = value
-    
-    def get(self, key: str, default: Any = None) -> Any:
-        """获取元数据"""
-        return self.metadata.get(key, default)
-    
-    def abort(self, reason: str = ""):
-        """中止执行"""
-        self.should_continue = False
-        if reason:
-            self.errors.append(reason)
 
+    在中间件链中传递的上下文对象。
+    """
+    event: Any  # Event 对象
+    handler: Callable
+    handler_name: str = ""
+    start_time: float = field(default_factory=time.time)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # 控制标志
+    skip_handler: bool = False
+    abort_chain: bool = False
+
+    # 结果
+    result: Any = None
+    error: Optional[Exception] = None
+
+    @property
+    def elapsed_ms(self) -> float:
+        """已用时间（毫秒）"""
+        return (time.time() - self.start_time) * 1000
+
+
+# =============================================================================
+# Base Middleware
+# =============================================================================
 
 class Middleware(ABC):
-    """中间件基类"""
-    
-    name: str = "base_middleware"
-    order: int = 100  # 执行顺序，越小越先执行
-    
+    """中间件基类
+
+    子类需要实现 process 方法，该方法接收上下文和 next 函数。
+
+    Example:
+        class LoggingMiddleware(Middleware):
+            def process(self, ctx, next_fn):
+                print(f"Before: {ctx.event.type}")
+                next_fn()
+                print(f"After: {ctx.event.type}")
+    """
+
+    name: str = "base"
+    order: int = 100  # 越小越先执行
+
     @abstractmethod
-    def __call__(
+    def process(
         self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
+        ctx: MiddlewareContext,
+        next_fn: Callable[[], None],
+    ) -> None:
         """处理事件
-        
+
         Args:
-            event: 事件对象
-            context: 上下文
-            next_fn: 下一个中间件
-            
-        Returns:
-            处理结果
+            ctx: 中间件上下文
+            next_fn: 调用下一个中间件的函数
         """
-        pass
+        raise NotImplementedError
 
 
 class FunctionMiddleware(Middleware):
-    """函数包装中间件"""
-    
-    def __init__(self, fn: Callable, name: Optional[str] = None, order: int = 100):
-        self._fn = fn
-        self.name = name or fn.__name__
-        self.order = order
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        return self._fn(event, context, next_fn)
+    """函数式中间件
 
+    将普通函数包装为中间件。
 
-# ============================================================================
-# 内置中间件
-# ============================================================================
+    Example:
+        def my_middleware(ctx, next_fn):
+            print("Before")
+            next_fn()
+            print("After")
 
-class LoggingMiddleware(Middleware):
-    """日志中间件"""
-    
-    name = "logging"
-    order = 10
-    
+        bus.use(FunctionMiddleware(my_middleware))
+    """
+
     def __init__(
         self,
-        level: int = logging.DEBUG,
-        include_payload: bool = False
+        fn: Callable[[MiddlewareContext, Callable], None],
+        name: str = "function",
+        order: int = 100,
     ):
-        self.level = level
-        self.include_payload = include_payload
-    
-    def __call__(
+        self._fn = fn
+        self.name = name
+        self.order = order
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
+        self._fn(ctx, next_fn)
+
+
+# =============================================================================
+# Middleware Pipeline
+# =============================================================================
+
+class MiddlewarePipeline:
+    """中间件管道
+
+    管理中间件链的执行。
+
+    Example:
+        pipeline = MiddlewarePipeline()
+        pipeline.use(LoggingMiddleware())
+        pipeline.use(TimingMiddleware())
+
+        pipeline.execute(ctx, final_handler)
+    """
+
+    def __init__(self):
+        self._middlewares: List[Middleware] = []
+        self._lock = threading.Lock()
+
+    def use(self, middleware: Middleware) -> 'MiddlewarePipeline':
+        """添加中间件"""
+        with self._lock:
+            self._middlewares.append(middleware)
+            # 按 order 排序
+            self._middlewares.sort(key=lambda m: m.order)
+        return self
+
+    def remove(self, middleware_type: type) -> bool:
+        """移除指定类型的中间件"""
+        with self._lock:
+            for i, m in enumerate(self._middlewares):
+                if isinstance(m, middleware_type):
+                    self._middlewares.pop(i)
+                    return True
+        return False
+
+    def execute(
         self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        event_type = getattr(event, 'event_type', type(event).__name__)
-        
-        # 前置日志
-        msg = f"📨 Event: {event_type} [id={context.event_id}]"
-        if self.include_payload and hasattr(event, '__dict__'):
-            msg += f" payload={event.__dict__}"
-        logger.log(self.level, msg)
-        
-        start = time.time()
+        ctx: MiddlewareContext,
+        final_handler: Callable[[MiddlewareContext], None],
+    ) -> None:
+        """执行中间件链
+
+        Args:
+            ctx: 上下文
+            final_handler: 最终处理函数
+        """
+        def build_chain(index: int) -> Callable[[], None]:
+            if index >= len(self._middlewares):
+                # 到达链尾，执行最终处理器
+                return lambda: final_handler(ctx)
+
+            middleware = self._middlewares[index]
+            next_fn = build_chain(index + 1)
+
+            return lambda: middleware.process(ctx, next_fn)
+
+        chain = build_chain(0)
+        chain()
+
+    def __len__(self) -> int:
+        return len(self._middlewares)
+
+
+# =============================================================================
+# Built-in Middlewares
+# =============================================================================
+
+class LoggingMiddleware(Middleware):
+    """日志中间件
+
+    记录事件处理的开始和结束。
+    """
+
+    name = "logging"
+    order = 10
+
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self._logger = logger or logging.getLogger(__name__)
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
+        event_type = getattr(ctx.event, 'type', type(ctx.event).__name__)
+        self._logger.debug(f"▶ Processing event: {event_type}")
+
         try:
-            result = next_fn(event, context)
-            elapsed = (time.time() - start) * 1000
-            logger.log(
-                self.level,
-                f"✅ Event completed: {event_type} [{elapsed:.2f}ms]"
+            next_fn()
+            self._logger.debug(
+                f"✓ Event processed: {event_type} ({ctx.elapsed_ms:.1f}ms)"
             )
-            return result
         except Exception as e:
-            elapsed = (time.time() - start) * 1000
-            logger.error(
-                f"❌ Event failed: {event_type} [{elapsed:.2f}ms] error={e}"
+            self._logger.error(
+                f"✗ Event failed: {event_type} ({ctx.elapsed_ms:.1f}ms) - {e}"
             )
             raise
 
 
 class TracingMiddleware(Middleware):
-    """追踪中间件（分布式追踪）"""
-    
+    """追踪中间件
+
+    添加追踪信息到上下文。
+    """
+
     name = "tracing"
     order = 5
-    
-    def __init__(self, tracer: Optional[Any] = None):
-        """
-        Args:
-            tracer: 可选的追踪器实例（如 OpenTelemetry tracer）
-        """
-        self._tracer = tracer
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        # 生成追踪 ID
-        if not context.trace_id:
-            context.trace_id = str(uuid.uuid4())
-        context.span_id = str(uuid.uuid4())[:16]
-        
-        event_type = getattr(event, 'event_type', type(event).__name__)
-        
-        # 如果有外部追踪器
-        if self._tracer and hasattr(self._tracer, 'start_span'):
-            with self._tracer.start_span(f"event:{event_type}") as span:
-                span.set_attribute("event.type", event_type)
-                span.set_attribute("event.id", context.event_id)
-                return next_fn(event, context)
-        else:
-            # 简单追踪日志
-            logger.debug(
-                f"🔍 Trace: {event_type} "
-                f"[trace_id={context.trace_id}, span_id={context.span_id}]"
-            )
-            return next_fn(event, context)
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
+        import uuid
+
+        # 生成或获取 trace_id
+        trace_id = getattr(ctx.event, 'trace_id', None) or str(uuid.uuid4())[:8]
+        ctx.metadata['trace_id'] = trace_id
+        ctx.metadata['span_id'] = str(uuid.uuid4())[:8]
+
+        next_fn()
 
 
 class RetryMiddleware(Middleware):
-    """重试中间件（指数退避）"""
-    
+    """重试中间件
+
+    在处理失败时自动重试。
+    """
+
     name = "retry"
-    order = 20
-    
+    order = 50
+
     def __init__(
         self,
-        max_retries: int = 3,
-        base_delay: float = 0.1,
-        max_delay: float = 10.0,
-        exponential: bool = True,
-        retry_on: Optional[tuple] = None
+        max_attempts: int = 3,
+        delay_seconds: float = 1.0,
+        backoff_multiplier: float = 2.0,
     ):
-        """
-        Args:
-            max_retries: 最大重试次数
-            base_delay: 基础延迟（秒）
-            max_delay: 最大延迟（秒）
-            exponential: 是否指数退避
-            retry_on: 可重试的异常类型，None 表示所有异常
-        """
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-        self.max_delay = max_delay
-        self.exponential = exponential
-        self.retry_on = retry_on or (Exception,)
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        last_error = None
-        
-        for attempt in range(self.max_retries + 1):
+        self._max_attempts = max_attempts
+        self._delay = delay_seconds
+        self._backoff = backoff_multiplier
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self._max_attempts + 1):
             try:
-                return next_fn(event, context)
-            except self.retry_on as e:
+                next_fn()
+                return
+            except Exception as e:
                 last_error = e
-                
-                if attempt < self.max_retries:
-                    delay = self._calculate_delay(attempt)
+                if attempt < self._max_attempts:
+                    delay = self._delay * (self._backoff ** (attempt - 1))
                     logger.warning(
-                        f"⚠️ Retry {attempt + 1}/{self.max_retries}: "
-                        f"{type(e).__name__}: {e}, waiting {delay:.2f}s"
+                        f"Retry {attempt}/{self._max_attempts} for "
+                        f"{ctx.handler_name}: {e}, waiting {delay:.1f}s"
                     )
                     time.sleep(delay)
-                else:
-                    logger.error(
-                        f"❌ All retries exhausted for event: "
-                        f"{getattr(event, 'event_type', type(event).__name__)}"
-                    )
-        
-        raise last_error
-    
-    def _calculate_delay(self, attempt: int) -> float:
-        if self.exponential:
-            delay = self.base_delay * (2 ** attempt)
-        else:
-            delay = self.base_delay
-        return min(delay, self.max_delay)
+
+        if last_error:
+            raise last_error
 
 
 class TimeoutMiddleware(Middleware):
-    """超时中间件"""
-    
+    """超时中间件
+
+    限制处理时间。
+    """
+
     name = "timeout"
-    order = 15
-    
-    def __init__(self, timeout_sec: float = 30.0):
-        self.timeout = timeout_sec
-        self._executor: Optional[Any] = None
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
+    order = 20
+
+    def __init__(self, timeout_seconds: float = 30.0):
+        self._timeout = timeout_seconds
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
         import concurrent.futures
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(next_fn, event, context)
+            future = executor.submit(next_fn)
             try:
-                return future.result(timeout=self.timeout)
+                future.result(timeout=self._timeout)
             except concurrent.futures.TimeoutError:
-                event_type = getattr(event, 'event_type', type(event).__name__)
                 raise TimeoutError(
-                    f"Event handler timeout after {self.timeout}s: {event_type}"
+                    f"Event handler {ctx.handler_name} timed out "
+                    f"after {self._timeout}s"
                 )
 
 
 class ValidationMiddleware(Middleware):
-    """验证中间件"""
-    
+    """验证中间件
+
+    验证事件数据。
+    """
+
     name = "validation"
-    order = 25
-    
-    def __init__(self, validators: Optional[Dict[str, Callable]] = None):
-        """
-        Args:
-            validators: 事件类型 -> 验证函数的映射
-        """
-        self._validators = validators or {}
-    
-    def add_validator(self, event_type: str, validator: Callable[[Any], bool]):
-        """添加验证器"""
-        self._validators[event_type] = validator
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        event_type = getattr(event, 'event_type', type(event).__name__)
-        
-        if event_type in self._validators:
-            validator = self._validators[event_type]
-            if not validator(event):
-                raise ValueError(f"Event validation failed: {event_type}")
-        
-        return next_fn(event, context)
+    order = 15
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
+        event = ctx.event
+
+        # 如果事件有 validate 方法，调用它
+        if hasattr(event, 'validate'):
+            event.validate()
+
+        next_fn()
 
 
 class MetricsMiddleware(Middleware):
-    """指标收集中间件"""
-    
+    """指标中间件
+
+    收集处理指标。
+    """
+
     name = "metrics"
-    order = 8
-    
+    order = 1  # 最先执行，确保计时准确
+
     def __init__(self):
         self._lock = threading.Lock()
-        self._counters: Dict[str, int] = {}
-        self._latencies: Dict[str, List[float]] = {}
-        self._errors: Dict[str, int] = {}
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
-        event_type = getattr(event, 'event_type', type(event).__name__)
+        self._total_events = 0
+        self._total_errors = 0
+        self._total_time_ms = 0.0
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
         start = time.time()
-        
+
         try:
-            result = next_fn(event, context)
-            self._record_success(event_type, time.time() - start)
-            return result
-        except Exception as e:
-            self._record_error(event_type, time.time() - start)
+            next_fn()
+        except Exception:
+            with self._lock:
+                self._total_errors += 1
             raise
-    
-    def _record_success(self, event_type: str, latency: float):
+        finally:
+            elapsed = (time.time() - start) * 1000
+            with self._lock:
+                self._total_events += 1
+                self._total_time_ms += elapsed
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
         with self._lock:
-            self._counters[event_type] = self._counters.get(event_type, 0) + 1
-            if event_type not in self._latencies:
-                self._latencies[event_type] = []
-            self._latencies[event_type].append(latency * 1000)  # ms
-    
-    def _record_error(self, event_type: str, latency: float):
-        with self._lock:
-            self._errors[event_type] = self._errors.get(event_type, 0) + 1
-    
-    def get_metrics(self) -> dict:
-        """获取指标"""
-        with self._lock:
-            result = {}
-            for event_type, count in self._counters.items():
-                latencies = self._latencies.get(event_type, [])
-                errors = self._errors.get(event_type, 0)
-                result[event_type] = {
-                    'count': count,
-                    'errors': errors,
-                    'avg_latency_ms': sum(latencies) / len(latencies) if latencies else 0,
-                    'max_latency_ms': max(latencies) if latencies else 0,
-                    'error_rate': errors / (count + errors) if (count + errors) > 0 else 0,
-                }
-            return result
-    
-    def reset(self):
-        """重置指标"""
-        with self._lock:
-            self._counters.clear()
-            self._latencies.clear()
-            self._errors.clear()
+            return {
+                'total_events': self._total_events,
+                'total_errors': self._total_errors,
+                'total_time_ms': self._total_time_ms,
+                'avg_time_ms': (
+                    self._total_time_ms / self._total_events
+                    if self._total_events > 0 else 0
+                ),
+                'error_rate': (
+                    self._total_errors / self._total_events
+                    if self._total_events > 0 else 0
+                ),
+            }
 
 
 class CircuitBreakerMiddleware(Middleware):
-    """熔断器中间件"""
-    
+    """熔断器中间件
+
+    在错误率过高时熔断。
+
+    状态：
+    - CLOSED: 正常状态，允许请求
+    - OPEN: 熔断状态，拒绝请求
+    - HALF_OPEN: 半开状态，允许部分请求测试
+    """
+
     name = "circuit_breaker"
-    order = 12
-    
-    # 状态
-    CLOSED = "closed"      # 正常
-    OPEN = "open"          # 熔断
-    HALF_OPEN = "half_open"  # 半开
-    
+    order = 30
+
     def __init__(
         self,
         failure_threshold: int = 5,
-        reset_timeout: float = 30.0,
-        half_open_requests: int = 3
+        recovery_timeout: float = 30.0,
+        half_open_max_calls: int = 3,
     ):
-        self.failure_threshold = failure_threshold
-        self.reset_timeout = reset_timeout
-        self.half_open_requests = half_open_requests
-        
-        self._state = self.CLOSED
-        self._failures = 0
-        self._last_failure_time = 0.0
-        self._half_open_successes = 0
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._half_open_max_calls = half_open_max_calls
+
+        self._state = "CLOSED"
+        self._failure_count = 0
+        self._last_failure_time: Optional[float] = None
+        self._half_open_calls = 0
         self._lock = threading.Lock()
-    
-    def __call__(
-        self,
-        event: Any,
-        context: MiddlewareContext,
-        next_fn: NextFn
-    ) -> Any:
+
+    def process(self, ctx: MiddlewareContext, next_fn: Callable[[], None]) -> None:
         with self._lock:
-            self._check_state_transition()
-            
-            if self._state == self.OPEN:
-                event_type = getattr(event, 'event_type', type(event).__name__)
-                raise RuntimeError(
-                    f"Circuit breaker is OPEN for event: {event_type}"
-                )
-        
+            if self._state == "OPEN":
+                if self._should_try_recovery():
+                    self._state = "HALF_OPEN"
+                    self._half_open_calls = 0
+                else:
+                    raise RuntimeError("Circuit breaker is OPEN")
+
+            if self._state == "HALF_OPEN":
+                if self._half_open_calls >= self._half_open_max_calls:
+                    raise RuntimeError("Circuit breaker HALF_OPEN limit reached")
+                self._half_open_calls += 1
+
         try:
-            result = next_fn(event, context)
+            next_fn()
             self._on_success()
-            return result
-        except Exception as e:
+        except Exception:
             self._on_failure()
             raise
-    
-    def _check_state_transition(self):
-        """检查状态转换"""
-        if self._state == self.OPEN:
-            if time.time() - self._last_failure_time >= self.reset_timeout:
-                self._state = self.HALF_OPEN
-                self._half_open_successes = 0
-                logger.info("🔄 Circuit breaker: OPEN -> HALF_OPEN")
-    
-    def _on_success(self):
+
+    def _should_try_recovery(self) -> bool:
+        """检查是否应该尝试恢复"""
+        if self._last_failure_time is None:
+            return True
+        return time.time() - self._last_failure_time >= self._recovery_timeout
+
+    def _on_success(self) -> None:
+        """成功回调"""
         with self._lock:
-            if self._state == self.HALF_OPEN:
-                self._half_open_successes += 1
-                if self._half_open_successes >= self.half_open_requests:
-                    self._state = self.CLOSED
-                    self._failures = 0
-                    logger.info("✅ Circuit breaker: HALF_OPEN -> CLOSED")
-            elif self._state == self.CLOSED:
-                self._failures = 0
-    
-    def _on_failure(self):
+            if self._state == "HALF_OPEN":
+                self._state = "CLOSED"
+            self._failure_count = 0
+
+    def _on_failure(self) -> None:
+        """失败回调"""
         with self._lock:
-            self._failures += 1
+            self._failure_count += 1
             self._last_failure_time = time.time()
-            
-            if self._state == self.HALF_OPEN:
-                self._state = self.OPEN
-                logger.warning("⚠️ Circuit breaker: HALF_OPEN -> OPEN")
-            elif self._state == self.CLOSED:
-                if self._failures >= self.failure_threshold:
-                    self._state = self.OPEN
-                    logger.warning(
-                        f"🔴 Circuit breaker: CLOSED -> OPEN "
-                        f"(failures: {self._failures})"
-                    )
-    
+
+            if self._failure_count >= self._failure_threshold:
+                self._state = "OPEN"
+                logger.warning(
+                    f"Circuit breaker opened after {self._failure_count} failures"
+                )
+
     @property
     def state(self) -> str:
+        """当前状态"""
         return self._state
 
 
-# ============================================================================
-# 中间件管道
-# ============================================================================
+# =============================================================================
+# Exports
+# =============================================================================
 
-class MiddlewarePipeline:
-    """中间件管道
-    
-    管理和执行中间件链。
-    """
-    
-    def __init__(self):
-        self._middlewares: List[Middleware] = []
-        self._lock = threading.Lock()
-    
-    def use(self, middleware: Middleware):
-        """添加中间件
-        
-        Args:
-            middleware: 中间件实例
-        """
-        with self._lock:
-            self._middlewares.append(middleware)
-            self._middlewares.sort(key=lambda m: m.order)
-        
-        logger.debug(f"⚙️ Middleware added: {middleware.name} (order={middleware.order})")
-    
-    def use_fn(
-        self,
-        fn: Callable,
-        name: Optional[str] = None,
-        order: int = 100
-    ):
-        """添加函数作为中间件"""
-        self.use(FunctionMiddleware(fn, name, order))
-    
-    def remove(self, name: str) -> bool:
-        """移除中间件"""
-        with self._lock:
-            for m in self._middlewares:
-                if m.name == name:
-                    self._middlewares.remove(m)
-                    return True
-        return False
-    
-    def execute(
-        self,
-        event: Any,
-        final_handler: Callable[[Any, MiddlewareContext], Any],
-        context: Optional[MiddlewareContext] = None
-    ) -> Any:
-        """执行中间件链
-        
-        Args:
-            event: 事件对象
-            final_handler: 最终处理器
-            context: 可选的上下文
-            
-        Returns:
-            处理结果
-        """
-        ctx = context or MiddlewareContext(
-            event_type=getattr(event, 'event_type', type(event).__name__)
-        )
-        
-        # 构建调用链
-        def build_chain(middlewares: List[Middleware], idx: int) -> NextFn:
-            if idx >= len(middlewares):
-                return final_handler
-            
-            middleware = middlewares[idx]
-            next_fn = build_chain(middlewares, idx + 1)
-            
-            def wrapped(e: Any, c: MiddlewareContext) -> Any:
-                if not c.should_continue:
-                    return None
-                
-                start = time.time()
-                result = middleware(e, c, next_fn)
-                c.middleware_times[middleware.name] = (time.time() - start) * 1000
-                return result
-            
-            return wrapped
-        
-        chain = build_chain(list(self._middlewares), 0)
-        return chain(event, ctx)
-    
-    def list_middlewares(self) -> List[str]:
-        """列出所有中间件名称"""
-        return [m.name for m in self._middlewares]
-    
-    def clear(self):
-        """清空中间件"""
-        with self._lock:
-            self._middlewares.clear()
+__all__ = [
+    # Base
+    "Middleware",
+    "MiddlewarePipeline",
+    "MiddlewareContext",
+    "FunctionMiddleware",
+    # Built-in
+    "LoggingMiddleware",
+    "TracingMiddleware",
+    "RetryMiddleware",
+    "TimeoutMiddleware",
+    "ValidationMiddleware",
+    "MetricsMiddleware",
+    "CircuitBreakerMiddleware",
+]

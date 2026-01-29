@@ -1,100 +1,108 @@
-"""
-T.R.U.T.H. System - Core Module
-===============================
+"""T.R.U.T.H. 核心流水线与组件 (v3.3).
 
-核心计算模块，包含六维基因和三大求解器。
+四层架构:
+    - Layer 0: TimeDecay - 时序衰减预处理
+    - Layer 1: Factors - 六维因子计算 (α/β/γ/δ_fraud/δ_decay/V)
+    - Layer 2: Solvers - 物理求解器 (Gravity/Velocity/Structure)
+    - Layer 3: Calibration - 校准层
 
-结构：
-├── genes/        # 六维基因计算
-│   ├── alpha.py           # 周期性基因 α
-│   ├── beta.py            # 资本密度基因 β
-│   ├── gamma.py           # 成长动能基因 γ
-│   ├── delta_fraud.py     # 欺诈熵基因 δ_fraud
-│   ├── delta_decay.py     # 衰退熵基因 δ_decay
-│   ├── verification.py    # 验证因子 V
-│   └── genome_assembler.py # 基因组装器
-│
-└── solvers/      # 三大求解器
-    ├── gravity_solver.py   # 重力求解器 G
-    ├── velocity_solver.py  # 速度求解器 V
-    └── structure_solver.py # 结构求解器 S
+特性:
+    - 使用 typing.Protocol 实现鸭子类型 (更 Pythonic)
+    - 每个因子/求解器提供 explain() 方法生成人类可读解释
+    - 支持依赖注入: 通过工厂注入自定义因子/求解器
 
-作者: AStock Analysis System
-日期: 2025-01
+版本: 3.3.0
 """
 
-# ============================================================================
-# 基因模块
-# ============================================================================
-from .genes import (
-    # 基因类
-    AlphaGene,
-    BetaGene,
-    GammaGene,
-    DeltaFraudGene,
-    DeltaDecayGene,
-    VerificationGene,
-
-    # 计算函数
-    compute_alpha_from_probes,
-    compute_beta_from_probes,
-    compute_gamma_from_probes,
-    compute_delta_fraud_from_probes,
-    compute_delta_decay_from_probes,
-    compute_verification_from_probes,
-    compute_genome_from_probes,
+# 协议定义 (Protocol)
+from .protocols import (
+    FactorProtocol,
+    SolverProtocol,
+    FactorFactoryProtocol,
+    SolverFactoryProtocol,
 )
 
-# ============================================================================
-# 求解器模块
-# ============================================================================
+# 六维因子
+from .factors import (
+    TruthFactor,
+    AlphaFactor,
+    BetaFactor,
+    GammaFactor,
+    DeltaFraudFactor,
+    DeltaDecayFactor,
+    VerificationFactor,
+    get_all_factors,
+    get_factor_by_id,
+)
+
+# 三大求解器
 from .solvers import (
-    # 求解器函数
-    gravity_solver,
-    velocity_solver,
-    structure_solver,
-
-    # 工厂函数
-    create_gravity_result,
-    create_velocity_result,
-    create_structure_result,
-
-    # 结果类
-    GravitySolverResult,
-    VelocitySolverResult,
-    StructureSolverResult,
+    TruthSolver,
+    GravitySolver,
+    VelocitySolver,
+    StructureSolver,
+    get_all_solvers,
+    get_solver_by_id,
 )
+
+# 工厂 (依赖注入)
+from .factory import (
+    DefaultFactorFactory,
+    ConfigurableFactorFactory,
+    CustomFactorFactory,
+    DefaultSolverFactory,
+    ConfigurableSolverFactory,
+    CustomSolverFactory,
+    TruthComponentFactory,
+    create_default_factory,
+    create_test_factory,
+)
+
+# 四层管道
+from .pipeline import (
+    TimeDecayProcessor,
+    FactorCalculator,
+    SolverExecutor,
+    CalibrationEngine,
+    TruthPipeline,
+    create_pipeline,
+    process_single,
+)
+
+# 特征注册表
+from .feature_registry import (
+    METADATA_COLUMNS,
+    is_metadata_column,
+)
+
 
 __all__ = [
-    # 基因类
-    "AlphaGene",
-    "BetaGene",
-    "GammaGene",
-    "DeltaFraudGene",
-    "DeltaDecayGene",
-    "VerificationGene",
-
-    # 基因计算
-    "compute_alpha_from_probes",
-    "compute_beta_from_probes",
-    "compute_gamma_from_probes",
-    "compute_delta_fraud_from_probes",
-    "compute_delta_decay_from_probes",
-    "compute_verification_from_probes",
-    "compute_genome_from_probes",
-
+    # 因子
+    "TruthFactor",
+    "AlphaFactor",
+    "BetaFactor",
+    "GammaFactor",
+    "DeltaFraudFactor",
+    "DeltaDecayFactor",
+    "VerificationFactor",
+    "get_all_factors",
+    "get_factor_by_id",
     # 求解器
-    "gravity_solver",
-    "velocity_solver",
-    "structure_solver",
-
-    # 工厂函数
-    "create_gravity_result",
-    "create_velocity_result",
-    "create_structure_result",
-
-    # 求解结果
-    "GravitySolverResult",
-    "VelocitySolverResult",
-    "StructureSolverResult",
+    "TruthSolver",
+    "GravitySolver",
+    "VelocitySolver",
+    "StructureSolver",
+    "get_all_solvers",
+    "get_solver_by_id",
+    # 管道
+    "TimeDecayProcessor",
+    "FactorCalculator",
+    "SolverExecutor",
+    "CalibrationEngine",
+    "TruthPipeline",
+    "create_pipeline",
+    "process_single",
+    # 特征注册
+    "METADATA_COLUMNS",
+    "is_metadata_column",
 ]

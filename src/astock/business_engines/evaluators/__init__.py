@@ -41,26 +41,73 @@ from .threshold import (
     # Engine
     RuleEngine,
     TrendEvaluator,
+    RuleExecutionSummary,
+
+    # Results
     EvaluationResult,
-    RuleOutcome,
-    # Models & Context
-    StrategyMatchResult,
     RuleResult,
+    StrategyResult,
+
+    # Models & Context
+    TrendContext,
+    TrendMetrics,
+    VolatilityMetrics,
+    DeteriorationMetrics,
+    InflectionMetrics,
+    CyclicalMetrics,
+    DataQualityMetrics,
+
+    # Enums
     RuleCategory,
-    EvaluationContext,
-    EvaluationContextBuilder,
+    TrendDirection,
+    VolatilityRegime,
+    CyclePhase,
+    DeteriorationSeverity,
+
+    # Config
+    RuleConfig,
+
+    # Factory
+    get_default_factory,
 )
 
+# Orchestrator 入口
+from .engine import run_evaluator, run_evaluator_single
+
 __all__ = [
+    # 🆕 Orchestrator 入口
+    "run_evaluator",
+    "run_evaluator_single",
+
     # 规则引擎主入口
     "RuleEngine",
     "TrendEvaluator",
+    "RuleExecutionSummary",
+
+    # 结果类
     "EvaluationResult",
-    "RuleOutcome",
-    # 模型与上下文
-    "StrategyMatchResult",
     "RuleResult",
+    "StrategyResult",
+
+    # 领域模型
+    "TrendContext",
+    "TrendMetrics",
+    "VolatilityMetrics",
+    "DeteriorationMetrics",
+    "InflectionMetrics",
+    "CyclicalMetrics",
+    "DataQualityMetrics",
+
+    # 枚举
     "RuleCategory",
-    "EvaluationContext",
-    "EvaluationContextBuilder",
+    "TrendDirection",
+    "VolatilityRegime",
+    "CyclePhase",
+    "DeteriorationSeverity",
+
+    # 配置
+    "RuleConfig",
+
+    # 工厂
+    "get_default_factory",
 ]

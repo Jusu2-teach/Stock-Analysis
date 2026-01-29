@@ -156,6 +156,25 @@ class MetricRegistry:
     """
 
     # =========================================================================
+    # 别名映射: 步骤名/非标准命名 -> 标准 business_key
+    # 将分散的硬编码别名统一管理，实现真正的零硬编码
+    # =========================================================================
+    _ALIASES: Dict[str, str] = {
+        # 步骤名中可能出现的非标准命名
+        'grossmargin': 'gross_margin',
+        'netmargin': 'net_margin',
+        'gross': 'gross_margin',
+        'net': 'net_margin',
+        # 常见缩写
+        'gm': 'gross_margin',
+        'nm': 'net_margin',
+        'rev': 'revenue',
+        # 可能的拼写变体
+        'gross_profit_margin': 'gross_margin',
+        'net_profit_margin': 'net_margin',
+    }
+
+    # =========================================================================
     # 核心配置: 所有指标的统一定义
     # =========================================================================
     _METRICS: Dict[str, MetricConfig] = {
@@ -323,6 +342,7 @@ class MetricRegistry:
 
         这是推荐的统一入口方法，支持多种输入格式：
         - business_key: 'revenue', 'gross_margin', 'ocf'
+        - alias: 'grossmargin', 'netmargin', 'gm' (别名)
         - source_column: 'total_revenue_ps', 'grossprofit_margin', 'ocfps'
         - display_name: '营收', '毛利率', '经营现金流'
 
@@ -338,39 +358,73 @@ class MetricRegistry:
         Usage:
             >>> config = MetricRegistry.resolve('revenue')
             >>> config = MetricRegistry.resolve('total_revenue_ps')  # 也能解析
-            >>> config.business_key  # 'revenue'
-            >>> config.source_column  # 'total_revenue_ps'
+            >>> config = MetricRegistry.resolve('grossmargin')  # 别名也支持
+            >>> config.business_key  # 'gross_margin'
         """
+        # 0. 标准化: 转小写并去除空格
+        normalized = identifier.lower().strip()
+
         # 1. 尝试 business_key (最优先)
-        if identifier in cls._METRICS:
-            return cls._METRICS[identifier]
+        if normalized in cls._METRICS:
+            return cls._METRICS[normalized]
 
-        # 2. 尝试 source_column 反向查找
+        # 2. 🆕 尝试别名映射 (集中管理的别名)
+        if normalized in cls._ALIASES:
+            canonical_key = cls._ALIASES[normalized]
+            return cls._METRICS[canonical_key]
+
+        # 3. 尝试 source_column 反向查找
         for key, config in cls._METRICS.items():
-            if config.source_column == identifier:
+            if config.source_column.lower() == normalized:
                 return config
 
-        # 3. 尝试 output_prefix 反向查找 (通常与 source_column 相同)
+        # 4. 尝试 output_prefix 反向查找 (通常与 source_column 相同)
         for key, config in cls._METRICS.items():
-            if config.output_prefix == identifier:
+            if config.output_prefix.lower() == normalized:
                 return config
 
-        # 4. 尝试 display_name 反向查找
+        # 5. 尝试 display_name 反向查找
         for key, config in cls._METRICS.items():
-            if config.display_name == identifier:
+            if config.display_name == identifier:  # display_name 保持原始大小写
                 return config
 
-        # 5. 无法识别，抛出详细错误
+        # 6. 无法识别，抛出详细错误
         available_keys = list(cls._METRICS.keys())
+        available_aliases = list(cls._ALIASES.keys())
         available_sources = [c.source_column for c in cls._METRICS.values()]
         available_displays = [c.display_name for c in cls._METRICS.values()]
 
         raise ValueError(
             f"无法识别的指标标识符: '{identifier}'\n"
             f"  可用的 business_key: {available_keys}\n"
+            f"  可用的 alias: {available_aliases}\n"
             f"  可用的 source_column: {available_sources}\n"
             f"  可用的 display_name: {available_displays}"
         )
+
+    @classmethod
+    def resolve_alias(cls, alias: str) -> Optional[str]:
+        """
+        解析别名到标准 business_key
+
+        Args:
+            alias: 别名 (如 'grossmargin', 'netmargin')
+
+        Returns:
+            标准的 business_key，如果不是别名则返回 None
+        """
+        normalized = alias.lower().strip()
+        return cls._ALIASES.get(normalized)
+
+    @classmethod
+    def get_all_aliases(cls) -> Dict[str, str]:
+        """
+        获取所有别名映射
+
+        Returns:
+            {alias: business_key, ...}
+        """
+        return dict(cls._ALIASES)
 
     @classmethod
     def resolve_safe(cls, identifier: str) -> Optional[MetricConfig]:

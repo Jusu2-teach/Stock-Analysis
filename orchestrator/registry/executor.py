@@ -6,14 +6,16 @@ from ..errors import RegistryExecutionError
 from ..models import MethodRegistration
 from .metrics import MetricsService
 
-# 统一事件总线（必需依赖）
-from shared import EventBus, MethodExecutedEvent
+from ..telemetry import OrchestratorObserver, default_observer
 
 
 class MethodExecutor:
-    def __init__(self, metrics: MetricsService):
+    def __init__(self, metrics: MetricsService, *, observer: OrchestratorObserver | None = None):
         self.metrics = metrics
-        self._event_bus = EventBus.get()
+        self._observer: OrchestratorObserver = observer or default_observer()
+
+    def set_observer(self, observer: OrchestratorObserver) -> None:
+        self._observer = observer
 
     def _validate_input_style(self, reg: MethodRegistration, args: tuple, kwargs: dict):
         """统一输入风格强制校验。
@@ -69,16 +71,13 @@ class MethodExecutor:
         result, dt, err = self.metrics.wrap_execute(reg.full_key, reg.engine_name, reg.callable, *args, **kwargs)
         duration_ms = (time.perf_counter() - start_time) * 1000
 
-        # 发布执行事件
-        self._event_bus.emit(MethodExecutedEvent(
-            component=reg.component_type,
-            method=reg.engine_name,
-            engine=reg.engine_type,
+        self._observer.on_method_executed(
+            reg,
             duration_ms=duration_ms,
             success=(err is None),
             error=str(err) if err else None,
-            source='orchestrator.executor'
-        ))
+            source='orchestrator.executor',
+        )
 
         if err:
             raise RegistryExecutionError(str(err)) from err

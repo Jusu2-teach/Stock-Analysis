@@ -6,6 +6,7 @@
 """
 
 import logging
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import re
@@ -15,7 +16,34 @@ from .schema_utils import ensure_columns
 
 logger = logging.getLogger(__name__)
 
-def store(data: Optional[pd.DataFrame] = None,
+def _unwrap_dataframe(data: Any) -> Any:
+    """兼容聚合结果包装：尽量从对象中提取 DataFrame。
+
+    支持：
+    - 直接 DataFrame
+    - duck-typed Aggregatable: `.value` 或 `get_aggregation_value()`
+    """
+    if isinstance(data, pd.DataFrame) or data is None:
+        return data
+
+    # 常见：AggregatableResult(key=..., value=df)
+    value = getattr(data, "value", None)
+    if isinstance(value, pd.DataFrame):
+        return value
+
+    get_value = getattr(data, "get_aggregation_value", None)
+    if callable(get_value):
+        try:
+            v = get_value()
+            if isinstance(v, pd.DataFrame):
+                return v
+        except Exception:
+            return data
+
+    return data
+
+
+def store(data: Any = None,
          path: str = "",
          format: str = "csv",
          append_mode: bool = False,
@@ -31,6 +59,7 @@ def store(data: Optional[pd.DataFrame] = None,
         raise ValueError("必须指定存储路径")
 
     try:
+        data = _unwrap_dataframe(data)
         if not isinstance(data, pd.DataFrame):
             logger.warning(f"数据类型不是DataFrame: {type(data)}，跳过存储")
             return data

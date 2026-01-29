@@ -1,208 +1,127 @@
-"""
-T.R.U.T.H. System - Threshold Rendering Using True History
-==========================================================
+"""T.R.U.T.H. 子系统统一入口 (v3.3).
 
-基于六维基因测序和物理求解器的动态阈值系统。
+四层架构:
+    - ``truth.domain``: 领域模型 (Probe/Factor/Solver/Profile 等)
+    - ``truth.config``: TRUTH 运行配置 (四层配置系统)
+    - ``truth.core``: 因子 + 求解器 + 四层管道 + 工厂 + 协议
+    - ``truth.integration``: orchestrator/pipeline 集成入口
 
-与 analyzers 同级，负责聚合分析结果并生成最终评估。
+六维因子: α(周期性), β(资本密度), γ(成长), δ_fraud(欺诈熵), δ_decay(衰退熵), V(验证)
+三大求解器: Gravity(ROIC阈值), Velocity(增长边界), Structure(护城河)
 
-目录结构：
-truth/
-├── __init__.py           # 主模块导出
-├── config.py             # 配置
-├── models.py             # 数据模型
-├── engine.py             # 主引擎
-├── adapter.py            # 探针适配器
-├── visualizer.py         # 可视化
-├── clusterer.py          # 聚类器
-├── calibrator.py         # 校准器
-└── core/                 # 核心计算
-    ├── genes/            # 六维基因
-    └── solvers/          # 三大求解器
+v3.3 新特性:
+    - typing.Protocol 替代 ABC (鸭子类型)
+    - explain() 方法生成人类可读解释
+    - 依赖注入: 工厂模式支持自定义因子/求解器
 
-设计哲学：
-"让数据自己说话，而不是让分析师替数据说话"
-
-使用方式：
-```python
-from business_engines.truth import TruthEngine, compute_genome_from_probes
-from business_engines.truth.core import gravity_solver, velocity_solver
-```
+版本: 3.3.0
 """
 
-# ============================================================================
-# 数据模型
-# ============================================================================
-from .models import (
-    CompanyGenome,
-    TruthResult,
-    ClusterProfile,
-    CalibrationResult,
-    FraudCheckResult,
-    RepresentativeMetrics,
-    ThresholdResult,
-    GrowthBoundResult,
-    SlopeResult,
-    SignalType,
-    GradeLevel,
-    BatchResult,
+# 领域模型
+from .domain import (
+    FactorId,
+    SolverId,
+    TruthSignal,
+    TruthGrade,
+    WarningLevel,
+    ProbeInput,
+    FactorResult,
+    DynamicThreshold,
+    SolverResult,
+    TruthWarning,
+    TruthProfile,
+    TruthRunResult,
 )
 
-# ============================================================================
 # 配置
-# ============================================================================
-from .config import TruthConfig, get_default_truth_config
-
-# ============================================================================
-# 主引擎
-# ============================================================================
-from .engine import TruthEngine
-
-# ============================================================================
-# 探针适配器
-# ============================================================================
-from .adapter import (
-    ProbeAdapter,
-    ProbeOutputs,
-    MultiIndicatorProbeOutputs,
-    GenomeInput,
-    AlphaGeneInput,
-    BetaGeneInput,
-    GammaGeneInput,
-    DeltaFraudInput,
-    DeltaDecayInput,
-    VFactorInput,
-    create_probe_outputs_from_dict,
+from .config import (
+    TruthConfig,
+    TimeDecayConfig,
+    AlphaFactorConfig,
+    BetaFactorConfig,
+    GammaFactorConfig,
+    DeltaFraudFactorConfig,
+    DeltaDecayFactorConfig,
+    VerificationFactorConfig,
+    GravitySolverConfig,
+    VelocitySolverConfig,
+    StructureSolverConfig,
+    CalibrationConfig,
+    ScoringConfig,
+    get_default_config,
+    get_conservative_config,
+    get_growth_focused_config,
 )
 
-# ============================================================================
-# 核心计算（genes + solvers）
-# ============================================================================
+# 核心组件
 from .core import (
-    # 基因计算
-    compute_genome_from_probes,
-    compute_alpha_from_probes,
-    compute_beta_from_probes,
-    compute_gamma_from_probes,
-    compute_delta_fraud_from_probes,
-    compute_delta_decay_from_probes,
-    compute_verification_from_probes,
-    AlphaGene,
-    BetaGene,
-    GammaGene,
-    DeltaFraudGene,
-    DeltaDecayGene,
-    VerificationGene,
+    # 因子
+    TruthFactor,
+    AlphaFactor,
+    BetaFactor,
+    GammaFactor,
+    DeltaFraudFactor,
+    DeltaDecayFactor,
+    VerificationFactor,
+    get_all_factors,
+    get_factor_by_id,
     # 求解器
-    gravity_solver,
-    velocity_solver,
-    structure_solver,
-    GravitySolverResult,
-    VelocitySolverResult,
-    StructureSolverResult,
+    TruthSolver,
+    GravitySolver,
+    VelocitySolver,
+    StructureSolver,
+    get_all_solvers,
+    get_solver_by_id,
+    # 管道
+    TruthPipeline,
+    create_pipeline,
+    process_single,
 )
 
-# ============================================================================
-# 聚类器和校准器
-# ============================================================================
-from .clusterer import GenomeClusterer
-from .calibrator import AdaptiveCalibrator
-
-# ============================================================================
-# 处理器（专业基因-指标映射）
-# ============================================================================
-from .processor import (
-    TruthProcessor,
-    TruthProcessResult,
-    BatchProcessResult,
-    GeneExtractionResult,
-    SolverExecutionResult,
-    CausalValidation,
-    CausalNetworkValidator,
-)
-
-# ============================================================================
-# 可视化
-# ============================================================================
-from .visualizer import (
-    GenomeVisualization,
-    plot_genome_radar,
-    generate_genome_interpretation,
-    export_genome_section_markdown,
-    export_genome_table_markdown,
-    batch_generate_visualizations,
-)
 
 __all__ = [
-    # Models
-    "CompanyGenome",
-    "TruthResult",
-    "ClusterProfile",
-    "CalibrationResult",
-    "FraudCheckResult",
-    "RepresentativeMetrics",
-    "ThresholdResult",
-    "GrowthBoundResult",
-    "SlopeResult",
-    "SignalType",
-    "GradeLevel",
-    "BatchResult",
-    # Config
+    # 枚举
+    "FactorId",
+    "SolverId",
+    "TruthSignal",
+    "TruthGrade",
+    "WarningLevel",
+    # 输入
+    "ProbeInput",
+    # 输出
+    "FactorResult",
+    "DynamicThreshold",
+    "SolverResult",
+    "TruthWarning",
+    "TruthProfile",
+    "TruthRunResult",
+    # 配置
     "TruthConfig",
-    "get_default_truth_config",
-    # Engine
-    "TruthEngine",
-    # Adapter
-    "ProbeAdapter",
-    "ProbeOutputs",
-    "MultiIndicatorProbeOutputs",
-    "GenomeInput",
-    "AlphaGeneInput",
-    "BetaGeneInput",
-    "GammaGeneInput",
-    "DeltaFraudInput",
-    "DeltaDecayInput",
-    "VFactorInput",
-    "create_probe_outputs_from_dict",
-    # Core - Genes
-    "compute_genome_from_probes",
-    "compute_alpha_from_probes",
-    "compute_beta_from_probes",
-    "compute_gamma_from_probes",
-    "compute_delta_fraud_from_probes",
-    "compute_delta_decay_from_probes",
-    "compute_verification_from_probes",
-    "AlphaGene",
-    "BetaGene",
-    "GammaGene",
-    "DeltaFraudGene",
-    "DeltaDecayGene",
-    "VerificationGene",
-    # Core - Solvers
-    "gravity_solver",
-    "velocity_solver",
-    "structure_solver",
-    "GravitySolverResult",
-    "VelocitySolverResult",
-    "StructureSolverResult",
-    # Clustering & Calibration
-    "GenomeClusterer",
-    "AdaptiveCalibrator",
-    # Processor (Professional Gene-Indicator Mapping)
-    "TruthProcessor",
-    "TruthProcessResult",
-    "BatchProcessResult",
-    "GeneExtractionResult",
-    "SolverExecutionResult",
-    "CausalValidation",
-    "CausalNetworkValidator",
-    # Visualization
-    "GenomeVisualization",
-    "plot_genome_radar",
-    "generate_genome_interpretation",
-    "export_genome_section_markdown",
-    "export_genome_table_markdown",
-    "batch_generate_visualizations",
+    "TimeDecayConfig",
+    "get_default_config",
+    "get_conservative_config",
+    "get_growth_focused_config",
+    # 因子
+    "TruthFactor",
+    "AlphaFactor",
+    "BetaFactor",
+    "GammaFactor",
+    "DeltaFraudFactor",
+    "DeltaDecayFactor",
+    "VerificationFactor",
+    "get_all_factors",
+    "get_factor_by_id",
+    # 求解器
+    "TruthSolver",
+    "GravitySolver",
+    "VelocitySolver",
+    "StructureSolver",
+    "get_all_solvers",
+    "get_solver_by_id",
+    # 管道
+    "TruthPipeline",
+    "create_pipeline",
+    "process_single",
 ]
 
-__version__ = "2.0.0"
+

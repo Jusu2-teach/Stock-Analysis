@@ -1,13 +1,10 @@
-"""AStock Orchestrator v5.0
+"""AStock Orchestrator
 
-基于统一 EventBus 架构的方法注册与执行系统。
+方法注册与执行系统。
 
-当前包元数据与项目版本对齐（见 pyproject.toml，version=1.0.0）。
-
-v5.0 新架构:
-- 完全使用 shared.EventBus 进行事件通信
-- 移除旧版 HookBus
-- 简化依赖关系
+可观测性采用 Observer 端口（生命周期信号）设计：
+- orchestrator 核心不硬依赖 shared/pipeline 的 EventBus
+- 默认在本仓库中仍会通过 shared.EventBus 发布兼容事件
 """
 
 from .orchestrator import AStockOrchestrator  # 精简 facade
@@ -22,6 +19,8 @@ from .protocols import (
     DataEngineFunction,
     DataHubFunction,
 )
+
+from .telemetry import OrchestratorObserver, NullObserver, CompositeObserver
 
 # 与项目版本/作者信息对齐（见 pyproject.toml）
 __version__ = "1.0.0"
@@ -40,4 +39,8 @@ __all__ = [
     'BusinessEngineFunction',
     'DataEngineFunction',
     'DataHubFunction',
+    # Observability
+    'OrchestratorObserver',
+    'NullObserver',
+    'CompositeObserver',
 ]

@@ -2,7 +2,7 @@
 pipeline:
   name: "Tushare财务指标数据清理管道"
   orchestration:
-    granularity: node  # 节点级任务模式
+    granularity: task  # 按单个任务调度
     soft_fail: true
     task_runner: "concurrent"   # 并行执行：sequential | concurrent
     max_workers: 10               # 并发任务最大工作线程数

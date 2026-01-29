@@ -7,11 +7,13 @@
 作者: AStock Analysis System
 日期: 2025-12-19
 更新: 2025-12-25 - 集成统一命名规范系统
+更新: 2026-01-17 - 集成 PDDA 聚合系统
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -25,14 +27,11 @@ except ImportError:
 
 from orchestrator.decorators.register import register_method
 
-# 🌟 集成统一命名规范系统
-try:
-    from shared.naming_convention import MetricRegistry, ColumnBuilder
-    HAS_NAMING_CONVENTION = True
-except ImportError:
-    HAS_NAMING_CONVENTION = False
-    MetricRegistry = None
-    ColumnBuilder = None
+# 🌟 统一命名规范系统 (必需依赖)
+from shared.naming_convention import MetricRegistry, ColumnBuilder
+
+# 🌟 PDDA 聚合系统 (必需依赖)
+from shared.aggregation import AggregatableResult, AggregationMetadata
 
 from .core import (
     TrendAnalyzer,
@@ -357,7 +356,7 @@ def analyze_metric_trend(
     filter_config: Optional[Dict[str, Any]] = None,
     industry_configs: Optional[Dict[str, Dict[str, Any]]] = None,
     keep_cols: Optional[List[str]] = None,
-) -> pd.DataFrame:
+) -> AggregatableResult[str, pd.DataFrame]:
     """
     通用指标趋势分析
 
@@ -418,30 +417,30 @@ def analyze_metric_trend(
     output_prefix = metric_name  # 默认: metric_name 就是输出前缀
     canonical_name = metric_name  # 默认: metric_name 就是标准名
 
-    if HAS_NAMING_CONVENTION and MetricRegistry is not None:
-        try:
-            # 尝试解析为标准指标
-            metric_config = MetricRegistry.resolve(metric_name)
-            source_column = metric_config.source_column  # 数据列名
-            output_prefix = metric_config.output_prefix  # 输出前缀
-            canonical_name = metric_config.business_key  # 标准业务键名
+    # =========================================================================
+    # 🌟 统一命名规范处理 (纯净路径，无兼容分支)
+    # =========================================================================
+    try:
+        # 解析为标准指标
+        metric_config = MetricRegistry.resolve(metric_name)
+        source_column = metric_config.source_column  # 数据列名
+        output_prefix = metric_config.output_prefix  # 输出前缀
+        canonical_name = metric_config.business_key  # 标准业务键名
 
-            logger.info(
-                f"📋 命名规范解析: '{metric_name}' -> "
-                f"source='{source_column}', prefix='{output_prefix}', canonical='{canonical_name}'"
+        logger.info(
+            f"📋 命名规范解析: '{metric_name}' -> "
+            f"source='{source_column}', prefix='{output_prefix}', canonical='{canonical_name}'"
+        )
+
+        # 验证并给出建议
+        if metric_name != canonical_name:
+            logger.warning(
+                f"⚠️ 建议: 在 YAML 中使用 business_key '{canonical_name}' "
+                f"替代 '{metric_name}' 以保持配置统一"
             )
-
-            # 验证并给出建议
-            if metric_name != canonical_name:
-                logger.warning(
-                    f"⚠️ 建议: 在 YAML 中使用 business_key '{canonical_name}' "
-                    f"替代 '{metric_name}' 以保持配置统一"
-                )
-        except ValueError:
-            # 未注册的指标，使用原始 metric_name
-            logger.info(f"📋 未注册指标 '{metric_name}'，使用原始名称")
-    else:
-        logger.debug("命名规范系统不可用，使用原始 metric_name")
+    except ValueError:
+        # 未注册的指标，使用原始 metric_name
+        logger.info(f"📋 未注册指标 '{metric_name}'，使用原始名称")
 
     logger.info(f"analyze_metric_trend: 加载数据 {len(df)} 行, 指标={metric_name} (source={source_column})")
 
@@ -567,7 +566,20 @@ def analyze_metric_trend(
         f"total={total_groups}, processed={processed}, skipped={skipped}, failed={failed}"
     )
 
-    return result_df
+    # 🌟 PDDA: 统一返回 AggregatableResult (纯净路径，无回退)
+    return AggregatableResult(
+        key=canonical_name,  # 使用标准业务键名作为聚合键
+        value=result_df,
+        metadata=AggregationMetadata(
+            producer_method="analyze_metric_trend",
+            tags={
+                "metric_name": metric_name,
+                "canonical_name": canonical_name,
+                "total_groups": total_groups,
+                "processed": processed,
+            }
+        )
+    )
 
 
 @register_method(
