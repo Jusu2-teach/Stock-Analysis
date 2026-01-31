@@ -1,519 +1,1142 @@
-"""Evaluators Engine Entry Point (v1.0).
+"""
+═══════════════════════════════════════════════════════════════════════════════
+AStock Evaluators v2.0 - 主引擎
+═══════════════════════════════════════════════════════════════════════════════
 
-提供 orchestrator 注册入口，将探针数据转换为 TrendContext 并执行规则评估。
+因果贝叶斯网络 + 状态机评估引擎
 
-数据流:
-    trend/engine (8个探针)
-        ↓ aggregated_trends
-    evaluators/engine (本模块)
-        ↓ 评估结果
-    reporters/comprehensive_generator
+设计哲学：
+1. 因果推断（Pearl do-calculus）替代简单规则
+2. 状态机（HMM）建模公司生命周期
+3. Copula 处理证据相关性
+4. Dempster-Shafer 融合不确定性证据
+5. 时间衰减使近期数据权重更高
+6. 自适应阈值根据行业/规模动态调整
 
-架构原则:
-    - evaluators 与 truth 是并行独立的两个组件
-    - 统一从 trend 接收探针数据
-    - 各自独立产出报告
+Pipeline 集成：
+- 输入: aggregated_trends: Dict[str, pd.DataFrame] (来自 PDDA)
+- 输出: Dict[str, Any] 包含评估结果和解释
 
-版本: 1.0.0
-更新: 2026-01-22 - 初始创建，连接 orchestrator 与 RuleEngine
+作者: AStock Team
+版本: 2.0.0
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from orchestrator.decorators.register import register_method
+# 内部模块
+# 注意: temporal 模块保留但不在此使用（已由 trend 层完成时间衰减）
+from .adaptive_threshold import (
+    AdaptiveThresholdEngine,
+    AdaptiveContext,
+    IndustryCategory,
+    SizeTier
+)
+from .causal_graph import CausalGraph, create_financial_causal_graph
+from .state_machine import (
+    CompanyStateMachine,
+    CompanyState,
+    StateInference,
+    get_default_state_machine
+)
+from .copula_fusion import (
+    Evidence,
+    CopulaEvidenceFusion,
+    CopulaFusionResult,
+    get_default_fusion
+)
+from .dempster_shafer import (
+    DSEvidenceEvaluator,
+    DSEvaluationResult
+)
+from .explanation import (
+    DecisionExplainer,
+    DecisionType,
+    Factor,
+    ExplanationResult
+)
 
-from .threshold import (
-    RuleEngine,
-    TrendEvaluator,
-    EvaluationResultImpl,
-    StrategyResultImpl,
-)
-from .threshold.domain_models import (
-    TrendContext,
-    TrendMetrics,
-    VolatilityMetrics,
-    DeteriorationMetrics,
-    InflectionMetrics,
-    CyclicalMetrics,
-    DataQualityMetrics,
-    ReferenceMetric,
-    TrendDirection,
-    VolatilityRegime,
-    CyclePhase,
-    DeteriorationSeverity,
-)
-from .threshold.strategies import (
-    HighGrowthStrategy,
-    TurnaroundStrategy,
-    StableDividendStrategy,
-    CyclicalBottomStrategy,
-    MoatDefenseStrategy,
-)
-from .threshold.industry_config import (
-    INDUSTRY_CATEGORY_MAP,
-    get_industry_category,
-    get_category_thresholds,
-)
+# Orchestrator 注册
+try:
+    from orchestrator.decorators.register import register_method
+    HAS_ORCHESTRATOR = True
+except ImportError:
+    HAS_ORCHESTRATOR = False
+    def register_method(**kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# TrendContext 构建器
-# ============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
+# PDDA 列名映射（与 trend 层输出对齐）
+# ═══════════════════════════════════════════════════════════════════════════════
 
-class TrendContextBuilder:
-    """从探针 DataFrame 行构建 TrendContext.
+class PDDAColumns:
+    """
+    PDDA 输出列名常量
 
-    职责:
-        - 解析探针输出的扁平列 → 结构化 TrendContext
-        - 处理缺失值和默认值
-        - 支持行业自适应阈值
+    trend 层输出格式: {metric}_{feature}
+    例如: roic_slope, roic_cv, roic_has_deterioration
+    """
+    # 趋势特征
+    SLOPE = "slope"                    # OLS 斜率
+    LOG_SLOPE = "log_slope"            # 对数斜率
+    ROBUST_SLOPE = "robust_slope"      # Theil-Sen 稳健斜率
+    R_SQUARED = "r_squared"            # 拟合优度
+    CAGR = "cagr"                      # 复合增长率
+    TREND_DIRECTION = "trend_direction"  # up/down/flat
 
-    探针输出列名约定 (来自 trend/engine.py):
-        {metric}_slope, {metric}_log_slope, {metric}_r_squared, ...
+    # 波动特征
+    CV = "cv"                          # 变异系数
+    STD_DEV = "std_dev"                # 标准差
+    VOLATILITY_TYPE = "volatility_type"  # stable/moderate/volatile/high_volatility
+    VOLATILITY_REGIME = "volatility_regime"  # 波动体制
+
+    # 恶化检测
+    HAS_DETERIORATION = "has_deterioration"      # 是否恶化
+    DETERIORATION_SEVERITY = "deterioration_severity"  # none/mild/moderate/severe
+    TOTAL_DECLINE_PCT = "total_decline_pct"      # 总下降百分比
+
+    # 拐点检测
+    HAS_INFLECTION = "has_inflection"    # 是否有拐点
+    INFLECTION_TYPE = "inflection_type"  # 拐点类型
+
+    # 周期性
+    IS_CYCLICAL = "is_cyclical"          # 是否周期性
+    CURRENT_PHASE = "current_phase"      # 当前周期阶段
+    CYCLE_POSITION = "cycle_position"    # 周期位置
+
+    # 加速/减速
+    IS_ACCELERATING = "is_accelerating"  # 是否加速
+    IS_DECELERATING = "is_decelerating"  # 是否减速
+
+    # 滚动窗口
+    RECENT_3Y_SLOPE = "recent_3y_slope"  # 近3年斜率
+    MK_TAU = "mk_tau"                    # Mann-Kendall tau
+    MK_P_VALUE = "mk_p_value"            # MK p值
+
+    # 水平指标
+    WEIGHTED_AVG = "weighted_avg"        # 加权平均值
+    LATEST_VALUE = "latest_value"        # 最新值
+    LATEST_VS_WEIGHTED = "latest_vs_weighted_ratio"  # 最新/加权比
+
+    # 数据质量
+    FULL_DATA_YEARS = "full_data_years"  # 完整数据年数
+    TREND_WINDOW_YEARS = "trend_window_years"  # 趋势窗口年数
+
+    # 结构断点
+    HAS_STRUCTURAL_BREAK = "has_structural_break"  # 是否有结构断点
+    BREAK_YEAR_INDEX = "break_year_index"  # 断点位置
+    DATA_REGIME = "data_regime"          # 数据体制
+
+    @classmethod
+    def col(cls, metric: str, feature: str) -> str:
+        """生成完整列名"""
+        return f"{metric}_{feature}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 配置
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class EvaluatorConfig:
+    """评估器配置"""
+
+    # 注意: 时间衰减已由 trend 层完成，此处不再需要
+    # half_life_years 和 min_time_weight 已移除
+
+    # 阈值调整
+    use_adaptive_thresholds: bool = True
+
+    # 因果推断
+    use_causal_inference: bool = True
+    causal_config_path: Optional[str] = None
+
+    # 状态机
+    use_state_machine: bool = True
+    state_config_path: Optional[str] = None
+
+    # 证据融合
+    evidence_correlation_default: float = 0.3
+    ds_conflict_threshold: float = 0.7
+
+    # 评分权重
+    score_weights: Dict[str, float] = field(default_factory=lambda: {
+        "roic_trend": 0.20,
+        "roe_trend": 0.15,
+        "revenue_trend": 0.15,
+        "gross_margin_trend": 0.12,
+        "net_margin_trend": 0.10,
+        "ocf_trend": 0.13,
+        "roiic_trend": 0.10,
+        "state_bonus": 0.05
+    })
+
+    # 决策阈值
+    quality_threshold: float = 70.0
+    average_threshold: float = 50.0
+    veto_threshold: float = 30.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 评估结果
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class CompanyEvaluation:
+    """单个公司的评估结果"""
+
+    ts_code: str
+    name: Optional[str] = None
+    industry: Optional[str] = None
+
+    # 核心评估
+    score: float = 0.0
+    decision: DecisionType = DecisionType.UNCERTAIN
+    confidence: float = 0.0
+
+    # 状态推断
+    company_state: Optional[CompanyState] = None
+    state_confidence: float = 0.0
+
+    # 因素分析
+    factors: List[Factor] = field(default_factory=list)
+
+    # 证据融合
+    ds_result: Optional[DSEvaluationResult] = None
+    copula_result: Optional[CopulaFusionResult] = None
+
+    # 因果诊断
+    causal_diagnosis: Optional[Dict[str, Any]] = None
+
+    # 解释
+    explanation: Optional[ExplanationResult] = None
+
+    # 原始数据引用
+    trend_data: Optional[Dict[str, pd.DataFrame]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "ts_code": self.ts_code,
+            "name": self.name,
+            "industry": self.industry,
+            "score": self.score,
+            "decision": self.decision.value,
+            "confidence": self.confidence,
+            "company_state": self.company_state.value if self.company_state else None,
+            "state_confidence": self.state_confidence,
+            "factors": [
+                {
+                    "name": f.name,
+                    "value": f.value,
+                    "contribution": f.contribution,
+                    "direction": f.direction
+                }
+                for f in self.factors
+            ],
+            "causal_diagnosis": self.causal_diagnosis,
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 主引擎
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CausalBayesianEvaluator:
+    """
+    因果贝叶斯评估引擎
+
+    整合所有子模块，提供统一的评估接口。
+
+    Architecture:
+        ┌─────────────────────────────────────────────────────────────┐
+        │                   CausalBayesianEvaluator                   │
+        ├─────────────────────────────────────────────────────────────┤
+        │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+        │  │ TemporalDecay│  │ AdaptiveThreshold │  │ CausalGraph │  │
+        │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘       │  │
+        │         │                │                │               │
+        │  ┌──────▼──────────────▼──────────────▼──────┐           │
+        │  │              Evidence Collection           │           │
+        │  └──────────────────────┬────────────────────┘           │
+        │                         │                                 │
+        │  ┌──────────────────────▼────────────────────┐           │
+        │  │  ┌─────────────┐    ┌─────────────────┐   │           │
+        │  │  │ CopulaFusion│ +  │ Dempster-Shafer │   │           │
+        │  │  └──────┬──────┘    └──────┬──────────┘   │           │
+        │  │         └───────┬─────────┘               │           │
+        │  └─────────────────┼─────────────────────────┘           │
+        │                    │                                     │
+        │  ┌─────────────────▼─────────────────┐                   │
+        │  │     StateMachine (HMM)             │                   │
+        │  └─────────────────┬─────────────────┘                   │
+        │                    │                                     │
+        │  ┌─────────────────▼─────────────────┐                   │
+        │  │     DecisionExplainer              │                   │
+        │  └─────────────────┬─────────────────┘                   │
+        │                    │                                     │
+        │                    ▼                                     │
+        │            CompanyEvaluation                             │
+        └─────────────────────────────────────────────────────────┘
+
+    Example:
+        >>> evaluator = CausalBayesianEvaluator()
+        >>> result = evaluator.evaluate_company(
+        ...     ts_code="000001.SZ",
+        ...     trend_data=aggregated_trends,
+        ...     company_info={"industry": "银行", "market_cap": 3000}
+        ... )
     """
 
-    def __init__(
+    def __init__(self, config: Optional[EvaluatorConfig] = None):
+        self.config = config or EvaluatorConfig()
+
+        # 初始化子模块
+        # 注意: 时间衰减已由 trend 层完成，此处不再初始化 TemporalDecay
+
+        self._threshold_engine = AdaptiveThresholdEngine.with_defaults()
+
+        self._causal_graph = (
+            create_financial_causal_graph()
+            if self.config.use_causal_inference
+            else None
+        )
+
+        self._state_machine = (
+            get_default_state_machine()
+            if self.config.use_state_machine
+            else None
+        )
+
+        self._copula_fusion = CopulaEvidenceFusion(
+            default_correlation=self.config.evidence_correlation_default
+        )
+
+        self._explainer = DecisionExplainer()
+
+        logger.info(f"CausalBayesianEvaluator initialized with config: {self.config}")
+
+    def evaluate_company(
         self,
-        metric_name: str,
-        row: Any,
-        column_index: Optional[Dict[str, int]] = None,
-        prefix: Optional[str] = None,
-    ):
+        ts_code: str,
+        trend_data: Dict[str, pd.DataFrame],
+        company_info: Optional[Dict[str, Any]] = None
+    ) -> CompanyEvaluation:
         """
+        评估单个公司
+
         Args:
-            metric_name: 指标名称 (如 'roic', 'roe')
-            row: 探针输出的 DataFrame 行
-            column_index: 可选，row 为 tuple 时的列名→位置索引
-            prefix: 列名前缀 (默认使用 metric_name)
+            ts_code: 股票代码
+            trend_data: 趋势分析数据，键为指标名（roic, roe, ...）
+                       每个 DataFrame 来自 PDDA 聚合，每公司只有 1 行
+            company_info: 公司信息（可选）
+                - name: 公司名称
+                - industry: 行业
+                - market_cap: 市值（亿元）
+
+        Returns:
+            CompanyEvaluation 完整评估结果
         """
-        self._metric_name = metric_name
-        self._row = row
-        self._column_index = column_index
-        self._prefix = prefix or metric_name
+        company_info = company_info or {}
 
-    def _get(self, field: str, default: Any = 0.0) -> Any:
-        """安全获取列值"""
-        col = f"{self._prefix}_{field}"
-        return self._get_raw(col, default)
+        # 提取该公司的趋势数据
+        company_trends = self._extract_company_trends(ts_code, trend_data)
 
-    def _get_raw(self, col_name: str, default: Any = None) -> Any:
-        """直接获取列值 (无前缀)"""
-        if self._column_index is not None:
-            idx = self._column_index.get(col_name)
-            if idx is None:
-                return default
-            val = self._row[idx]
-            if pd.isna(val):
-                return default
-            return val
+        if not company_trends:
+            logger.warning(f"No trend data found for {ts_code}")
+            return CompanyEvaluation(
+                ts_code=ts_code,
+                name=company_info.get("name"),
+                decision=DecisionType.UNCERTAIN,
+                confidence=0.0
+            )
 
-        # Fallback: pandas.Series-like
-        if hasattr(self._row, 'index') and col_name in self._row.index:
-            val = self._row[col_name]
-            if pd.isna(val):
-                return default
-            return val
-        return default
+        # 1. 从 PDDA 单行输出直接提取特征（不做时间衰减，trend 层已处理）
+        features = self._extract_features_from_pdda(company_trends)
 
-    def build_trend_metrics(self) -> TrendMetrics:
-        """构建趋势指标"""
-        return TrendMetrics(
-            log_slope=float(self._get("log_slope", 0.0)),
-            linear_slope=float(self._get("slope", 0.0)),
-            r_squared=float(self._get("r_squared", 0.0)),
-            cagr_approx=float(self._get("cagr", 0.0)),
-            robust_slope=float(self._get("theilsen_slope", 0.0)),
-            recent_3y_slope=float(self._get("recent_3y_slope", 0.0)),
-            wls_slope=self._get("wls_slope") if self._get("wls_slope") else None,
-            mann_kendall_tau=float(self._get("mk_tau", 0.0)),
-            mann_kendall_p_value=float(self._get("mk_p_value", 1.0)),
-            trend_acceleration=float(self._get("trend_acceleration", 0.0)),
-            is_accelerating=bool(self._get("is_accelerating", False)),
-            is_decelerating=bool(self._get("is_decelerating", False)),
+        # 2. 创建自适应上下文
+        context = self._create_adaptive_context(company_info)
+
+        # 3. 推断公司状态
+        state_inference = self._infer_company_state(features)
+
+        # 4. 收集证据（充分利用 PDDA 的布尔特征）
+        evidences = self._collect_evidences(features, context)
+
+        # 5. Copula 融合
+        copula_result = self._copula_fusion.fuse(evidences)
+
+        # 6. Dempster-Shafer 融合
+        ds_result = self._ds_evaluate(evidences)
+
+        # 7. 因果诊断（如果启用）
+        causal_diagnosis = None
+        if self._causal_graph:
+            causal_diagnosis = self._run_causal_diagnosis(features)
+
+        # 8. 计算综合评分
+        score, factors = self._compute_score(
+            features, state_inference, copula_result, ds_result, context
         )
 
-    def build_volatility_metrics(self) -> VolatilityMetrics:
-        """构建波动性指标"""
-        regime_str = str(self._get("volatility_regime", "stable"))
-        try:
-            regime = VolatilityRegime(regime_str)
-        except ValueError:
-            regime = VolatilityRegime.STABLE
+        # 9. 做出决策
+        decision, confidence = self._make_decision(score, ds_result, state_inference)
 
-        return VolatilityMetrics(
-            cv=float(self._get("cv", 0.0)),
-            std_dev=float(self._get("std_dev", 0.0)),
-            detrended_cv=float(self._get("detrended_cv", 0.0)),
-            volatility_regime=regime,
-            volatility_change_ratio=float(self._get("volatility_change_ratio", 1.0)),
+        # 10. 生成解释
+        explanation = self._generate_explanation(
+            ts_code, company_info, decision, confidence, factors,
+            score, state_inference, causal_diagnosis
         )
 
-    def build_deterioration_metrics(self) -> DeteriorationMetrics:
-        """构建恶化检测指标"""
-        severity_str = str(self._get("deterioration_severity", "none"))
-        try:
-            severity = DeteriorationSeverity(severity_str)
-        except ValueError:
-            severity = DeteriorationSeverity.NONE
-
-        return DeteriorationMetrics(
-            has_deterioration=bool(self._get("has_deterioration", False)),
-            severity=severity,
-            total_decline_pct=float(self._get("total_decline_pct", 0.0)),
-            consecutive_decline_years=int(self._get("consecutive_decline_years", 0)),
-            deterioration_probability=float(self._get("deterioration_probability", 0.0)),
-            deterioration_pattern=str(self._get("deterioration_pattern", "none")),
-            deterioration_acceleration=float(self._get("deterioration_acceleration", 0.0)),
-        )
-
-    def build_inflection_metrics(self) -> InflectionMetrics:
-        """构建拐点检测指标"""
-        return InflectionMetrics(
-            has_inflection=bool(self._get("has_break", False)),
-            inflection_type=str(self._get("inflection_type", "none")),
-            slope_change=float(self._get("slope_change", 0.0)),
-            confidence=float(self._get("inflection_confidence", 0.0)),
-        )
-
-    def build_cyclical_metrics(self) -> CyclicalMetrics:
-        """构建周期性指标"""
-        phase_str = str(self._get("cycle_phase", "unknown"))
-        try:
-            phase = CyclePhase(phase_str)
-        except ValueError:
-            phase = CyclePhase.UNKNOWN
-
-        return CyclicalMetrics(
-            is_cyclical=bool(self._get("is_cyclical", False)),
-            current_phase=phase,
-            peak_to_trough_ratio=float(self._get("peak_valley_ratio", 1.0)),
-            fft_dominant_period=float(self._get("fft_dominant_period", 0.0)),
-            cyclical_confidence=float(self._get("cyclical_confidence", 0.0)),
-        )
-
-    def build_quality_metrics(self) -> DataQualityMetrics:
-        """构建数据质量指标"""
-        return DataQualityMetrics(
-            has_loss_years=bool(self._get("has_loss_years", False)),
-            loss_year_count=int(self._get("loss_year_count", 0)),
-            has_near_zero_years=bool(self._get("has_near_zero_years", False)),
-            near_zero_count=int(self._get("near_zero_count", 0)),
-            latest_value=float(self._get("latest", 0.0)),
-            weighted_avg=float(self._get("weighted", 0.0)),
-        )
-
-    def build(self) -> TrendContext:
-        """构建完整的 TrendContext"""
-        ts_code = str(self._get_raw("ts_code", "unknown"))
-
-        return TrendContext(
+        return CompanyEvaluation(
             ts_code=ts_code,
-            metric_name=self._metric_name,
-            trend=self.build_trend_metrics(),
-            volatility=self.build_volatility_metrics(),
-            deterioration=self.build_deterioration_metrics(),
-            inflection=self.build_inflection_metrics(),
-            cyclical=self.build_cyclical_metrics(),
-            quality=self.build_quality_metrics(),
-            reference_metrics={},  # 交叉验证在后续添加
+            name=company_info.get("name"),
+            industry=company_info.get("industry"),
+            score=score,
+            decision=decision,
+            confidence=confidence,
+            company_state=state_inference.most_likely_state if state_inference else None,
+            state_confidence=state_inference.confidence if state_inference else 0.0,
+            factors=factors,
+            ds_result=ds_result,
+            copula_result=copula_result,
+            causal_diagnosis=causal_diagnosis,
+            explanation=explanation,
+            trend_data=company_trends
+        )
+
+    def _extract_company_trends(
+        self,
+        ts_code: str,
+        trend_data: Dict[str, pd.DataFrame]
+    ) -> Dict[str, pd.DataFrame]:
+        """提取单个公司的趋势数据"""
+        company_trends = {}
+
+        for metric, df in trend_data.items():
+            if df is None or df.empty:
+                continue
+
+            # 假设 DataFrame 有 ts_code 列
+            if "ts_code" in df.columns:
+                company_df = df[df["ts_code"] == ts_code]
+                if not company_df.empty:
+                    company_trends[metric] = company_df
+            else:
+                # 如果没有 ts_code 列，假设整个 DataFrame 就是单个公司的
+                company_trends[metric] = df
+
+        return company_trends
+
+    def _extract_features_from_pdda(
+        self,
+        company_trends: Dict[str, pd.DataFrame]
+    ) -> Dict[str, Any]:
+        """
+        从 PDDA 单行聚合结果直接提取特征
+
+        PDDA 输出格式：每公司每指标 1 行，包含 ~40 个预计算特征
+        此方法直接映射这些特征，不做二次计算
+
+        Args:
+            company_trends: {metric_name: DataFrame} 每个 DataFrame 只有 1 行
+
+        Returns:
+            特征字典，包含所有指标的趋势、水平、波动、恶化等特征
+        """
+        features: Dict[str, Any] = {}
+        C = PDDAColumns  # 列名常量
+
+        for metric, df in company_trends.items():
+            if df.empty:
+                continue
+
+            # PDDA 输出每公司只有 1 行
+            row = df.iloc[0]
+
+            # ============ 趋势特征 ============
+            # 优先使用稳健斜率（Theil-Sen），回退到 OLS 斜率
+            robust_col = C.col(metric, C.ROBUST_SLOPE)
+            slope_col = C.col(metric, C.SLOPE)
+
+            if robust_col in row.index and pd.notna(row[robust_col]):
+                features[f"{metric}_trend"] = float(row[robust_col])
+            elif slope_col in row.index and pd.notna(row[slope_col]):
+                features[f"{metric}_trend"] = float(row[slope_col])
+            else:
+                features[f"{metric}_trend"] = 0.0
+
+            # R² 拟合优度
+            r2_col = C.col(metric, C.R_SQUARED)
+            features[f"{metric}_r_squared"] = (
+                float(row[r2_col]) if r2_col in row.index and pd.notna(row[r2_col]) else 0.0
+            )
+
+            # Mann-Kendall tau（非参数趋势）
+            mk_col = C.col(metric, C.MK_TAU)
+            features[f"{metric}_mk_tau"] = (
+                float(row[mk_col]) if mk_col in row.index and pd.notna(row[mk_col]) else 0.0
+            )
+
+            # 趋势方向（PDDA 已判断）
+            dir_col = C.col(metric, C.TREND_DIRECTION)
+            features[f"{metric}_direction"] = (
+                str(row[dir_col]) if dir_col in row.index else "flat"
+            )
+
+            # 近3年趋势（短期）
+            recent_col = C.col(metric, C.RECENT_3Y_SLOPE)
+            features[f"{metric}_recent_trend"] = (
+                float(row[recent_col]) if recent_col in row.index and pd.notna(row[recent_col]) else 0.0
+            )
+
+            # ============ 水平特征 ============
+            latest_col = C.col(metric, C.LATEST_VALUE)
+            features[f"{metric}_level"] = (
+                float(row[latest_col]) if latest_col in row.index and pd.notna(row[latest_col]) else 0.0
+            )
+
+            weighted_col = C.col(metric, C.WEIGHTED_AVG)
+            features[f"{metric}_weighted_avg"] = (
+                float(row[weighted_col]) if weighted_col in row.index and pd.notna(row[weighted_col]) else 0.0
+            )
+
+            # 最新值 vs 加权平均（衡量近期表现）
+            ratio_col = C.col(metric, C.LATEST_VS_WEIGHTED)
+            features[f"{metric}_latest_vs_weighted"] = (
+                float(row[ratio_col]) if ratio_col in row.index and pd.notna(row[ratio_col]) else 1.0
+            )
+
+            # ============ 波动特征 ============
+            cv_col = C.col(metric, C.CV)
+            features[f"{metric}_volatility"] = (
+                float(row[cv_col]) if cv_col in row.index and pd.notna(row[cv_col]) else 0.2
+            )
+
+            vol_type_col = C.col(metric, C.VOLATILITY_TYPE)
+            features[f"{metric}_volatility_type"] = (
+                str(row[vol_type_col]) if vol_type_col in row.index else "moderate"
+            )
+
+            # ============ 恶化检测（布尔特征）============
+            det_col = C.col(metric, C.HAS_DETERIORATION)
+            features[f"{metric}_has_deterioration"] = (
+                bool(row[det_col]) if det_col in row.index else False
+            )
+
+            sev_col = C.col(metric, C.DETERIORATION_SEVERITY)
+            features[f"{metric}_deterioration_severity"] = (
+                str(row[sev_col]) if sev_col in row.index else "none"
+            )
+
+            decline_col = C.col(metric, C.TOTAL_DECLINE_PCT)
+            features[f"{metric}_decline_pct"] = (
+                float(row[decline_col]) if decline_col in row.index and pd.notna(row[decline_col]) else 0.0
+            )
+
+            # ============ 拐点检测 ============
+            infl_col = C.col(metric, C.HAS_INFLECTION)
+            features[f"{metric}_has_inflection"] = (
+                bool(row[infl_col]) if infl_col in row.index else False
+            )
+
+            # ============ 周期性特征 ============
+            cyc_col = C.col(metric, C.IS_CYCLICAL)
+            features[f"{metric}_is_cyclical"] = (
+                bool(row[cyc_col]) if cyc_col in row.index else False
+            )
+
+            phase_col = C.col(metric, C.CURRENT_PHASE)
+            features[f"{metric}_cycle_phase"] = (
+                str(row[phase_col]) if phase_col in row.index else ""
+            )
+
+            # ============ 加速/减速 ============
+            acc_col = C.col(metric, C.IS_ACCELERATING)
+            features[f"{metric}_is_accelerating"] = (
+                bool(row[acc_col]) if acc_col in row.index else False
+            )
+
+            dec_col = C.col(metric, C.IS_DECELERATING)
+            features[f"{metric}_is_decelerating"] = (
+                bool(row[dec_col]) if dec_col in row.index else False
+            )
+
+            # ============ 结构断点 ============
+            break_col = C.col(metric, C.HAS_STRUCTURAL_BREAK)
+            features[f"{metric}_has_break"] = (
+                bool(row[break_col]) if break_col in row.index else False
+            )
+
+            regime_col = C.col(metric, C.DATA_REGIME)
+            features[f"{metric}_data_regime"] = (
+                str(row[regime_col]) if regime_col in row.index else "stable"
+            )
+
+        return features
+
+    def _create_adaptive_context(
+        self,
+        company_info: Dict[str, Any]
+    ) -> AdaptiveContext:
+        """创建自适应阈值上下文"""
+        industry = company_info.get("industry", "default")
+        market_cap = company_info.get("market_cap", 100.0)
+
+        return AdaptiveContext.from_company_info(
+            industry_name=industry,
+            market_cap=market_cap,
+            current_cycle="expansion"  # 可以从外部传入
+        )
+
+    def _infer_company_state(
+        self,
+        features: Dict[str, Any]
+    ) -> Optional[StateInference]:
+        """推断公司状态"""
+        if not self._state_machine:
+            return None
+
+        # 准备状态机特征（使用 PDDA 提取的正确键名）
+        state_features = {
+            "revenue_growth": features.get("revenue_trend", 0.0),
+            "roic_level": features.get("roic_level", 10.0),
+            "roic_trend": features.get("roic_trend", 0.0),
+            "volatility": features.get("roic_volatility", 0.2)
+        }
+
+        return self._state_machine.infer_state(state_features)
+
+    def _collect_evidences(
+        self,
+        features: Dict[str, Any],
+        context: AdaptiveContext
+    ) -> List[Evidence]:
+        """
+        收集证据
+
+        充分利用 PDDA 提供的丰富特征，包括：
+        - 趋势斜率（连续值）
+        - 恶化检测（布尔值）
+        - 波动类型（分类值）
+        - 周期性状态（分类值）
+        """
+        evidences = []
+
+        # ============ 1. 趋势斜率证据（连续值 → 概率）============
+        trend_configs = [
+            # (特征键, 正向阈值, 基础置信度, 权重)
+            ("roic_trend", 0.02, 0.9, 1.0),
+            ("roe_trend", 0.01, 0.85, 0.9),
+            ("revenue_trend", 0.05, 0.8, 0.8),
+            ("gross_margin_trend", 0.0, 0.8, 0.85),
+            ("net_margin_trend", 0.0, 0.8, 0.8),
+            ("ocf_trend", 0.0, 0.75, 0.75),
+            ("roiic_trend", 0.05, 0.7, 0.6),
+        ]
+
+        for metric_key, threshold, base_conf, weight in trend_configs:
+            if metric_key in features:
+                value = features[metric_key]
+
+                # Sigmoid 转换：趋势值 → 质量概率
+                z = (value - threshold) / 0.05
+                prob_quality = 1 / (1 + np.exp(-z))
+
+                evidence = Evidence.from_probability(
+                    name=metric_key,
+                    value=value,
+                    prob_positive=prob_quality,
+                    confidence=base_conf * weight
+                )
+                evidences.append(evidence)
+
+        # ============ 2. 恶化检测证据（布尔值 → 强证据）============
+        deterioration_metrics = ["roic", "roe", "gross_margin", "net_margin"]
+
+        for metric in deterioration_metrics:
+            det_key = f"{metric}_has_deterioration"
+            sev_key = f"{metric}_deterioration_severity"
+
+            if det_key in features and features[det_key]:
+                severity = features.get(sev_key, "moderate")
+
+                # 根据严重程度设置证据强度
+                severity_belief = {
+                    "mild": 0.3,
+                    "moderate": 0.5,
+                    "severe": 0.8
+                }.get(severity, 0.5)
+
+                evidence = Evidence(
+                    name=f"{metric}_deterioration",
+                    value=severity,
+                    belief=0.0,  # 不支持"质量"
+                    disbelief=severity_belief,  # 支持"非质量"
+                    uncertainty=1.0 - severity_belief
+                )
+                evidences.append(evidence)
+
+        # ============ 3. 波动性证据（分类值 → 证据）============
+        volatility_metrics = ["roic", "roe", "gross_margin"]
+
+        for metric in volatility_metrics:
+            vol_key = f"{metric}_volatility_type"
+
+            if vol_key in features:
+                vol_type = features[vol_key]
+
+                # 波动性映射
+                vol_evidence_map = {
+                    "stable": (0.7, 0.1, 0.2),      # (belief, disbelief, uncertainty)
+                    "moderate": (0.4, 0.2, 0.4),
+                    "volatile": (0.1, 0.5, 0.4),
+                    "high_volatility": (0.0, 0.7, 0.3)
+                }
+
+                if vol_type in vol_evidence_map:
+                    b, d, u = vol_evidence_map[vol_type]
+                    evidence = Evidence(
+                        name=f"{metric}_stability",
+                        value=vol_type,
+                        belief=b,
+                        disbelief=d,
+                        uncertainty=u
+                    )
+                    evidences.append(evidence)
+
+        # ============ 4. 周期性证据（影响评估策略）============
+        for metric in ["roic", "revenue", "gross_margin"]:
+            cyc_key = f"{metric}_is_cyclical"
+            phase_key = f"{metric}_cycle_phase"
+
+            if cyc_key in features and features[cyc_key]:
+                phase = features.get(phase_key, "")
+
+                # 周期底部是积极信号（困境反转）
+                if phase in ["bottom", "rising"]:
+                    evidence = Evidence(
+                        name=f"{metric}_cycle_bottom",
+                        value=phase,
+                        belief=0.6,
+                        disbelief=0.1,
+                        uncertainty=0.3
+                    )
+                    evidences.append(evidence)
+                elif phase in ["top", "falling"]:
+                    # 顶部/下降是警告信号
+                    evidence = Evidence(
+                        name=f"{metric}_cycle_top",
+                        value=phase,
+                        belief=0.2,
+                        disbelief=0.4,
+                        uncertainty=0.4
+                    )
+                    evidences.append(evidence)
+
+        # ============ 5. 结构断点证据 ============
+        for metric in ["roic", "roe", "revenue"]:
+            break_key = f"{metric}_has_break"
+
+            if break_key in features and features[break_key]:
+                # 结构断点增加不确定性
+                evidence = Evidence(
+                    name=f"{metric}_structural_break",
+                    value=True,
+                    belief=0.2,
+                    disbelief=0.2,
+                    uncertainty=0.6  # 高不确定性
+                )
+                evidences.append(evidence)
+
+        # ============ 6. 近期表现证据（最新值 vs 加权平均）============
+        for metric in ["roic", "roe", "gross_margin"]:
+            ratio_key = f"{metric}_latest_vs_weighted"
+
+            if ratio_key in features:
+                ratio = features[ratio_key]
+
+                # ratio > 1 表示近期表现优于历史平均
+                if ratio > 1.2:
+                    evidence = Evidence(
+                        name=f"{metric}_improving",
+                        value=ratio,
+                        belief=0.7,
+                        disbelief=0.1,
+                        uncertainty=0.2
+                    )
+                    evidences.append(evidence)
+                elif ratio < 0.8:
+                    evidence = Evidence(
+                        name=f"{metric}_declining",
+                        value=ratio,
+                        belief=0.1,
+                        disbelief=0.6,
+                        uncertainty=0.3
+                    )
+                    evidences.append(evidence)
+
+        return evidences
+
+    def _ds_evaluate(
+        self,
+        evidences: List[Evidence]
+    ) -> DSEvaluationResult:
+        """Dempster-Shafer 评估"""
+        evaluator = DSEvidenceEvaluator(
+            conflict_threshold=self.config.ds_conflict_threshold
+        )
+
+        for evidence in evidences:
+            evaluator.add_evidence(
+                name=evidence.name,
+                target="quality",
+                belief=evidence.belief,
+                disbelief=evidence.disbelief,
+                uncertainty=evidence.uncertainty
+            )
+
+        return evaluator.evaluate("quality")
+
+    def _run_causal_diagnosis(
+        self,
+        features: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """运行因果诊断"""
+        if not self._causal_graph:
+            return None
+
+        # 准备因果图观测数据
+        observed_data = {
+            "revenue_trend": features.get("revenue_trend", 0.0),
+            "gross_margin_trend": features.get("gross_margin_trend", 0.0),
+            "net_margin_trend": features.get("net_margin_trend", 0.0),
+            "roic_trend": features.get("roic_trend", 0.0),
+            "roe_trend": features.get("roe_trend", 0.0),
+            "ocf_trend": features.get("ocf_trend", 0.0),
+        }
+
+        # 诊断 ROIC 趋势
+        diagnosis = self._causal_graph.diagnose(
+            target_metric="roic_trend",
+            observed_data=observed_data
+        )
+
+        return {
+            "target": diagnosis.target_metric,
+            "status": diagnosis.status,
+            "primary_causes": diagnosis.primary_causes,
+            "explanation": diagnosis.explanation,
+            "confidence": diagnosis.confidence
+        }
+
+    def _compute_score(
+        self,
+        features: Dict[str, Any],
+        state_inference: Optional[StateInference],
+        copula_result: CopulaFusionResult,
+        ds_result: DSEvaluationResult,
+        context: AdaptiveContext
+    ) -> Tuple[float, List[Factor]]:
+        """计算综合评分"""
+        factors = []
+        weighted_sum = 0.0
+        total_weight = 0.0
+
+        # 从特征计算各维度分数
+        metric_scores = []
+
+        for metric, weight in self.config.score_weights.items():
+            if metric == "state_bonus":
+                continue  # 状态加分单独处理
+
+            feature_key = metric
+            if feature_key not in features:
+                continue
+
+            value = features[feature_key]
+
+            # 获取自适应阈值
+            try:
+                thresholds = self._threshold_engine.get_thresholds(metric, context)
+                grade = thresholds.get_grade(value, higher_is_better=True)
+            except ValueError:
+                # 使用默认评分逻辑
+                if value > 0.02:
+                    grade = "excellent"
+                elif value > 0:
+                    grade = "good"
+                elif value > -0.02:
+                    grade = "acceptable"
+                else:
+                    grade = "poor"
+
+            # 等级转分数
+            grade_scores = {
+                "excellent": 95,
+                "good": 80,
+                "acceptable": 60,
+                "poor": 40,
+                "veto": 10
+            }
+            metric_score = grade_scores.get(grade, 50)
+
+            # 计算方向
+            direction = "positive" if value > 0.005 else ("negative" if value < -0.005 else "neutral")
+
+            # 计算贡献度（归一化的加权分数偏离中位数的程度）
+            contribution = (metric_score - 50) / 50 * weight
+
+            factor = Factor(
+                name=metric,
+                display_name=metric,
+                value=value,
+                contribution=contribution,
+                direction=direction
+            )
+            factors.append(factor)
+
+            weighted_sum += metric_score * weight
+            total_weight += weight
+
+        # 基础分数
+        if total_weight > 0:
+            base_score = weighted_sum / total_weight
+        else:
+            base_score = 50.0
+
+        # 状态加分/减分
+        state_adjustment = 0.0
+        if state_inference and self._state_machine:
+            state_adjustment = self._state_machine.get_quality_score_adjustment(
+                state_inference.most_likely_state
+            )
+
+            # 状态因素
+            factors.append(Factor(
+                name="company_state",
+                display_name="公司状态",
+                value=state_adjustment,
+                contribution=state_adjustment / 100,
+                direction="positive" if state_adjustment > 0 else "negative"
+            ))
+
+        # DS 置信度调整
+        # 高冲突时降低分数确定性
+        if ds_result.conflict > 0.5:
+            confidence_penalty = (ds_result.conflict - 0.5) * 20
+            base_score = base_score * (1 - confidence_penalty / 100)
+
+        # 最终分数
+        final_score = np.clip(base_score + state_adjustment, 0, 100)
+
+        return final_score, factors
+
+    def _make_decision(
+        self,
+        score: float,
+        ds_result: DSEvaluationResult,
+        state_inference: Optional[StateInference]
+    ) -> Tuple[DecisionType, float]:
+        """做出决策"""
+        # 检查是否被一票否决
+        if ds_result.decision == "reject" and ds_result.confidence > 0.7:
+            return DecisionType.VETO, ds_result.confidence
+
+        # 基于分数的决策
+        if score >= self.config.quality_threshold:
+            decision = DecisionType.QUALITY
+        elif score >= self.config.average_threshold:
+            decision = DecisionType.AVERAGE
+        elif score >= self.config.veto_threshold:
+            decision = DecisionType.POOR
+        else:
+            decision = DecisionType.VETO
+
+        # 计算置信度
+        # 综合 DS 置信度和状态置信度
+        ds_conf = ds_result.confidence
+        state_conf = state_inference.confidence if state_inference else 0.5
+
+        confidence = 0.6 * ds_conf + 0.4 * state_conf
+
+        return decision, confidence
+
+    def _generate_explanation(
+        self,
+        ts_code: str,
+        company_info: Dict[str, Any],
+        decision: DecisionType,
+        confidence: float,
+        factors: List[Factor],
+        score: float,
+        state_inference: Optional[StateInference],
+        causal_diagnosis: Optional[Dict[str, Any]]
+    ) -> ExplanationResult:
+        """生成解释"""
+        company_name = company_info.get("name", ts_code)
+        industry = company_info.get("industry")
+
+        explainer = DecisionExplainer(
+            company_name=company_name,
+            industry=industry
+        )
+
+        state_info = None
+        if state_inference:
+            state_info = {
+                "state": state_inference.most_likely_state.value,
+                "confidence": state_inference.confidence
+            }
+
+        return explainer.explain(
+            decision=decision,
+            confidence=confidence,
+            factors=factors,
+            score=score,
+            state_info=state_info,
+            causal_diagnosis=causal_diagnosis
         )
 
 
-# ============================================================================
-# 批量评估结果
-# ============================================================================
-
-def _build_contexts_from_dataframes(
-    aggregated_trends: Dict[str, pd.DataFrame],
-) -> Dict[str, List[TrendContext]]:
-    """将聚合的探针数据转换为按 ts_code 分组的 TrendContext 列表.
-
-    Args:
-        aggregated_trends: {metric_name: DataFrame or AggregatableResult} 探针结果
-
-    Returns:
-        {ts_code: [TrendContext, ...]} 按股票分组的上下文
-    """
-    from shared.aggregation import AggregatableResult
-
-    contexts_by_ts: Dict[str, List[TrendContext]] = {}
-
-    for metric_name, data in aggregated_trends.items():
-        # 支持 AggregatableResult 和直接 DataFrame
-        if isinstance(data, AggregatableResult):
-            df = data.value
-        else:
-            df = data
-
-        if df is None or (hasattr(df, 'empty') and df.empty):
-            continue
-        if "ts_code" not in df.columns:
-            logger.warning(f"探针 {metric_name} 缺少 ts_code 列，跳过")
-            continue
-
-        col_index: Dict[str, int] = {c: i for i, c in enumerate(df.columns)}
-        ts_idx = col_index.get('ts_code')
-        if ts_idx is None:
-            continue
-
-        for row in df.itertuples(index=False, name=None):
-            ts_code = str(row[ts_idx])
-            builder = TrendContextBuilder(metric_name, row, col_index)
-            context = builder.build()
-
-            contexts_by_ts.setdefault(ts_code, []).append(context)
-
-    return contexts_by_ts
-
-
-def _evaluate_company(
-    ts_code: str,
-    contexts: List[TrendContext],
-    rule_engine: RuleEngine,
-    strategies: List[Any],
-) -> Dict[str, Any]:
-    """评估单个公司.
-
-    Args:
-        ts_code: 股票代码
-        contexts: 该公司的所有指标 TrendContext
-        rule_engine: 规则引擎
-        strategies: 策略列表
-
-    Returns:
-        公司评估结果字典
-    """
-    # 按指标存储评估结果
-    metric_results: Dict[str, EvaluationResultImpl] = {}
-    metric_strategies: Dict[str, List[str]] = {}
-
-    # 对每个指标执行规则评估
-    for ctx in contexts:
-        eval_result = rule_engine.evaluate(ctx)
-        metric_results[ctx.metric_name] = eval_result
-
-        # 执行策略评估
-        matched_strategies = []
-        for strategy in strategies:
-            try:
-                result = strategy.evaluate(ctx)
-                if result and result.matched:
-                    matched_strategies.append(result.name)
-            except Exception as e:
-                logger.debug(f"策略 {strategy.name} 评估异常: {e}")
-
-        metric_strategies[ctx.metric_name] = matched_strategies
-
-    # 计算综合评分
-    total_score = 0.0
-    total_weight = 0.0
-    passes = True
-    elimination_reasons = []
-    all_strategies = set()
-
-    # 核心指标权重
-    weights = {
-        "roic": 1.5,
-        "roe": 1.2,
-        "roiic": 0.8,
-        "gross_margin": 1.0,
-        "net_margin": 0.8,
-        "revenue": 1.0,
-        "profit": 1.0,
-        "ocf": 0.8,
-    }
-
-    for metric_name, result in metric_results.items():
-        weight = weights.get(metric_name, 1.0)
-        total_score += result.score * weight
-        total_weight += weight
-
-        if not result.passes:
-            passes = False
-            if result.elimination_reason:
-                elimination_reasons.append(f"{metric_name}: {result.elimination_reason}")
-
-        all_strategies.update(metric_strategies.get(metric_name, []))
-
-    composite_score = total_score / total_weight if total_weight > 0 else 0.0
-
-    # 计算评级
-    if composite_score >= 90:
-        grade = "A"
-    elif composite_score >= 80:
-        grade = "B"
-    elif composite_score >= 70:
-        grade = "C"
-    elif composite_score >= 60:
-        grade = "D"
-    else:
-        grade = "F"
-
-    return {
-        "ts_code": ts_code,
-        "passes": passes,
-        "composite_score": round(composite_score, 2),
-        "grade": grade,
-        "elimination_reasons": elimination_reasons,
-        "matched_strategies": list(all_strategies),
-        "metric_results": {
-            name: result.to_dict() for name, result in metric_results.items()
-        },
-    }
-
-
-# ============================================================================
-# Orchestrator 注册入口
-# ============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
+# Pipeline 集成
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @register_method(
-    engine_name="run_evaluator",
     component_type="business_engine",
     engine_type="evaluator",
-    description="Run rule-based evaluation on probe results (29 rules + 5 strategies)",
+    engine_name="causal_bayesian_evaluator"
 )
-def run_evaluator(
+def run_causal_bayesian_evaluator(
     aggregated_trends: Dict[str, pd.DataFrame],
+    company_list: Optional[List[Dict[str, Any]]] = None,
+    config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """规则评估引擎入口: 对探针结果执行规则评估.
+    """
+    运行因果贝叶斯评估器
 
-    🌟 PDDA 纯净路径: 强制使用 aggregated_trends
+    Pipeline 入口函数。
 
-    数据流:
-        trend/engine (8个探针) → run_evaluator → 评估结果 → reporters/comprehensive
+    Args:
+        aggregated_trends: 来自 PDDA 的聚合趋势数据
+            键: 指标名 (roic, roe, revenue, ...)
+            值: DataFrame 包含所有公司的趋势分析结果
+        company_list: 可选的公司信息列表
+            [{"ts_code": "000001.SZ", "name": "平安银行", "industry": "银行"}, ...]
+        config: 可选的配置覆盖
 
-    输入:
-        aggregated_trends: PDDA自动聚合的趋势数据字典 {metric_name: DataFrame}
-            - 必须包含: roic, roe (核心指标)
-            - 可选包含: roiic, gross_margin, net_margin, revenue, profit, ocf
-
-    输出:
+    Returns:
         {
-            "algo_version": "1.0.0",
-            "universe_size": N,
-            "rule_count": 29,
-            "strategy_count": 5,
-            "evaluations": [...],
-            "summary": {...}
+            "evaluations": [CompanyEvaluation.to_dict(), ...],
+            "summary": {...},
+            "quality_companies": [...],
+            "veto_companies": [...]
         }
     """
-    logger.info(
-        f"✅ Evaluator: 接收 {len(aggregated_trends)} 个指标: {list(aggregated_trends.keys())}"
-    )
+    logger.info(f"Starting Causal Bayesian Evaluator with {len(aggregated_trends)} metrics")
 
-    # 构建上下文
-    contexts_by_ts = _build_contexts_from_dataframes(aggregated_trends)
-    logger.info(f"✅ Evaluator: 构建 {len(contexts_by_ts)} 家公司的 TrendContext")
+    # 解析配置
+    eval_config = EvaluatorConfig()
+    if config:
+        for key, value in config.items():
+            if hasattr(eval_config, key):
+                setattr(eval_config, key, value)
 
-    # 初始化规则引擎和策略
-    rule_engine = RuleEngine()
-    strategies = [
-        HighGrowthStrategy(),
-        TurnaroundStrategy(),
-        StableDividendStrategy(),
-        CyclicalBottomStrategy(),
-        MoatDefenseStrategy(),
-    ]
+    # 创建评估器
+    evaluator = CausalBayesianEvaluator(eval_config)
 
-    # 批量评估
+    # 获取所有公司代码
+    all_ts_codes = set()
+    for df in aggregated_trends.values():
+        if df is not None and "ts_code" in df.columns:
+            all_ts_codes.update(df["ts_code"].unique())
+
+    # 构建公司信息字典
+    company_info_dict = {}
+    if company_list:
+        for info in company_list:
+            ts_code = info.get("ts_code")
+            if ts_code:
+                company_info_dict[ts_code] = info
+
+    # 评估每个公司
     evaluations = []
-    for ts_code, contexts in contexts_by_ts.items():
-        result = _evaluate_company(ts_code, contexts, rule_engine, strategies)
-        evaluations.append(result)
+    quality_companies = []
+    veto_companies = []
 
-    # 计算汇总统计
-    summary = _calculate_summary(evaluations)
+    for ts_code in all_ts_codes:
+        company_info = company_info_dict.get(ts_code, {"ts_code": ts_code})
 
-    rule_stats = rule_engine.get_rule_statistics()
+        try:
+            result = evaluator.evaluate_company(
+                ts_code=ts_code,
+                trend_data=aggregated_trends,
+                company_info=company_info
+            )
+
+            evaluations.append(result.to_dict())
+
+            if result.decision == DecisionType.QUALITY:
+                quality_companies.append(ts_code)
+            elif result.decision == DecisionType.VETO:
+                veto_companies.append(ts_code)
+
+        except Exception as e:
+            logger.error(f"Error evaluating {ts_code}: {e}")
+            continue
+
+    # 生成摘要
+    summary = {
+        "total_evaluated": len(evaluations),
+        "quality_count": len(quality_companies),
+        "veto_count": len(veto_companies),
+        "average_score": np.mean([e["score"] for e in evaluations]) if evaluations else 0,
+        "average_confidence": np.mean([e["confidence"] for e in evaluations]) if evaluations else 0
+    }
+
+    logger.info(f"Evaluation complete: {summary}")
 
     return {
-        "algo_version": "1.0.0",
-        "universe_size": len(evaluations),
-        "rule_count": rule_stats.get("total_rules", 29),
-        "strategy_count": len(strategies),
         "evaluations": evaluations,
         "summary": summary,
+        "quality_companies": quality_companies,
+        "veto_companies": veto_companies
     }
 
 
-def _calculate_summary(evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """计算汇总统计"""
-    if not evaluations:
-        return {}
+# ═══════════════════════════════════════════════════════════════════════════════
+# 便捷函数
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # 评级分布
-    grade_dist = {}
-    for e in evaluations:
-        grade = e.get("grade", "F")
-        grade_dist[grade] = grade_dist.get(grade, 0) + 1
-
-    # 通过/淘汰统计
-    pass_count = sum(1 for e in evaluations if e.get("passes", False))
-    fail_count = len(evaluations) - pass_count
-
-    # 策略命中统计
-    strategy_dist = {}
-    for e in evaluations:
-        for s in e.get("matched_strategies", []):
-            strategy_dist[s] = strategy_dist.get(s, 0) + 1
-
-    # 平均分数
-    scores = [e.get("composite_score", 0) for e in evaluations]
-    avg_score = sum(scores) / len(scores) if scores else 0.0
-
-    return {
-        "grade_distribution": grade_dist,
-        "pass_count": pass_count,
-        "fail_count": fail_count,
-        "strategy_distribution": strategy_dist,
-        "average_score": round(avg_score, 2),
-        "top_picks_count": grade_dist.get("A", 0) + grade_dist.get("B", 0),
-    }
-
-
-@register_method(
-    engine_name="run_evaluator_single",
-    component_type="business_engine",
-    engine_type="evaluator",
-    description="Run rule-based evaluation for a single stock",
-)
-def run_evaluator_single(
+def evaluate_single_company(
     ts_code: str,
-    **probe_frames: pd.DataFrame,
-) -> Dict[str, Any]:
-    """单支股票的规则评估.
+    trend_data: Dict[str, pd.DataFrame],
+    company_name: Optional[str] = None,
+    industry: Optional[str] = None,
+    market_cap: Optional[float] = None
+) -> CompanyEvaluation:
+    """便捷函数：评估单个公司"""
+    evaluator = CausalBayesianEvaluator()
 
-    Args:
-        ts_code: 目标股票代码
-        **probe_frames: 探针 DataFrame (需包含该股票)
+    company_info = {
+        "ts_code": ts_code,
+        "name": company_name,
+        "industry": industry,
+        "market_cap": market_cap or 100.0
+    }
 
-    Returns:
-        单支股票的评估结果
-    """
-    contexts_by_ts = _build_contexts_from_dataframes(probe_frames)
-    contexts = contexts_by_ts.get(ts_code, [])
-
-    if not contexts:
-        return {"error": f"No contexts found for {ts_code}"}
-
-    rule_engine = RuleEngine()
-    strategies = [
-        HighGrowthStrategy(),
-        TurnaroundStrategy(),
-        StableDividendStrategy(),
-        CyclicalBottomStrategy(),
-        MoatDefenseStrategy(),
-    ]
-
-    return _evaluate_company(ts_code, contexts, rule_engine, strategies)
-
-
-__all__ = ["run_evaluator", "run_evaluator_single"]
+    return evaluator.evaluate_company(ts_code, trend_data, company_info)

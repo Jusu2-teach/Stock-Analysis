@@ -719,3 +719,124 @@ MIT License
 - [Polars](https://pola.rs/) - 高性能数据处理库
 - [Prefect](https://www.prefect.io/) - 工作流编排引擎
 - [Kedro](https://kedro.org/) - 数据管道框架
+
+
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           🔹 阶段 1: 原始数据                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  📁 data/polars/10yd_final_industry.csv                                     │
+│                                                                              │
+│  每家公司 10 行（10年数据），每行 ~120 列：                                    │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │ ts_code   │ end_date │ roic │ roe │ eps │ grossprofit_margin │ ... │     │
+│  ├───────────┼──────────┼──────┼─────┼─────┼────────────────────┼─────┤     │
+│  │ 000009.SZ │ 20151231 │ 8.76 │19.46│ 0.5 │ 33.44              │ ... │     │
+│  │ 000009.SZ │ 20161231 │ 4.57 │ 5.24│ 0.11│ 30.66              │ ... │     │
+│  │ 000009.SZ │ 20171231 │ 3.26 │ 2.81│ 0.06│ 33.71              │ ... │     │
+│  │ 000009.SZ │ 20181231 │ 4.45 │ 4.16│ 0.1 │ 36.99              │ ... │     │
+│  │ 000009.SZ │ ...      │ ...  │ ... │ ... │ ...                │ ... │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+│  共 ~1800 家公司 × 10年 = ~18000 行                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      🔸 阶段 2: 趋势探针分析（8个并行）                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  analyze_metric_trend(metric_name='roic')                                   │
+│  analyze_metric_trend(metric_name='roe')                                    │
+│  analyze_metric_trend(metric_name='revenue')   → total_revenue_ps           │
+│  analyze_metric_trend(metric_name='profit')    → eps                        │
+│  analyze_metric_trend(metric_name='gross_margin') → grossprofit_margin      │
+│  analyze_metric_trend(metric_name='net_margin')   → netprofit_margin        │
+│  analyze_metric_trend(metric_name='roiic')     → 派生计算                    │
+│  analyze_metric_trend(metric_name='ocf')       → ocfps                      │
+│                                                                              │
+│  ┌───────────────────────────────────────────────────────────────────┐      │
+│  │  每个指标对每家公司执行 8 个探针：                                   │      │
+│  │                                                                    │      │
+│  │  [12, 14, 15, 13, 11] ─┬─▶ LogTrendProbe    → slope, r², CAGR     │      │
+│  │   (5年 ROIC 序列)      │                                          │      │
+│  │                        ├─▶ VolatilityProbe  → CV, volatility_type │      │
+│  │                        ├─▶ RobustProbe      → robust_slope, MK_τ  │      │
+│  │                        ├─▶ DeteriorationProbe → has_deterioration │      │
+│  │                        ├─▶ InflectionProbe  → has_inflection      │      │
+│  │                        ├─▶ CyclicalProbe    → is_cyclical, phase  │      │
+│  │                        ├─▶ RollingProbe     → 3y/5y rolling slope │      │
+│  │                        └─▶ MultiHorizonProbe → structural break   │      │
+│  └───────────────────────────────────────────────────────────────────┘      │
+│                                                                              │
+│  输出：每家公司每个指标 → 1 行，~40 个特征列                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   🔹 阶段 3: AggregatableResult 产出                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  return AggregatableResult(                                                  │
+│      key="roic",           # ← 聚合键（业务名）                               │
+│      value=result_df,      # ← DataFrame (1800行 × 40列)                    │
+│      metadata=AggregationMetadata(                                          │
+│          producer_method="analyze_metric_trend",                            │
+│          tags={"canonical_name": "roic"}                                    │
+│      )                                                                       │
+│  )                                                                           │
+│                                                                              │
+│  📁 同时存储到 data/filter_middle/roic_trend_analysis.csv                    │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │ ts_code   │metric_name│roic_slope│roic_cv│roic_has_deterioration│...│   │
+│  ├───────────┼───────────┼──────────┼───────┼───────────────────────┼───┤   │
+│  │ 000009.SZ │ roic      │ -0.79    │ 0.34  │ True                  │...│   │
+│  │ 000020.SZ │ roic      │  0.12    │ 0.65  │ False                 │...│   │
+│  │ 000021.SZ │ roic      │ -0.27    │ 0.24  │ False                 │...│   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  注意：每家公司变成 1 行！（从 10 行聚合为 1 行趋势特征）                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      🔸 阶段 4: PDDA 自动聚合                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Pipeline 执行完 8 个趋势分析步骤后...                                        │
+│                                                                              │
+│  Collector 自动收集所有 AggregatableResult:                                  │
+│                                                                              │
+│  scope["trends"] = {                                                         │
+│      "roic":         DataFrame(1800 rows × 40 cols),                        │
+│      "roe":          DataFrame(1800 rows × 40 cols),                        │
+│      "roiic":        DataFrame(1700 rows × 40 cols),  # 需要差分，少一些     │
+│      "revenue":      DataFrame(1800 rows × 40 cols),                        │
+│      "profit":       DataFrame(1800 rows × 40 cols),                        │
+│      "gross_margin": DataFrame(1800 rows × 40 cols),                        │
+│      "net_margin":   DataFrame(1800 rows × 40 cols),                        │
+│      "ocf":          DataFrame(1800 rows × 40 cols),                        │
+│  }                                                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                          ┌─────────┴─────────┐
+                          ▼                   ▼
+┌────────────────────────────────┐  ┌────────────────────────────────┐
+│  🔹 阶段 5a: Evaluators 消费    │  │  🔹 阶段 5b: Truth 消费        │
+├────────────────────────────────┤  ├────────────────────────────────┤
+│                                │  │                                │
+│  def run_evaluator(            │  │  def run_truth_analysis(       │
+│      aggregated_trends: Dict   │  │      aggregated_trends: Dict   │
+│  ):                            │  │  ):                            │
+│      # 自动注入 8 个 DataFrame  │  │      # 六维基因分析            │
+│                                │  │      # 三求解器                │
+│      for metric, df in         │  │                                │
+│          aggregated_trends:    │  │                                │
+│          # df 每家公司 1 行     │  │                                │
+│          # 评估 29 条规则      │  │                                │
+│          # 计算 5 种策略       │  │                                │
+│                                │  │                                │
+└────────────────────────────────┘  └────────────────────────────────┘

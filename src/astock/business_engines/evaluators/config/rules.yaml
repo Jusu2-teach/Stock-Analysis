@@ -1,0 +1,329 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AStock Evaluators v2.0 - 声明式规则配置
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 设计原则:
+#   1. Single Source of Truth - 所有规则集中定义
+#   2. 声明式 - 规则即数据，无需编写Python类
+#   3. 可解释 - 每条规则有清晰的业务含义
+#
+# 版本: 2.0.0
+# 更新: 2026-01-31
+# ═══════════════════════════════════════════════════════════════════════════════
+
+metadata:
+  version: "2.0.0"
+  description: "AStock 因果贝叶斯规则评估配置"
+  author: "AStock Team"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 全局评分配置
+# ═══════════════════════════════════════════════════════════════════════════════
+scoring:
+  base_score: 100.0
+  max_penalty: 50.0
+  max_bonus: 30.0
+
+  # 评级阈值
+  grades:
+    A: 90
+    B: 80
+    C: 70
+    D: 60
+    F: 0
+
+  # 指标权重（用于多指标融合）
+  metric_weights:
+    roic: 1.5
+    roe: 1.2
+    roiic: 0.8
+    gross_margin: 1.0
+    net_margin: 0.8
+    revenue: 1.0
+    profit: 1.0
+    ocf: 0.8
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 否决规则 (Veto) - 硬约束，任一触发立即淘汰
+# ═══════════════════════════════════════════════════════════════════════════════
+veto_rules:
+  - id: severe_trend_decline
+    name: "严重趋势衰退"
+    description: "长期趋势严重下滑且统计显著"
+    condition:
+      log_slope_lt: -0.10
+      r_squared_gt: 0.40
+    exemptions:
+      - type: cyclical_bottom
+      - type: turnaround
+    message_template: "趋势严重恶化: slope={log_slope:.3f}, R²={r_squared:.2f}"
+
+  - id: consecutive_loss
+    name: "连续亏损"
+    description: "连续3年以上亏损"
+    condition:
+      latest_value_lt: 0
+      loss_year_count_gte: 3
+    exemptions:
+      - type: turnaround
+    message_template: "连续亏损{loss_year_count}年, 最新值={latest_value:.2f}"
+
+  - id: cumulative_collapse
+    name: "累计崩塌"
+    description: "从高位崩塌至低位（跌幅超80%）"
+    condition:
+      max_value_gt: 30
+      latest_value_lt: 5
+      decline_pct_gt: 0.80
+    message_template: "从{max_value:.1f}崩塌至{latest_value:.1f}"
+
+  - id: severe_deterioration
+    name: "严重恶化"
+    description: "贝叶斯检测到严重或灾难级恶化"
+    condition:
+      deterioration_severity_in: ["severe", "catastrophic"]
+    exemptions:
+      - type: cyclical_bottom
+    message_template: "恶化等级: {deterioration_severity}"
+
+  - id: peak_decline
+    name: "峰值暴跌"
+    description: "从历史峰值下跌超过70%"
+    condition:
+      peak_decline_pct_gt: 0.70
+    params:
+      cyclical_threshold: 0.80
+    message_template: "从峰值下跌{peak_decline_pct:.1%}"
+
+  - id: roiic_capital_destruction
+    name: "ROIIC资本毁灭"
+    description: "增量资本回报持续为负"
+    applies_to: ["roiic"]
+    condition:
+      weighted_avg_lt: -20
+      latest_value_lt: -10
+    message_template: "增量资本回报持续为负"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 扣分规则 (Penalty) - 软约束，累积扣分
+# ═══════════════════════════════════════════════════════════════════════════════
+penalty_rules:
+  - id: mild_decline
+    name: "轻度衰退"
+    description: "趋势轻度下滑"
+    condition:
+      log_slope_lt: -0.03
+      log_slope_gte: -0.10
+      r_squared_gt: 0.30
+    score_formula: "abs(log_slope) * 150"
+    max_score: 15
+    message_template: "轻度下滑: slope={log_slope:.3f}"
+
+  - id: high_volatility
+    name: "高波动"
+    description: "变异系数过高"
+    condition:
+      cv_gt: 0.40
+    score_formula: "(cv - 0.30) * 40"
+    max_score: 12
+    message_template: "波动过大: CV={cv:.2f}"
+
+  - id: deterioration_penalty
+    name: "恶化扣分"
+    description: "根据恶化程度扣分"
+    condition:
+      has_deterioration: true
+    score_map:
+      mild: 5
+      moderate: 10
+    score_key: "deterioration_severity"
+    message_template: "恶化等级{deterioration_severity}"
+
+  - id: consecutive_decline
+    name: "连续下跌"
+    description: "连续多年下跌"
+    condition:
+      consecutive_decline_years_gte: 2
+    score_tiers:
+      - years_gte: 4
+        score: 15
+      - years_gte: 3
+        score: 10
+      - years_gte: 2
+        score: 5
+    message_template: "连续下跌{consecutive_decline_years}年"
+
+  - id: single_year_crash
+    name: "单年暴跌"
+    description: "单年跌幅超过30%"
+    condition:
+      max_yoy_decline_lt: -0.30
+    score: 12
+    message_template: "单年跌幅{max_yoy_decline:.1%}"
+
+  - id: roiic_negative
+    name: "ROIIC为负"
+    description: "增量资本回报为负"
+    applies_to: ["roiic"]
+    condition:
+      latest_value_lt: 0
+    score_formula: "min(abs(latest_value) * 0.8, 12)"
+    max_score: 12
+    message_template: "ROIIC为负: {latest_value:.1f}"
+
+  - id: earnings_ocf_divergence
+    name: "盈利质量存疑"
+    description: "利润增长但现金流恶化"
+    applies_to: ["profit", "eps"]
+    condition:
+      log_slope_gt: 0.10
+      ref_ocf_slope_lt: -0.05
+    score: 12
+    message_template: "利润增但现金流降"
+
+  - id: low_confidence_trend
+    name: "趋势不可靠"
+    description: "R²过低，趋势不显著"
+    condition:
+      r_squared_lt: 0.25
+      abs_log_slope_gt: 0.05
+    score: 8
+    message_template: "趋势不显著: R²={r_squared:.2f}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 加分规则 (Bonus) - 正向激励
+# ═══════════════════════════════════════════════════════════════════════════════
+bonus_rules:
+  - id: growth_momentum
+    name: "成长动能"
+    description: "持续高速成长且加速"
+    condition:
+      log_slope_gt: 0.10
+      recent_3y_slope_gt: 0
+      is_accelerating: true
+    score_formula: "min(log_slope * 50, 10)"
+    max_score: 10
+    message_template: "持续成长: CAGR≈{cagr:.1%}"
+
+  - id: inflection_recovery
+    name: "拐点恢复"
+    description: "V型反转"
+    condition:
+      has_inflection: true
+      inflection_type_eq: "v_recovery"
+    score_formula: "min(abs(slope_change) * 30, 10)"
+    max_score: 10
+    message_template: "V型反转"
+
+  - id: high_stability
+    name: "高位稳定"
+    description: "高位稳定运行"
+    condition:
+      latest_value_gt_threshold: "high_value"
+      cv_lt: 0.15
+      log_slope_gte: 0
+    score: 8
+    message_template: "高位稳定运行"
+
+  - id: cyclical_bottom
+    name: "周期底部"
+    description: "周期底部回升"
+    condition:
+      is_cyclical: true
+      cycle_phase_in: ["trough", "recovery"]
+      recent_3y_slope_gt: 0
+    score: 8
+    message_template: "周期底部回升"
+
+  - id: mean_reversion
+    name: "均值回归"
+    description: "向均值收敛"
+    condition:
+      latest_vs_weighted_ratio_gt: 0.80
+      latest_vs_weighted_ratio_lt: 1.0
+      log_slope_gt: 0
+    score: 5
+    message_template: "向均值收敛中"
+
+  - id: high_r_squared
+    name: "趋势稳定"
+    description: "趋势高度稳定"
+    condition:
+      r_squared_gt: 0.80
+      log_slope_gt: 0
+    score: 5
+    message_template: "趋势高度稳定: R²={r_squared:.2f}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 投资策略 (Strategies) - 模式识别
+# ═══════════════════════════════════════════════════════════════════════════════
+strategies:
+  - id: high_growth
+    name: "高成长"
+    description: "高速成长股"
+    conditions:
+      - cagr_gt: 0.20
+      - is_accelerating: true
+      - has_deterioration: false
+    confidence_formula: "min(cagr / 0.30, 1.0)"
+    tags: ["成长股", "关注持续性"]
+
+  - id: moat_defense
+    name: "护城河"
+    description: "护城河防御型"
+    applies_to: ["roic", "roe", "gross_margin"]
+    conditions:
+      - latest_value_gt_threshold: "moat_min"
+      - cv_lt: 0.20
+      - log_slope_gte: -0.02
+    confidence_formula: "(latest_value / threshold) * 0.5 + (1 - cv) * 0.5"
+    tags: ["核心资产", "长期持有"]
+
+  - id: turnaround
+    name: "困境反转"
+    description: "困境反转机会"
+    conditions:
+      - has_inflection: true
+      - recent_3y_slope_gt_log_slope: true
+      - trend_acceleration_gt: 0
+    confidence_formula: "min(abs(slope_change) / 0.20, 1.0)"
+    tags: ["逆向投资", "高风险高收益"]
+
+  - id: cyclical_bottom
+    name: "周期抄底"
+    description: "周期股底部机会"
+    conditions:
+      - is_cyclical: true
+      - cycle_phase_in: ["trough", "recovery"]
+      - recent_3y_slope_gt: 0
+    confidence_formula: "cyclical_confidence"
+    tags: ["周期股", "择时重要"]
+
+  - id: stable_dividend
+    name: "稳定分红"
+    description: "稳定分红型"
+    conditions:
+      - cv_lt: 0.15
+      - log_slope_gte: 0
+      - latest_value_gt_threshold: "dividend_min"
+      - has_deterioration: false
+    confidence_formula: "(1 - cv) * 0.6 + (1 if log_slope > 0 else 0.5) * 0.4"
+    tags: ["防御型", "稳定收息"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 豁免函数定义
+# ═══════════════════════════════════════════════════════════════════════════════
+exemption_definitions:
+  turnaround:
+    description: "困境反转豁免"
+    conditions:
+      - has_inflection: true
+      - recent_3y_slope_gt: 0
+      - trend_acceleration_gt: 0
+
+  cyclical_bottom:
+    description: "周期底部豁免"
+    conditions:
+      - is_cyclical: true
+      - cycle_phase_in: ["trough", "recovery"]
+      - recent_3y_slope_gt: 0

@@ -328,11 +328,11 @@ pipeline:
     # └─ 投资策略: 高成长、困境反转、稳定分红、周期底部、护城河
     # ═══════════════════════════════════════════════════════════════════════════
 
-    # 🔵 Step 1: 规则评估（29条规则 + 5种策略）
-    - name: "Run_Evaluator"
+    # 🔵 Step 1: 因果贝叶斯评估（Causal Bayesian + HMM + Dempster-Shafer）
+    - name: "Run_Causal_Bayesian_Evaluator"
       component: "business_engine"
       engine: "evaluator"
-      method: ["run_evaluator"]
+      method: ["causal_bayesian_evaluator"]
       depends_on:  # 🔑 显式依赖声明
         - "Analyze_ROIC_Trend"
         - "Analyze_ROE_Trend"
@@ -356,7 +356,7 @@ pipeline:
       method: ["report_comprehensive"]
       parameters:
         # 使用 Evaluator 处理后的结果
-        evaluator_result: "steps.Run_Evaluator.outputs.parameters.Evaluator_Result"
+        evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
         output_path: "data/comprehensive_analysis_report.md"
       outputs:
         parameters:

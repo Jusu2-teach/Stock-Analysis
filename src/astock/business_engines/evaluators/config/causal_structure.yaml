@@ -1,0 +1,326 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AStock Evaluators v2.0 - 因果图结构配置
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 基于 Pearl 因果推断理论的有向无环图（DAG）
+# 定义财务指标间的因果关系而非仅仅相关性
+# ═══════════════════════════════════════════════════════════════════════════════
+
+metadata:
+  version: "2.0.0"
+  description: "财务指标因果关系图"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 节点定义
+# ═══════════════════════════════════════════════════════════════════════════════
+nodes:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 第一层：外生变量（根节点）
+  # ─────────────────────────────────────────────────────────────────────────────
+  market_demand:
+    type: "exogenous"
+    description: "市场需求（外生驱动）"
+    observable: false
+    proxy_indicators: ["industry_growth_rate"]
+
+  competitive_position:
+    type: "exogenous"
+    description: "竞争地位"
+    observable: false
+    proxy_indicators: ["market_share", "brand_power"]
+
+  management_quality:
+    type: "exogenous"
+    description: "管理层质量"
+    observable: false
+    proxy_indicators: ["capital_allocation_efficiency", "execution_consistency"]
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 第二层：收入端
+  # ─────────────────────────────────────────────────────────────────────────────
+  revenue_trend:
+    type: "endogenous"
+    description: "营收趋势"
+    observable: true
+    metric_key: "revenue"
+    prior_distribution:
+      type: "normal"
+      mean: 0.05
+      std: 0.15
+
+  pricing_power:
+    type: "endogenous"
+    description: "定价能力"
+    observable: false
+    proxy_indicators: ["gross_margin_stability", "price_vs_inflation"]
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 第三层：利润率
+  # ─────────────────────────────────────────────────────────────────────────────
+  gross_margin_trend:
+    type: "endogenous"
+    description: "毛利率趋势"
+    observable: true
+    metric_key: "gross_margin"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.03
+
+  net_margin_trend:
+    type: "endogenous"
+    description: "净利率趋势"
+    observable: true
+    metric_key: "net_margin"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.05
+
+  operating_leverage:
+    type: "endogenous"
+    description: "经营杠杆效应"
+    observable: false
+    proxy_indicators: ["fixed_cost_ratio"]
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 第四层：盈利能力
+  # ─────────────────────────────────────────────────────────────────────────────
+  roe_trend:
+    type: "endogenous"
+    description: "ROE趋势"
+    observable: true
+    metric_key: "roe"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.04
+
+  roic_trend:
+    type: "endogenous"
+    description: "ROIC趋势"
+    observable: true
+    metric_key: "roic"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.03
+
+  roiic_trend:
+    type: "endogenous"
+    description: "增量资本回报率趋势"
+    observable: true
+    metric_key: "roiic"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.08
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 第五层：现金流与资本效率
+  # ─────────────────────────────────────────────────────────────────────────────
+  ocf_trend:
+    type: "endogenous"
+    description: "经营现金流趋势"
+    observable: true
+    metric_key: "ocf"
+    prior_distribution:
+      type: "normal"
+      mean: 0.0
+      std: 0.10
+
+  capital_efficiency:
+    type: "endogenous"
+    description: "资本效率"
+    observable: false
+    proxy_indicators: ["asset_turnover", "working_capital_efficiency"]
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 最终层：公司质量判断
+  # ─────────────────────────────────────────────────────────────────────────────
+  company_quality:
+    type: "latent"
+    description: "公司质量（最终推断目标）"
+    observable: false
+    states: ["excellent", "good", "average", "poor", "distressed"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 因果边定义
+# 格式: parent -> child, with effect_type and strength
+# ═══════════════════════════════════════════════════════════════════════════════
+edges:
+  # 外生 → 收入
+  - from: "market_demand"
+    to: "revenue_trend"
+    effect_type: "direct"
+    strength: 0.7
+    mechanism: "市场需求增加直接推动营收增长"
+
+  - from: "competitive_position"
+    to: "revenue_trend"
+    effect_type: "direct"
+    strength: 0.5
+    mechanism: "竞争优势转化为市场份额增长"
+
+  - from: "competitive_position"
+    to: "pricing_power"
+    effect_type: "direct"
+    strength: 0.8
+    mechanism: "竞争地位决定定价能力"
+
+  # 收入 → 利润率
+  - from: "revenue_trend"
+    to: "gross_margin_trend"
+    effect_type: "moderated"
+    strength: 0.3
+    mechanism: "规模效应影响毛利率（正向但非线性）"
+    moderator: "operating_leverage"
+
+  - from: "pricing_power"
+    to: "gross_margin_trend"
+    effect_type: "direct"
+    strength: 0.6
+    mechanism: "定价能力直接提升毛利率"
+
+  - from: "gross_margin_trend"
+    to: "net_margin_trend"
+    effect_type: "direct"
+    strength: 0.7
+    mechanism: "毛利率是净利率的上游"
+
+  - from: "operating_leverage"
+    to: "net_margin_trend"
+    effect_type: "conditional"
+    strength: 0.4
+    mechanism: "高经营杠杆放大营收变动对净利润影响"
+    condition: "revenue_trend > 0"
+
+  # 利润率 → 盈利能力
+  - from: "net_margin_trend"
+    to: "roe_trend"
+    effect_type: "direct"
+    strength: 0.6
+    mechanism: "净利率提升推动ROE改善"
+
+  - from: "net_margin_trend"
+    to: "roic_trend"
+    effect_type: "direct"
+    strength: 0.5
+    mechanism: "净利率影响资本回报"
+
+  - from: "revenue_trend"
+    to: "roe_trend"
+    effect_type: "mediated"
+    strength: 0.3
+    mechanism: "营收增长通过周转率影响ROE"
+    mediator: "capital_efficiency"
+
+  - from: "roic_trend"
+    to: "roiic_trend"
+    effect_type: "direct"
+    strength: 0.5
+    mechanism: "ROIC趋势延续到增量投资"
+
+  - from: "management_quality"
+    to: "roiic_trend"
+    effect_type: "direct"
+    strength: 0.6
+    mechanism: "管理层资本配置能力影响增量投资回报"
+
+  # 盈利能力 → 现金流
+  - from: "roe_trend"
+    to: "ocf_trend"
+    effect_type: "direct"
+    strength: 0.4
+    mechanism: "盈利能力部分转化为经营现金流"
+
+  - from: "revenue_trend"
+    to: "ocf_trend"
+    effect_type: "direct"
+    strength: 0.5
+    mechanism: "营收增长产生现金流入"
+
+  - from: "management_quality"
+    to: "ocf_trend"
+    effect_type: "direct"
+    strength: 0.4
+    mechanism: "管理层影响运营资本管理效率"
+
+  # 所有因素 → 公司质量
+  - from: "roic_trend"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.25
+    mechanism: "ROIC是核心价值创造指标"
+
+  - from: "revenue_trend"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.15
+    mechanism: "营收增长反映业务发展"
+
+  - from: "gross_margin_trend"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.15
+    mechanism: "毛利率趋势反映竞争力变化"
+
+  - from: "ocf_trend"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.20
+    mechanism: "现金流是盈利质量的验证"
+
+  - from: "roiic_trend"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.15
+    mechanism: "增量资本回报反映未来潜力"
+
+  - from: "management_quality"
+    to: "company_quality"
+    effect_type: "direct"
+    strength: 0.10
+    mechanism: "管理层是长期价值的关键"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 混淆因子（需要调整的变量）
+# ═══════════════════════════════════════════════════════════════════════════════
+confounders:
+  - name: "industry_cycle"
+    affects: ["revenue_trend", "gross_margin_trend", "roic_trend"]
+    description: "行业周期同时影响多个指标，需控制"
+
+  - name: "macro_environment"
+    affects: ["revenue_trend", "ocf_trend", "market_demand"]
+    description: "宏观环境是共同外生因素"
+
+  - name: "accounting_policy"
+    affects: ["net_margin_trend", "ocf_trend", "roe_trend"]
+    description: "会计政策变更可能同时影响多个指标"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# do-calculus 干预规则
+# ═══════════════════════════════════════════════════════════════════════════════
+interventions:
+  # do(roic_trend = high) 的因果效应
+  roic_improvement:
+    intervention: "do(roic_trend > 0.02)"
+    target: "company_quality"
+    expected_effect: "positive"
+    causal_path: ["roic_trend", "roiic_trend", "company_quality"]
+    backdoor_adjustment: ["industry_cycle", "macro_environment"]
+
+  # do(revenue_trend = high) 但控制利润率的效应
+  revenue_without_margin:
+    intervention: "do(revenue_trend > 0.10) | do(gross_margin_trend = 0)"
+    target: "company_quality"
+    expected_effect: "neutral_to_negative"
+    interpretation: "增收不增利可能是价值毁灭"
+
+  # do(ocf_trend = high) 的验证效应
+  cash_flow_validation:
+    intervention: "do(ocf_trend > roe_trend)"
+    target: "company_quality"
+    expected_effect: "positive"
+    interpretation: "现金流验证盈利真实性"
