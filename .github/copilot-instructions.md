@@ -1,5 +1,7 @@
 # AStock Analysis - Copilot 指令
 
+> A股基本面量化分析系统：趋势探针 → 规则评估/六维基因 → 报告生成
+
 ## 架构总览（四层解耦）
 
 ```
@@ -21,6 +23,7 @@ workflow/*.yaml → pipeline/ → orchestrator/ → src/astock/business_engines/
 | 新增指标 | `shared/naming_convention.py` → `MetricRegistry` | 搜索 `MetricConfig` |
 | 工作流 | `workflow/analysis.yaml` | 复制现有 step |
 | 框架层 | `pipeline/` 或 `orchestrator/` | 各自 README.md |
+| 新探针 | `trend/probes/` 下新建 `*_probe.py` | 参考 `log_trend_probe.py` |
 
 ## 方法注册模板
 
@@ -30,7 +33,7 @@ from shared.aggregation import AggregatableResult
 
 @register_method(
     component_type="business_engine",  # datahub | data_engine | business_engine
-    engine_type="duckdb",              # duckdb | polars | pandas | evaluator | truth | reporting
+    engine_type="duckdb",              # duckdb | polars | pandas | evaluator | truth | reporting | valuation | macro
     engine_name="my_step"              # workflow YAML method: [xxx] 引用
 )
 def my_step(data, **params) -> AggregatableResult[str, pd.DataFrame]:
@@ -71,7 +74,7 @@ python -m pipeline cache --clear                                              # 
 3. **业务层禁止反向依赖框架**——仅可 import `@register_method` 和 `AggregatableResult`
 4. **禁止修改 `RD-Agent/`**——只读参考
 
-## 8 个趋势探针
+## 8 个趋势探针（业务键 → 数据列）
 
 | 业务键 | source_column | 说明 |
 |--------|---------------|------|
@@ -83,6 +86,18 @@ python -m pipeline cache --clear                                              # 
 | `gross_margin` | grossprofit_margin | 毛利率 |
 | `net_margin` | netprofit_margin | 净利率 |
 | `ocf` | ocfps | 每股经营现金流 |
+
+## 探针层（trend/probes/）
+
+每个探针只接收 `List[float]`，不知业务含义：
+- `LogTrendProbe` - OLS/WLS回归 + Bootstrap CI
+- `RobustProbe` - Theil-Sen/Mann-Kendall 稳健估计
+- `VolatilityProbe` - CV/ARCH效应检测
+- `InflectionProbe` - CUSUM/分段回归拐点
+- `DeteriorationProbe` - 贝叶斯恶化概率
+- `CyclicalProbe` - HP滤波/FFT周期性
+- `RollingProbe` - 3y/5y滚动窗口
+- `MultiHorizonProbe` - 结构断点检测
 
 ## 关键文件
 
