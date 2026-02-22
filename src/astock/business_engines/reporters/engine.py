@@ -368,14 +368,15 @@ def report_comprehensive(
             label = state_labels_full.get(state, state)
             lines.append(f"### {label} ({len(group)} 家)")
             lines.append("")
-            lines.append("| 代码 | 决策 | 得分 | 置信度 |")
-            lines.append("|------|------|------|--------|")
+            lines.append("| 代码 | 名称 | 决策 | 得分 | 置信度 |")
+            lines.append("|------|------|------|------|--------|")
             for e in sorted(group, key=lambda x: -x.get("score", 0))[:20]:
                 dec = e.get("decision", "")
                 dec_str = decision_emoji.get(dec, "") + dec
-                lines.append(f"| {e.get('ts_code', '')} | {dec_str} | {e.get('score', 0):.1f} | {e.get('confidence', 0):.0%} |")
+                name = (e.get('name') or '')[:6]
+                lines.append(f"| {e.get('ts_code', '')} | {name} | {dec_str} | {e.get('score', 0):.1f} | {e.get('confidence', 0):.0%} |")
             if len(group) > 20:
-                lines.append(f"| ... | | | 还有 {len(group) - 20} 家 |")
+                lines.append(f"| ... | | | | 还有 {len(group) - 20} 家 |")
             lines.append("")
 
     # ============================================================
@@ -413,18 +414,20 @@ def report_comprehensive(
     if veto_evals:
         lines.append("## ❌ 否决公司 (VETO)")
         lines.append("")
-        lines.append(f"> 共 {len(veto_evals)} 家公司被否决（得分<30 或 DS判定reject）")
+        lines.append(f"> 共 {len(veto_evals)} 家公司被否决（≥ 3 指标共识否决）")
         lines.append("")
-        lines.append("| 代码 | 得分 | 置信度 | 状态 |")
-        lines.append("|------|------|--------|------|")
-        for e in sorted(veto_evals, key=lambda x: x.get("score", 0))[:30]:
+        lines.append("| 代码 | 名称 | 行业 | 得分 | 置信度 | 否决原因 |")
+        lines.append("|------|------|------|------|--------|--------|")
+        for e in sorted(veto_evals, key=lambda x: x.get("score", 0))[:50]:
             ts_code = e.get("ts_code", "")
+            name = (e.get("name") or "")[:6]
+            industry = (e.get("industry") or "")[:6]
             score = e.get("score", 0)
             confidence = e.get("confidence", 0)
-            state = e.get("company_state", "-")
-            lines.append(f"| {ts_code} | {score:.1f} | {confidence:.1%} | {state} |")
-        if len(veto_evals) > 30:
-            lines.append(f"| ... | | | 还有 {len(veto_evals) - 30} 家 |")
+            veto_reason = (e.get("veto_reason") or "")[:30]
+            lines.append(f"| {ts_code} | {name} | {industry} | {score:.1f} | {confidence:.1%} | {veto_reason} |")
+        if len(veto_evals) > 50:
+            lines.append(f"| ... | | | | | 还有 {len(veto_evals) - 50} 家 |")
         lines.append("")
 
     # ============================================================
@@ -571,6 +574,8 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
     """生成单支股票的报告章节"""
     lines = []
     ts_code = profile.get("ts_code", "未知")
+    name = profile.get("name") or ""
+    industry = profile.get("industry") or ""
 
     # 标题
     signal = profile.get("signal", "")
@@ -578,7 +583,9 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
     emoji = SIGNAL_EMOJI.get(signal, "")
     grade_emoji = GRADE_EMOJI.get(grade, "")
 
-    lines.append(f"### {ts_code} {emoji} {grade_emoji}")
+    name_str = f" {name}" if name else ""
+    industry_str = f" [{industry}]" if industry else ""
+    lines.append(f"### {ts_code}{name_str}{industry_str} {emoji} {grade_emoji}")
     lines.append("")
 
     # 综合评分
@@ -673,6 +680,8 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
 def _generate_compact_row(profile: Dict[str, Any]) -> str:
     """生成紧凑的表格行（用于汇总列表）——展示全部6因子+3求解器"""
     ts_code = profile.get("ts_code", "")
+    name = (profile.get("name") or "")[:8]
+    industry = (profile.get("industry") or "")[:6]
     final_score = profile.get("final_score", 0) or 0
     grade = profile.get("grade", "-")
     signal = profile.get("signal", "-")
@@ -707,7 +716,7 @@ def _generate_compact_row(profile: Dict[str, Any]) -> str:
     factor_str = f"α:{alpha:.2f} β:{beta:.2f} γ:{gamma:.2f} δf:{d_fraud:.2f} δd:{d_decay:.2f} V:{verif:.2f}"
     solver_str = f"G:{gravity:.2f} V:{velocity:.2f} S:{structure:.2f}"
 
-    return f"| {ts_code} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | {factor_str} | {solver_str} |"
+    return f"| {ts_code} | {name} | {industry} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | {factor_str} | {solver_str} |"
 
 
 def _get_top_warning(profile: Dict[str, Any]) -> str:
@@ -851,15 +860,15 @@ def report_truth(
     lines.append("")
     lines.append(f"> 共 {len(sorted_profiles)} 家公司，按综合评分排序")
     lines.append("")
-    lines.append("| 代码 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
-    lines.append("|------|------|------|------|--------|----------|--------|")
+    lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
+    lines.append("|------|------|------|------|------|------|--------|----------|--------|")
 
     # 显示前100名
     for profile in sorted_profiles[:100]:
         lines.append(_generate_compact_row(profile))
 
     if len(sorted_profiles) > 100:
-        lines.append(f"| ... | | | | | | 还有 {len(sorted_profiles) - 100} 家 |")
+        lines.append(f"| ... | | | | | | | | 还有 {len(sorted_profiles) - 100} 家 |")
     lines.append("")
 
     # ============================================================
@@ -875,8 +884,8 @@ def report_truth(
         # 先显示完整列表
         lines.append("### 精选列表")
         lines.append("")
-        lines.append("| 代码 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
-        lines.append("|------|------|------|------|--------|----------|--------|")
+        lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
+        lines.append("|------|------|------|------|------|------|--------|----------|--------|")
         for profile in top_picks:
             lines.append(_generate_compact_row(profile))
         lines.append("")
@@ -924,20 +933,22 @@ def report_truth(
         lines.append("")
         lines.append(f"> 共 {len(average_stocks)} 家（表格展示前50家）")
         lines.append("")
-        lines.append("| 代码 | 评分 | 信号 | 代码 | 评分 | 信号 |")
-        lines.append("|------|------|------|------|------|------|")
+        lines.append("| 代码 | 名称 | 评分 | 信号 | 代码 | 名称 | 评分 | 信号 |")
+        lines.append("|------|------|------|------|------|------|------|------|")
         # 两列显示
         for i in range(0, min(50, len(average_stocks)), 2):
             p1 = average_stocks[i]
-            row = f"| {p1.get('ts_code', '')} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
+            n1 = (p1.get('name') or '')[:6]
+            row = f"| {p1.get('ts_code', '')} | {n1} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
             if i + 1 < len(average_stocks):
                 p2 = average_stocks[i + 1]
-                row += f"| {p2.get('ts_code', '')} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
+                n2 = (p2.get('name') or '')[:6]
+                row += f"| {p2.get('ts_code', '')} | {n2} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
             else:
-                row += "| | | |"
+                row += "| | | | |"
             lines.append(row)
         if len(average_stocks) > 50:
-            lines.append(f"| ... | | | | | 还有 {len(average_stocks) - 50} 家 |")
+            lines.append(f"| ... | | | | | | | 还有 {len(average_stocks) - 50} 家 |")
         lines.append("")
 
     # ============================================================
@@ -949,20 +960,22 @@ def report_truth(
         lines.append("")
         lines.append(f"> 共 {len(poor_stocks)} 家，建议谨慎")
         lines.append("")
-        lines.append("| 代码 | 评分 | 信号 | 代码 | 评分 | 信号 |")
-        lines.append("|------|------|------|------|------|------|")
+        lines.append("| 代码 | 名称 | 评分 | 信号 | 代码 | 名称 | 评分 | 信号 |")
+        lines.append("|------|------|------|------|------|------|------|------|")
         # 两列显示，最多30行
         for i in range(0, min(60, len(poor_stocks)), 2):
             p1 = poor_stocks[i]
-            row = f"| {p1.get('ts_code', '')} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
+            n1 = (p1.get('name') or '')[:6]
+            row = f"| {p1.get('ts_code', '')} | {n1} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
             if i + 1 < len(poor_stocks):
                 p2 = poor_stocks[i + 1]
-                row += f"| {p2.get('ts_code', '')} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
+                n2 = (p2.get('name') or '')[:6]
+                row += f"| {p2.get('ts_code', '')} | {n2} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
             else:
-                row += "| | | |"
+                row += "| | | | |"
             lines.append(row)
         if len(poor_stocks) > 60:
-            lines.append(f"| ... | | | | | 还有 {len(poor_stocks) - 60} 家 |")
+            lines.append(f"| ... | | | | | | | 还有 {len(poor_stocks) - 60} 家 |")
         lines.append("")
 
     # ============================================================
@@ -974,11 +987,18 @@ def report_truth(
         lines.append("")
         lines.append(f"> 共 {len(reject_stocks)} 家，建议回避")
         lines.append("")
-        # 简单列出代码，每行10个
-        codes = [p.get("ts_code", "") for p in reject_stocks]
-        for i in range(0, len(codes), 10):
-            batch = codes[i:i+10]
-            lines.append("| " + " | ".join(batch) + " |")
+        # 带名称的紧凑表格
+        lines.append("| 代码 | 名称 | 代码 | 名称 | 代码 | 名称 |")
+        lines.append("|------|------|------|------|------|------|")
+        for i in range(0, len(reject_stocks), 3):
+            parts = []
+            for j in range(3):
+                if i + j < len(reject_stocks):
+                    p = reject_stocks[i + j]
+                    parts.append(f"{p.get('ts_code', '')} | {(p.get('name') or '')[:6]}")
+                else:
+                    parts.append(" | ")
+            lines.append("| " + " | ".join(parts) + " |")
         lines.append("")
 
     # ============================================================

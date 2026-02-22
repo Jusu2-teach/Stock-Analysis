@@ -681,6 +681,22 @@ def run_truth(
 
     probes_by_ts = _build_probes_from_dataframes(aggregated_trends)
 
+    # 从 PDDA 聚合数据中提取公司名称/行业映射（趋势分析已携带 name/industry 列）
+    _company_info: Dict[str, Dict[str, str]] = {}
+    for df in aggregated_trends.values():
+        if df is not None and not df.empty and "name" in df.columns:
+            cols = ["ts_code", "name", "industry"] if "industry" in df.columns else ["ts_code", "name"]
+            for _, row in df[cols].drop_duplicates("ts_code").iterrows():
+                ts = row["ts_code"]
+                if ts not in _company_info:
+                    _company_info[ts] = {
+                        "name": str(row.get("name", "") or ""),
+                        "industry": str(row.get("industry", "") or ""),
+                    }
+            break  # 任意一个 DataFrame 即可
+    if _company_info:
+        logger.info(f"Extracted {len(_company_info)} company names from aggregated_trends")
+
     # 接入 Financial Context 探针
     has_financial_context = False
     if raw_financial_data is not None and not raw_financial_data.empty:
@@ -698,6 +714,11 @@ def run_truth(
     profiles = []
     for ts_code, probes in probes_by_ts.items():
         profile = _process_single(ts_code, probes, config)
+        # 注入公司名称和行业
+        info = _company_info.get(ts_code, {})
+        if info:
+            object.__setattr__(profile, 'name', info.get('name', ''))
+            object.__setattr__(profile, 'industry', info.get('industry', ''))
         profiles.append(profile)
 
     profiles_dict = [_profile_to_dict(p) for p in profiles]

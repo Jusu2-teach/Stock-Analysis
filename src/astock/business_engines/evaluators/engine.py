@@ -1575,6 +1575,22 @@ def run_causal_bayesian_evaluator(
             if ts_code:
                 company_info_dict[ts_code] = info
 
+    # 从 PDDA 聚合数据中提取公司名称和行业（趋势分析已携带 name/industry 列）
+    if not company_info_dict:
+        for df in aggregated_trends.values():
+            if df is not None and not df.empty and "name" in df.columns:
+                for _, row in df[["ts_code", "name", "industry"]].drop_duplicates("ts_code").iterrows():
+                    ts = row["ts_code"]
+                    if ts not in company_info_dict:
+                        company_info_dict[ts] = {
+                            "ts_code": ts,
+                            "name": str(row.get("name", "") or ""),
+                            "industry": str(row.get("industry", "") or ""),
+                        }
+                break  # 任意一个 DataFrame 即可，无需遍历全部
+        if company_info_dict:
+            logger.info(f"Extracted {len(company_info_dict)} company names from aggregated_trends")
+
     # 评估每个公司
     evaluations = []
     quality_companies = []
