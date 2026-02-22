@@ -63,7 +63,6 @@ from .solvers import (
 )
 from .config import TruthConfig, ScoringConfig, get_default_config
 from ..pdda_columns import PDDAColumns
-from ..trend.probes.financial_context_probe import FinancialContextProbe
 
 logger = logging.getLogger(__name__)
 
@@ -121,267 +120,13 @@ def _build_probes_from_dataframes(
 
 
 # ============================================================================
-# Financial Context 探针集成 (v4.0 — 支持指标数据自适应)
+# Financial Context 探针 — 现在由 PDDA 统一管理
 # ============================================================================
-
-# 用于检测数据模式的特征列
-_BALANCE_SHEET_MARKERS = {"total_assets", "fix_assets", "goodwill", "total_liab"}
-_INDICATOR_MARKERS = {"nca_to_assets", "debt_to_assets", "tbassets_to_totalassets", "ar_turn"}
-
-
-def _clamp(val: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, val))
-
-
-def _build_context_from_indicators(
-    raw_financial_data: pd.DataFrame,
-) -> Dict[str, ProbeInput]:
-    """从 fina_indicator 指标数据构建 financial_context 探针
-
-    当原始数据为 tushare fina_indicator 格式时（包含 nca_to_assets、
-    debt_to_assets 等已计算比率，而非 total_assets 等原始余额），
-    使用代理映射生成 β/δ_fraud 因子所需的全部字段。
-
-    字段映射规则（指标数据均为百分比 0~100，需 ÷100）:
-    ┌────────────────────────────┬──────────────────────────────────────────┐
-    │ 输出字段                   │ 来源计算                                 │
-    ├────────────────────────────┼──────────────────────────────────────────┤
-    │ ratio_nca                  │ nca_to_assets / 100                     │
-    │ ratio_hard_asset           │ nca - intangible_fraction (≈ tangible NCA)|
-    │ ratio_intang_asset         │ 1 - tbassets_to_totalassets / 100       │
-    │ ratio_working_capital      │ ca_to_assets / 100                      │
-    │ ratio_debt_to_assets       │ debt_to_assets / 100                    │
-    │ ratio_receivable_to_revenue│ 1 / max(ar_turn, 0.5)                  │
-    │ ratio_cash_to_assets       │ 由 cash_ratio + ca_to_assets 推算       │
-    │ ratio_goodwill_to_equity   │ intangible * assets_to_eqt 推算         │
-    │ flag_goodwill_risk         │ intangible_ratio > 0.40                 │
-    │ flag_cash_loan_anomaly     │ cash_ratio > 3 且 debt_ratio > 0.6     │
-    │ flag_high_receivable       │ ar_turn < 2.0                          │
-    └────────────────────────────┴──────────────────────────────────────────┘
-    """
-    if raw_financial_data is None or raw_financial_data.empty:
-        return {}
-    if "ts_code" not in raw_financial_data.columns:
-        return {}
-
-    result_map: Dict[str, ProbeInput] = {}
-
-    # 按 ts_code 分组取最新期
-    sort_cols = [c for c in ["end_date", "ann_date"] if c in raw_financial_data.columns]
-    df_sorted = raw_financial_data.sort_values(sort_cols, ascending=False) if sort_cols else raw_financial_data
-
-    for ts_code, group in df_sorted.groupby("ts_code"):
-        ts_code = str(ts_code)
-        row = group.iloc[0]
-
-        def _get(col: str, default: float = float('nan')) -> float:
-            v = row.get(col)
-            if v is not None and pd.notna(v):
-                try:
-                    return float(v)
-                except (ValueError, TypeError):
-                    pass
-            return default
-
-        # ── 读取原始指标值（百分比 0~100） ──
-        nca_pct = _get("nca_to_assets")
-        ca_pct = _get("ca_to_assets")
-        tba_pct = _get("tbassets_to_totalassets")
-        debt_pct = _get("debt_to_assets")
-        ar_turnover = _get("ar_turn")
-        cash_r = _get("cash_ratio")  # 现金/流动负债，非现金/总资产
-        assets_to_eqt = _get("assets_to_eqt")  # 权益乘数（总资产/股东权益）
-        debt_to_eqt = _get("debt_to_eqt")
-
-        features: Dict[str, float] = {}
-
-        # ── Beta 因子所需字段 ──
-        # ratio_nca: 非流动资产占比
-        if not pd.isna(nca_pct):
-            ratio_nca = _clamp(nca_pct / 100.0)
-            features["ratio_nca"] = ratio_nca
-
-        # ratio_intang_asset: 无形资产（含商誉）占比
-        if not pd.isna(tba_pct):
-            ratio_intang = _clamp(1.0 - tba_pct / 100.0)
-            features["ratio_intang_asset"] = ratio_intang
-        else:
-            ratio_intang = 0.0
-
-        # ratio_hard_asset: 有形固定资产占比 ≈ NCA - 无形
-        if "ratio_nca" in features:
-            ratio_hard = _clamp(features["ratio_nca"] - ratio_intang)
-            features["ratio_hard_asset"] = ratio_hard
-
-        # ratio_working_capital: 流动资产占比（近似营运资本/总资产）
-        if not pd.isna(ca_pct):
-            features["ratio_working_capital"] = _clamp(ca_pct / 100.0)
-
-        # ── DeltaFraud 因子所需字段 ──
-        # ratio_debt_to_assets: 资产负债率
-        if not pd.isna(debt_pct):
-            ratio_debt = _clamp(debt_pct / 100.0)
-            features["ratio_debt_to_assets"] = ratio_debt
-        else:
-            ratio_debt = 0.0
-
-        # ratio_receivable_to_revenue: 仅在极端情况提供
-        # ar_turn < 1.0 → 应收/营收 > 1.0，极端风险
-        # ar_turn 1.0~2.0 → 指标代理精度不足，不触发以避免误伤
-        # (DeltaFraud 有独立的 OR 检查: flag>0.5 OR ratio>0.5)
-        if not pd.isna(ar_turnover) and ar_turnover > 0 and ar_turnover < 1.0:
-            ratio_recv = _clamp(1.0 / max(ar_turnover, 0.5))
-            features["ratio_receivable_to_revenue"] = ratio_recv
-        else:
-            ratio_recv = 0.0
-
-        # ratio_cash_to_assets: 指标模式下不可靠 → 不提供
-        # cash_ratio 语义为 现金/流动负债 (流动性指标)，而非 现金/总资产
-        # 两者含义完全不同，强行转换会产生大量误报
-        # 不设置此字段 → DeltaFraud 的 cash-loan 检测使用默认值 0
-        cash_to_assets = 0.0
-
-        # ratio_goodwill_to_equity: 商誉占权益比（从无形资产率 + 权益乘数推算）
-        # ⚠ 注意: 1-tangible/total 包含长期投资、递延税等非风险项目，
-        # 真正商誉通常仅占"无形"部分的 10-20%，需大幅折扣
-        if not pd.isna(assets_to_eqt) and assets_to_eqt > 0:
-            # intangible/equity = (intangible/assets) × (assets/equity) × 商誉占比系数
-            ratio_gw_eq = ratio_intang * (assets_to_eqt / 100.0) * 0.15  # 保守: 仅15%可能是商誉
-            features["ratio_goodwill_to_equity"] = _clamp(ratio_gw_eq)
-        elif ratio_intang > 0.5:
-            features["ratio_goodwill_to_equity"] = ratio_intang * 0.25  # 保守估计
-
-        # ── 风险标志 ──
-        # flag_goodwill_risk: 仅在极端无形资产占比时触发
-        # (1-tangible/total) 中位数 ~0.45，绝大部分是正常的非有形资产
-        # (长投、递延税、营改增留抵等)，仅 >0.85 才可能暗示商誉/无形占比真正危险
-        # 目标: ~5% 的股票触发 (与真实 goodwill/equity>40% 的比例匹配)
-        features["flag_goodwill_risk"] = 1.0 if ratio_intang > 0.85 else 0.0
-
-        # flag_cash_loan_anomaly: 指标模式下禁用
-        # 无法从 cash_ratio(现金/CL) 可靠推断 cash/TA，强行代理会产生严重误报
-        # 保留字段但固定为 0，让 DeltaFraud 不被此信号触发
-        features["flag_cash_loan_anomaly"] = 0.0
-
-        # flag_high_receivable: 应收过高 (仅极端情况)
-        # ar_turn < 1.0 → 应收账款超过全年营收 → ratio_recv > 1.0
-        # 在5.2%的股票中触发，与真实高应收风险比例匹配
-        features["flag_high_receivable"] = 1.0 if ratio_recv > 1.0 else 0.0
-
-        # ── 额外估值特征（供未来使用）──
-        bps = _get("bps")
-        roe_val = _get("roe")
-        eps_val = _get("eps")
-        fcff = _get("fcff_ps")
-        roic_val = _get("roic")
-
-        if not pd.isna(bps) and bps > 0 and not pd.isna(roe_val):
-            # 残余收益模型: 盈利能力 = ROE × BPS
-            features["valuation_earnings_power"] = abs(roe_val / 100.0 * bps)
-        if not pd.isna(eps_val) and not pd.isna(fcff) and abs(eps_val) > 0.01:
-            # 现金转换 = FCFF / EPS（>1 说明利润有现金支撑）
-            features["valuation_cash_conversion"] = _clamp(fcff / abs(eps_val), -2.0, 3.0)
-        if not pd.isna(roic_val):
-            # 价值创造散度 = ROIC - 8%（保守 WACC 代理）
-            features["valuation_spread"] = roic_val / 100.0 - 0.08
-
-        # 数据完整度（代理模式上限 0.85，因为非精确值）
-        expected_fields = 11  # 4×beta + 4×fraud + 3×flag
-        actual_fields = sum(1 for k in features if k.startswith(("ratio_", "flag_")))
-        features["data_completeness"] = min(0.85, actual_fields / expected_fields)
-
-        # 过滤 NaN / Inf
-        clean = {k: v for k, v in features.items()
-                 if isinstance(v, (int, float)) and v == v and abs(v) != float('inf')}
-
-        if clean:
-            result_map[ts_code] = ProbeInput(
-                ts_code=ts_code,
-                probe_name="financial_context",
-                features=clean,
-            )
-
-    logger.info(f"✅ Indicator Adapter: 为 {len(result_map)} 只股票构建 financial_context (代理模式)")
-    return result_map
-
-
-def _build_financial_context_probes(
-    raw_financial_data: pd.DataFrame,
-) -> Dict[str, ProbeInput]:
-    """从财务数据构建 financial_context 探针 (v4.0 自适应模式)
-
-    自动检测数据类型:
-    - 资产负债表数据 (total_assets, fix_assets, ...) → 使用 FinancialContextProbe
-    - 指标数据 (nca_to_assets, debt_to_assets, ...) → 使用 Indicator Adapter
-
-    Args:
-        raw_financial_data: 财务数据 DataFrame (资产负债表 或 财务指标)
-
-    Returns:
-        {ts_code: ProbeInput(probe_name="financial_context", features={...})}
-    """
-    if raw_financial_data is None or raw_financial_data.empty:
-        return {}
-
-    if "ts_code" not in raw_financial_data.columns:
-        logger.warning("raw_financial_data 缺少 ts_code 列，跳过 financial_context")
-        return {}
-
-    data_cols = set(raw_financial_data.columns)
-
-    # ── 自动检测数据模式 ──
-    bs_score = len(data_cols & _BALANCE_SHEET_MARKERS)
-    ind_score = len(data_cols & _INDICATOR_MARKERS)
-
-    if ind_score > bs_score:
-        logger.info(f"检测到指标数据模式 (indicator={ind_score} vs balance_sheet={bs_score})")
-        return _build_context_from_indicators(raw_financial_data)
-
-    # ── 标准资产负债表模式 (原有逻辑) ──
-    logger.info(f"检测到资产负债表模式 (balance_sheet={bs_score} vs indicator={ind_score})")
-    probe = FinancialContextProbe()
-    result_map: Dict[str, ProbeInput] = {}
-
-    sort_cols = [c for c in ["end_date", "ann_date", "f_ann_date"]
-                 if c in raw_financial_data.columns]
-    df_sorted = raw_financial_data.sort_values(sort_cols, ascending=False) if sort_cols else raw_financial_data
-
-    for ts_code, group in df_sorted.groupby("ts_code"):
-        ts_code = str(ts_code)
-        latest_row = group.iloc[0]
-
-        financial_data: Dict[str, Any] = {}
-        for col in latest_row.index:
-            if col == "ts_code":
-                continue
-            val = latest_row[col]
-            if pd.notna(val):
-                try:
-                    financial_data[col] = float(val)
-                except (ValueError, TypeError):
-                    pass
-
-        if not financial_data:
-            continue
-
-        try:
-            ctx_result = probe.compute(financial_data)
-            features = ctx_result.to_features_dict()
-            clean_features = {
-                k: v for k, v in features.items()
-                if isinstance(v, (int, float)) and not (v != v) and abs(v) != float('inf')
-            }
-            if clean_features:
-                result_map[ts_code] = ProbeInput(
-                    ts_code=ts_code,
-                    probe_name="financial_context",
-                    features=clean_features,
-                )
-        except Exception as e:
-            logger.warning(f"FinancialContextProbe failed for {ts_code}: {e}")
-
-    logger.info(f"构建 financial_context 探针: {len(result_map)} 只股票")
-    return result_map
+# financial_context 数据由 trend/engine.py::build_financial_context 步骤
+# 通过 PDDA 聚合到 aggregated_trends["financial_context"]，
+# 再由 _build_probes_from_dataframes 自动转为 ProbeInput。
+# β 和 δ_fraud 因子无需任何修改即可消费。
+# ============================================================================
 
 
 # ============================================================================
@@ -843,15 +588,14 @@ def _calculate_summary(profiles: List[TruthProfile]) -> Dict[str, Any]:
 )
 def run_truth(
     aggregated_trends: Dict[str, pd.DataFrame],
-    raw_financial_data: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     """TRUTH 主入口
 
     输入:
         aggregated_trends: PDDA 聚合数据 {metric_name: DataFrame}
-        raw_financial_data: 原始资产负债表数据 (可选)
-            包含 ts_code + 资产负债表字段 (fix_assets, total_assets, goodwill, ...)
-            用于 β 因子和 δ_fraud 因子的财务结构分析
+            包含 8 个趋势指标 + financial_context (资产结构探针)
+            financial_context 由 build_financial_context 步骤提供，
+            在 _build_probes_from_dataframes 中自动转为 ProbeInput。
 
     输出:
         {"profiles": [...], "summary": {...}, "metadata": {...}}
@@ -876,17 +620,14 @@ def run_truth(
     if _company_info:
         logger.info(f"Extracted {len(_company_info)} company names from aggregated_trends")
 
-    # 接入 Financial Context 探针
-    has_financial_context = False
-    if raw_financial_data is not None and not raw_financial_data.empty:
-        fc_probes = _build_financial_context_probes(raw_financial_data)
-        if fc_probes:
-            has_financial_context = True
-            for ts_code, fc_probe in fc_probes.items():
-                probes_by_ts.setdefault(ts_code, []).append(fc_probe)
-            logger.info(f"✅ Financial Context: 已为 {len(fc_probes)} 只股票注入资产结构数据")
+    # Financial Context 探针 — 通过 PDDA 自动注入
+    has_financial_context = "financial_context" in aggregated_trends
+    if has_financial_context:
+        fc_df = aggregated_trends["financial_context"]
+        fc_count = len(fc_df) if fc_df is not None and not fc_df.empty else 0
+        logger.info(f"✅ Financial Context: {fc_count} 只股票的资产结构数据 (来自 PDDA)")
     else:
-        logger.warning("⚠️ 未提供 raw_financial_data，β 和 δ_fraud 因子将使用默认值")
+        logger.warning("⚠️ aggregated_trends 中无 financial_context，β 和 δ_fraud 因子将使用默认值")
 
     config = get_default_config()
 

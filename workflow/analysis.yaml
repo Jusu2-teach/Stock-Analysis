@@ -58,6 +58,22 @@ pipeline:
         parameters:
           - name: Raw_Data
 
+    # ========== 资产结构探针 (Financial Context) ==========
+    # 从原始财务数据提取 β 因子和 δ_fraud 因子所需的资产结构特征:
+    # - ratio_nca, ratio_hard_asset, ratio_intang_asset, ratio_working_capital
+    # - ratio_debt_to_assets, ratio_receivable_to_revenue, ratio_goodwill_to_equity
+    # - flag_goodwill_risk, flag_cash_loan_anomaly, flag_high_receivable
+    # 通过 PDDA 聚合到 aggregated_trends["financial_context"]
+    - name: "Build_Financial_Context"
+      component: "business_engine"
+      engine: "duckdb"
+      method: ["build_financial_context"]
+      parameters:
+        data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+      outputs:
+        parameters:
+          - name: Financial_Context_Result
+
     # ========== ROIC 趋势分析(三位一体过滤) ==========
     # 核心指标：投入资本回报率，衡量资本效率
     # 交叉验证：ROE（股东视角）、ROIIC（增量效率）
@@ -334,6 +350,7 @@ pipeline:
       engine: "evaluator"
       method: ["causal_bayesian_evaluator"]
       depends_on:  # 🔑 显式依赖声明
+        - "Build_Financial_Context"
         - "Analyze_ROIC_Trend"
         - "Analyze_ROE_Trend"
         - "Analyze_ROIIC_Trend"
@@ -344,6 +361,7 @@ pipeline:
         - "Analyze_OCF_Trend"
       parameters:
         # 🌟 PDDA 自动注入 aggregated_trends 参数
+        # (包含 8 个趋势指标 + financial_context 资产结构探针)
         {}  # 空参数字典，让 PDDA 自动聚合
       outputs:
         parameters:
@@ -393,6 +411,7 @@ pipeline:
       engine: "truth"
       method: ["run_truth"]
       depends_on:  # 🔑 显式依赖声明
+        - "Build_Financial_Context"
         - "Analyze_ROIC_Trend"
         - "Analyze_ROE_Trend"
         - "Analyze_ROIIC_Trend"
@@ -403,8 +422,8 @@ pipeline:
         - "Analyze_OCF_Trend"
       parameters:
         # 🌟 PDDA 自动注入 aggregated_trends 参数
-          # 同时显式传递原始财务数据，激活 β 因子和 δ_fraud 因子
-        raw_financial_data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
+        # (包含 8 个趋势指标 + financial_context 资产结构探针)
+        {}  # 空参数字典，让 PDDA 自动聚合
       outputs:
         parameters:
           - name: Truth_Result

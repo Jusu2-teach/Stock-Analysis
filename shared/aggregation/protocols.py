@@ -146,6 +146,7 @@ class AggregatableResult(Aggregatable[K, V], Generic[K, V]):
     key: K
     value: V
     metadata: AggregationMetadata = field(default_factory=AggregationMetadata)
+    namespace: Optional[str] = None  # PDDA 命名空间 (None = 由 Collector 启发式推断)
 
     def get_aggregation_key(self) -> K:
         """返回聚合键"""
