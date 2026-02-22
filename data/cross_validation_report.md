@@ -2,7 +2,7 @@
 
 > T.R.U.T.H. (数据驱动基因分析) × Evaluators (因果贝叶斯规则) 交叉验证
 
-- **生成时间**: 2026-02-22 17:05:21
+- **生成时间**: 2026-02-22 17:38:24
 - **T.R.U.T.H. 股票数**: 1914
 - **Evaluators 股票数**: 1914
 - **共同覆盖**: 1914
@@ -371,71 +371,71 @@
 
 | 代码 | 风险原因 | T.R.U.T.H. | Eval | 详情 |
 |------|----------|------------|------|------|
-| 300489.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688066.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 688108.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 002667.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002134.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 002008.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600418.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 603693.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 688630.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688225.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688362.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600476.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 600588.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 833575.BJ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 600732.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000034.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 002524.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
 | 300249.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 600807.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 603895.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002387.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002180.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 002456.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 600550.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 600973.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300128.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300300.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 601127.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 001400.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 688192.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002513.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300110.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600203.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 000938.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688582.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 002316.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 600476.SH | 欺诈熵熔断 | fraud_alert | average |  |
 | 300168.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000566.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 600196.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 601985.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 300123.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300491.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600807.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 603031.SH | 欺诈熵熔断 | fraud_alert | average |  |
 | 600869.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300530.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 000566.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300212.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300489.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 300254.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 002172.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 603693.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 600418.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 002456.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 000034.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 601727.SH | 欺诈熵熔断 | fraud_alert | average |  |
 | ... | | | | 还有 77 家 |
 
 ## 因子-评分矛盾分析
 
 > 检测 TRUTH 因子揭示的风险是否被 Evaluator 评分忽略
 
-> 共发现 57 家公司存在因子-评分矛盾
+> 共发现 81 家公司存在因子-评分矛盾
 
 | 代码 | Eval 决策 | 矛盾点 |
 |------|-----------|--------|
-| 002180.SZ | average(61) | λ=0.68(高杠杆) vs Eval=61分；δ_fraud=0.63 vs Eval=61分 |
-| 002456.SZ | average(62) | λ=0.86(高杠杆) vs Eval=62分；δ_fraud=0.63 vs Eval=62分 |
-| 601985.SH | average(65) | λ=0.83(高杠杆) vs Eval=65分；δ_fraud=0.63 vs Eval=65分 |
+| 002506.SZ | average(64) | λ=0.91(高杠杆) vs Eval=64分；V=0.03(fake_growth) vs Eval=64分；δ_fraud=0.63 vs Eval=64分 |
 | 601127.SH | average(64) | λ=0.87(高杠杆) vs Eval=64分；δ_fraud=0.63 vs Eval=64分 |
 | 002316.SZ | average(64) | λ=0.87(高杠杆) vs Eval=64分；δ_fraud=0.63 vs Eval=64分 |
+| 600379.SH | average(66) | V=0.15(fake_growth) vs Eval=66分；δ_fraud=0.44 vs Eval=66分 |
+| 002456.SZ | average(62) | λ=0.86(高杠杆) vs Eval=62分；δ_fraud=0.63 vs Eval=62分 |
 | 300220.SZ | average(60) | λ=0.73(高杠杆) vs Eval=60分；δ_fraud=0.63 vs Eval=60分 |
-| 688520.SH | average(68) | λ=0.71(高杠杆) vs Eval=68分；δ_fraud=0.63 vs Eval=68分 |
+| 688516.SH | average(68) | λ=0.77(高杠杆) vs Eval=68分；V=0.40(low_quality) vs Eval=68分 |
+| 300457.SZ | average(65) | V=0.01(fake_growth) vs Eval=65分；δ_fraud=0.68 vs Eval=65分 |
+| 600268.SH | average(63) | V=0.20(fake_growth) vs Eval=63分；δ_fraud=0.44 vs Eval=63分 |
+| 300378.SZ | quality(75) | V=0.00(fake_growth) vs Eval=75分；δ_fraud=0.43 vs Eval=75分 |
+| 688615.SH | average(62) | V=0.38(low_quality) vs Eval=62分；δ_fraud=0.54 vs Eval=62分 |
+| 839493.BJ | average(67) | λ=0.74(高杠杆) vs Eval=67分；V=0.23(low_quality) vs Eval=67分 |
+| 002180.SZ | average(61) | λ=0.68(高杠杆) vs Eval=61分；δ_fraud=0.63 vs Eval=61分 |
+| 300049.SZ | average(68) | V=0.25(fake_growth) vs Eval=68分；δ_fraud=0.57 vs Eval=68分 |
+| 000534.SZ | average(64) | V=0.00(fake_growth) vs Eval=64分；δ_fraud=0.60 vs Eval=64分 |
 | 600686.SH | average(67) | λ=0.78(高杠杆) vs Eval=67分；δ_fraud=0.63 vs Eval=67分 |
-| 002506.SZ | average(64) | λ=0.91(高杠杆) vs Eval=64分；δ_fraud=0.63 vs Eval=64分 |
-| 002134.SZ | average(53) | δ_fraud=0.63 vs Eval=53分 |
-| 603693.SH | average(66) | δ_fraud=0.61 vs Eval=66分 |
-| 688411.SH | average(68) | λ=0.65(高杠杆) vs Eval=68分 |
-| 600476.SH | average(51) | δ_fraud=0.63 vs Eval=51分 |
-| 600379.SH | average(66) | δ_fraud=0.44 vs Eval=66分 |
-| 000550.SZ | average(66) | λ=0.66(高杠杆) vs Eval=66分 |
-| 000034.SZ | average(59) | δ_fraud=0.63 vs Eval=59分 |
-| 300049.SZ | average(68) | δ_fraud=0.57 vs Eval=68分 |
-| 000821.SZ | average(65) | λ=0.72(高杠杆) vs Eval=65分 |
-| 000880.SZ | average(64) | λ=0.68(高杠杆) vs Eval=64分 |
-| 603611.SH | average(70) | λ=0.67(高杠杆) vs Eval=70分 |
-| 688516.SH | average(68) | λ=0.77(高杠杆) vs Eval=68分 |
-| 600499.SH | average(54) | δ_fraud=0.45 vs Eval=54分 |
-| 300645.SZ | average(59) | δ_fraud=0.56 vs Eval=59分 |
-| 300842.SZ | average(69) | λ=0.98(高杠杆) vs Eval=69分 |
+| 688520.SH | average(68) | λ=0.71(高杠杆) vs Eval=68分；δ_fraud=0.63 vs Eval=68分 |
+| 601985.SH | average(65) | λ=0.83(高杠杆) vs Eval=65分；δ_fraud=0.63 vs Eval=65分 |
+| 600550.SH | average(51) | δ_fraud=0.63 vs Eval=51分 |
+| 688111.SH | average(68) | V=0.51(low_quality) vs Eval=68分 |
 | 001400.SZ | average(53) | δ_fraud=0.67 vs Eval=53分 |
+| 688376.SH | average(57) | δ_fraud=0.51 vs Eval=57分 |
+| 688582.SH | average(51) | δ_fraud=0.60 vs Eval=51分 |
+| 600476.SH | average(51) | δ_fraud=0.63 vs Eval=51分 |
+| 603861.SH | average(65) | λ=0.63(高杠杆) vs Eval=65分 |
 
 ## 统计验证
 

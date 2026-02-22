@@ -29,7 +29,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -719,6 +719,40 @@ def _generate_compact_row(profile: Dict[str, Any]) -> str:
     return f"| {ts_code} | {name} | {industry} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | {factor_str} | {solver_str} |"
 
 
+def _generate_compact_row_v2(profile: Dict[str, Any]) -> str:
+    """生成增强版紧凑表格行 — 包含决策 + 生命周期列（用于 TRUTH 报告 v4.0）"""
+    ts_code = profile.get("ts_code", "")
+    name = (profile.get("name") or "")[:8]
+    industry = (profile.get("industry") or "")[:6]
+    final_score = profile.get("final_score", 0) or 0
+    grade = profile.get("grade", "-")
+    signal = profile.get("signal", "-")
+
+    # 决策 & 生命周期（由 report_truth 预注入）
+    decision = profile.get("_decision", "")
+    lifecycle = profile.get("_lifecycle", "")
+    dec_str = DECISION_EMOJI.get(decision, "") + decision
+    lc_str = LIFECYCLE_LABELS.get(lifecycle, lifecycle)
+
+    # 提取关键因子（精简显示）
+    factors = profile.get("factors", {})
+    def _get_f(fid):
+        fd = factors.get(fid) or factors.get(fid.upper(), {})
+        return fd.get("score", 0) if isinstance(fd, dict) else (fd or 0)
+
+    gamma = _get_f("gamma")
+    d_fraud = _get_f("delta_fraud")
+    d_decay = _get_f("delta_decay")
+    verif = _get_f("verification")
+
+    grade_emoji = GRADE_EMOJI.get(grade, "")
+    signal_emoji = SIGNAL_EMOJI.get(signal, "")
+
+    factor_str = f"γ:{gamma:.2f} δf:{d_fraud:.2f} δd:{d_decay:.2f} V:{verif:.2f}"
+
+    return f"| {ts_code} | {name} | {industry} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {dec_str} | {lc_str} | {factor_str} |"
+
+
 def _get_top_warning(profile: Dict[str, Any]) -> str:
     """获取最重要的警告信息"""
     warnings = profile.get("warnings", [])
@@ -728,6 +762,166 @@ def _get_top_warning(profile: Dict[str, Any]) -> str:
     w = warnings[0]
     title = w.get("title", "") if isinstance(w, dict) else str(w)
     return title[:20] + "..." if len(title) > 20 else title
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRUTH 决策 & 生命周期推断 — 从六维基因因子推导，与 Evaluator 对齐但独立实现
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
+    """从 TRUTH 的 grade/signal 映射到可比较的决策类别.
+
+    映射逻辑:
+        quality  ← A+, A     (真正优质)
+        average  ← B+, B     (良好)
+        poor     ← C, D      (一般/较差)
+        veto     ← F / fraud_alert / meltdown  (否决)
+    """
+    grade = (profile.get("grade") or "").upper()
+    signal = (profile.get("signal") or "").lower()
+
+    # 熔断/欺诈信号直接否决
+    if signal in ("fraud_alert", "meltdown", "strong_sell"):
+        return "veto"
+
+    # 按评级映射
+    if grade in ("A+", "A"):
+        return "quality"
+    elif grade in ("B+", "B"):
+        return "average"
+    elif grade in ("C", "D"):
+        return "poor"
+    elif grade == "F":
+        return "veto"
+
+    # 兜底: 用信号补判
+    if signal in ("strong_buy", "buy"):
+        return "average"
+    return "poor"
+
+
+def _get_factor_detail(factors: Dict, factor_id: str, key: str, default=None):
+    """安全提取因子的 components/details 子字段"""
+    fd = factors.get(factor_id) or factors.get(factor_id.upper(), {})
+    if not isinstance(fd, dict):
+        return default
+    # 先找 details, 再找 components
+    details = fd.get("details", {})
+    if isinstance(details, dict) and key in details:
+        return details[key]
+    comps = fd.get("components", {})
+    if isinstance(comps, dict) and key in comps:
+        return comps[key]
+    return default
+
+
+def _infer_lifecycle_from_truth(profile: Dict[str, Any]) -> Tuple[str, float]:
+    """从 TRUTH 七维基因因子推断公司生命周期阶段.
+
+    使用因子的 components/details 层数据（比 score 更丰富），
+    与 Evaluator 的 _infer_lifecycle 保持相同状态空间但独立推断。
+
+    状态空间:
+        turnaround  — 困境反转期（衰退中但近期改善）
+        distressed  — 严重困境（多年连续衰退）
+        growth      — 高增长期（真成长 + 高CAGR）
+        emerging    — 新兴/高速扩张（高成长但质量未验证）
+        cash_cow    — 现金牛（稳定 + 低衰退 + 高alpha）
+        mature      — 成熟期（稳健经营）
+        slowing     — 增速放缓（温和衰退迹象）
+        declining   — 明确衰退（持续下降）
+    """
+    factors = profile.get("factors", {})
+
+    # ── 提取关键判断维度 ──
+    growth_type = _get_factor_detail(factors, "gamma", "growth_type", "")
+    decay_severity = _get_factor_detail(factors, "delta_decay", "decay_severity", "none")
+    growth_quality = _get_factor_detail(factors, "verification", "growth_quality", "")
+
+    cagr = _get_factor_detail(factors, "gamma", "cagr", 0) or 0
+    recent_3y = _get_factor_detail(factors, "gamma", "recent_3y_slope", 0) or 0
+    consec_decline = _get_factor_detail(factors, "delta_decay", "consecutive_decline_years", 0) or 0
+    has_deterioration = _get_factor_detail(factors, "delta_decay", "has_deterioration", False)
+
+    # α score: 高=周期性强(不稳定), 低=稳定
+    alpha_fd = factors.get("alpha") or factors.get("ALPHA", {})
+    alpha_score = alpha_fd.get("score", 0.5) if isinstance(alpha_fd, dict) else 0.5
+
+    # δ_fraud 熔断
+    is_meltdown = _get_factor_detail(factors, "delta_fraud", "is_meltdown", False)
+
+    # δ_decay score (0~1, 越高越差)
+    decay_fd = factors.get("delta_decay") or factors.get("DELTA_DECAY", {})
+    decay_score = decay_fd.get("score", 0) if isinstance(decay_fd, dict) else 0
+
+    # γ score (成长动能)
+    gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
+    gamma_score = gamma_fd.get("score", 0.5) if isinstance(gamma_fd, dict) else 0.5
+
+    # ── 决策瀑布（优先级从高到低） ──
+    # A股实际: decay_severity=severe 覆盖54%, growth_type=decline 覆盖51%
+    # 因此需要多因子交叉确认，避免过度分类为 distressed/declining
+
+    # 1. 困境反转: 有衰退但近期趋势明显改善
+    if has_deterioration and recent_3y > cagr and recent_3y > 0.02:
+        return "turnaround", 0.70
+
+    # 2. 严重困境: δ_fraud熔断 OR (severe衰退 + decline增长 + γ极低)
+    if is_meltdown:
+        return "distressed", 0.85
+    if decay_severity == "severe" and growth_type == "decline" and gamma_score < 0.3:
+        return "distressed", 0.80
+
+    # 3. 高增长（已验证质量）
+    if growth_type == "high_growth" and growth_quality in ("true_growth", "moderate_quality"):
+        return "growth", 0.75
+
+    # 4. 新兴/快速扩张（高成长但质量未验证或低质量）
+    if growth_type == "high_growth":
+        return "emerging", 0.65
+
+    # 5. 现金牛: 稳定(低alpha) + 衰退可控 + 适度或低增长
+    if growth_type in ("moderate_growth", "low_growth") and alpha_score <= 0.35 and decay_severity in ("none", "mild"):
+        return "cash_cow", 0.75
+
+    # 6. 成熟: 非衰退增长 + 衰退≤moderate（A股中very common，放宽至moderate）
+    if growth_type in ("moderate_growth", "low_growth") and decay_severity in ("none", "mild", "moderate"):
+        return "mature", 0.70
+
+    # 7. 增速放缓: 有衰退迹象但增长尚可，或decline增长但衰退不严重
+    if growth_type in ("moderate_growth", "low_growth") and decay_severity == "severe":
+        return "slowing", 0.60
+    if growth_type == "decline" and decay_severity in ("none", "mild", "moderate"):
+        return "slowing", 0.60
+
+    # 8. 明确衰退: growth=decline + severe decay（双重确认）
+    if growth_type == "decline" and decay_severity == "severe":
+        return "declining", 0.70
+
+    # 9. 默认成熟（兜底: growth_type=unknown 等边缘情况）
+    return "mature", 0.50
+
+
+# 生命周期标签映射（与 Evaluator 报告统一）
+LIFECYCLE_LABELS = {
+    "emerging": "🚀 新兴扩张",
+    "growth": "📈 高增长",
+    "mature": "🏔️ 成熟稳健",
+    "cash_cow": "💰 现金牛",
+    "slowing": "📊 增速放缓",
+    "declining": "📉 衰退期",
+    "turnaround": "🔄 困境反转",
+    "distressed": "⚠️ 严重困境",
+}
+
+DECISION_LABELS = {
+    "quality": "⭐ 优质",
+    "average": "🟡 良好",
+    "poor": "🟠 一般",
+    "veto": "❌ 否决",
+}
+
+DECISION_EMOJI = {"quality": "⭐", "average": "🟡", "poor": "🟠", "veto": "❌"}
 
 
 @register_method(
@@ -835,6 +1029,83 @@ def report_truth(
         lines.append("")
 
     # ============================================================
+    # 为每个 profile 注入 决策 + 生命周期（供后续所有表格使用）
+    # ============================================================
+
+    for p in profiles:
+        p["_decision"] = _infer_decision_from_truth(p)
+        lifecycle, life_conf = _infer_lifecycle_from_truth(p)
+        p["_lifecycle"] = lifecycle
+        p["_life_confidence"] = life_conf
+
+    # ============================================================
+    # 决策分布（对齐 Evaluator 报告格式）
+    # ============================================================
+
+    lines.append("## 🎯 决策分布")
+    lines.append("")
+    lines.append("> 从 TRUTH 评级/信号映射到标准化决策，可与 Evaluator 直接对比")
+    lines.append("")
+
+    decision_dist: Dict[str, int] = {}
+    for p in profiles:
+        dec = p.get("_decision", "poor")
+        decision_dist[dec] = decision_dist.get(dec, 0) + 1
+
+    total_prof = len(profiles) or 1
+    lines.append("| 决策 | 数量 | 占比 | 映射规则 |")
+    lines.append("|------|------|------|----------|")
+    decision_order = ["quality", "average", "poor", "veto"]
+    rule_desc = {
+        "quality": "A+ / A 评级",
+        "average": "B+ / B 评级",
+        "poor": "C / D 评级",
+        "veto": "F 评级 / fraud_alert / meltdown",
+    }
+    for dec in decision_order:
+        count = decision_dist.get(dec, 0)
+        pct = count / total_prof * 100
+        emoji = DECISION_LABELS.get(dec, dec)
+        rule = rule_desc.get(dec, "")
+        lines.append(f"| {emoji} | {count} | {pct:.1f}% | {rule} |")
+    lines.append("")
+
+    # ============================================================
+    # 生命周期分布（对齐 Evaluator 报告格式）
+    # ============================================================
+
+    lines.append("## 🔄 生命周期分布")
+    lines.append("")
+    lines.append("> 从 γ(成长) + δ_decay(衰退) + α(稳定性) + V(验证) 因子推断")
+    lines.append("")
+
+    lifecycle_dist: Dict[str, int] = {}
+    for p in profiles:
+        lc = p.get("_lifecycle", "mature")
+        lifecycle_dist[lc] = lifecycle_dist.get(lc, 0) + 1
+
+    lines.append("| 生命周期 | 数量 | 占比 | 推断依据 |")
+    lines.append("|----------|------|------|----------|")
+    lifecycle_order = ["growth", "emerging", "cash_cow", "mature", "slowing", "declining", "turnaround", "distressed"]
+    lifecycle_basis = {
+        "growth": "γ=high_growth + V=true/moderate_quality",
+        "emerging": "γ=high_growth (质量未验证)",
+        "cash_cow": "γ=moderate/low + α≤0.35 + δ_decay=none",
+        "mature": "γ=moderate/low + δ_decay≤mild",
+        "slowing": "δ_decay=mild 或 短期衰退",
+        "declining": "γ=decline 或 δ_decay=moderate",
+        "turnaround": "has_deterioration + 近期改善",
+        "distressed": "δ_decay=severe 或 连跌≥4年 或 meltdown",
+    }
+    for lc in lifecycle_order:
+        count = lifecycle_dist.get(lc, 0)
+        pct = count / total_prof * 100
+        label = LIFECYCLE_LABELS.get(lc, lc)
+        basis = lifecycle_basis.get(lc, "")
+        lines.append(f"| {label} | {count} | {pct:.1f}% | {basis} |")
+    lines.append("")
+
+    # ============================================================
     # 按评分排序所有股票
     # ============================================================
 
@@ -860,12 +1131,12 @@ def report_truth(
     lines.append("")
     lines.append(f"> 共 {len(sorted_profiles)} 家公司，按综合评分排序")
     lines.append("")
-    lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
-    lines.append("|------|------|------|------|------|------|--------|----------|--------|")
+    lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 决策 | 生命周期 | 关键因子 |")
+    lines.append("|------|------|------|------|------|------|------|----------|----------|")
 
     # 显示前100名
     for profile in sorted_profiles[:100]:
-        lines.append(_generate_compact_row(profile))
+        lines.append(_generate_compact_row_v2(profile))
 
     if len(sorted_profiles) > 100:
         lines.append(f"| ... | | | | | | | | 还有 {len(sorted_profiles) - 100} 家 |")
@@ -884,10 +1155,10 @@ def report_truth(
         # 先显示完整列表
         lines.append("### 精选列表")
         lines.append("")
-        lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 置信度 | 关键因子 | 求解器 |")
-        lines.append("|------|------|------|------|------|------|--------|----------|--------|")
+        lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 决策 | 生命周期 | 关键因子 |")
+        lines.append("|------|------|------|------|------|------|------|----------|----------|")
         for profile in top_picks:
-            lines.append(_generate_compact_row(profile))
+            lines.append(_generate_compact_row_v2(profile))
         lines.append("")
 
         # 仅展开 Top 10 详细
@@ -1018,6 +1289,45 @@ def report_truth(
             lines.append("")
 
     # ============================================================
+    # 按生命周期分组的非否决公司（对齐 Evaluator 报告）
+    # ============================================================
+
+    lines.append("## 📊 按生命周期分组（非否决）")
+    lines.append("")
+
+    non_veto_profiles = [p for p in sorted_profiles if p.get("_decision") != "veto"]
+    lc_groups: Dict[str, list] = {}
+    for p in non_veto_profiles:
+        lc = p.get("_lifecycle", "mature")
+        if lc not in lc_groups:
+            lc_groups[lc] = []
+        lc_groups[lc].append(p)
+
+    lc_order = ["cash_cow", "mature", "growth", "emerging", "turnaround", "slowing", "declining", "distressed"]
+
+    for lc in lc_order:
+        if lc in lc_groups:
+            group = lc_groups[lc]
+            label = LIFECYCLE_LABELS.get(lc, lc)
+            lines.append(f"### {label} ({len(group)} 家)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 决策 | 评分 | 评级 | 关键因子 |")
+            lines.append("|------|------|------|------|------|----------|")
+            for p in sorted(group, key=lambda x: -(x.get("final_score", 0) or 0))[:20]:
+                dec = p.get("_decision", "")
+                dec_str = DECISION_EMOJI.get(dec, "") + dec
+                name = (p.get("name") or "")[:6]
+                grade = p.get("grade", "-")
+                score = p.get("final_score", 0) or 0
+                factors = p.get("factors", {})
+                gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
+                gamma_s = gamma_fd.get("score", 0) if isinstance(gamma_fd, dict) else 0
+                lines.append(f"| {p.get('ts_code', '')} | {name} | {dec_str} | {score:.1%} | {grade} | γ:{gamma_s:.2f} |")
+            if len(group) > 20:
+                lines.append(f"| ... | | | | | 还有 {len(group) - 20} 家 |")
+            lines.append("")
+
+    # ============================================================
     # 方法论说明
     # ============================================================
 
@@ -1062,13 +1372,37 @@ def report_truth(
     lines.append("| ❌ F | <28% | 否决，回避 |")
     lines.append("")
 
+    lines.append("### 决策映射 (对齐 Evaluator)")
+    lines.append("")
+    lines.append("| 决策 | 映射来源 | 含义 |")
+    lines.append("|------|----------|------|")
+    lines.append("| ⭐ 优质 (quality) | A+ / A 评级 | 基因优秀，值得重点关注 |")
+    lines.append("| 🟡 良好 (average) | B+ / B 评级 | 基因尚可，可纳入观察池 |")
+    lines.append("| 🟠 一般 (poor) | C / D 评级 | 基因平庸或较差 |")
+    lines.append("| ❌ 否决 (veto) | F / fraud_alert / meltdown | 基因严重缺陷，回避 |")
+    lines.append("")
+
+    lines.append("### 公司生命周期状态")
+    lines.append("")
+    lines.append("| 状态 | 推断因子 | 投资含义 |")
+    lines.append("|------|----------|----------|")
+    lines.append("| 📈 高增长 (growth) | γ=高增长 + V=真成长 | 成长股机会 |")
+    lines.append("| 🚀 新兴 (emerging) | γ=高增长 (质量未验证) | 高弹性/高风险 |")
+    lines.append("| 💰 现金牛 (cash_cow) | γ=适度 + α稳定 + 无衰退 | 稳定分红 |")
+    lines.append("| 🏔️ 成熟 (mature) | γ=适度 + 无严重衰退 | 价值股/蓝筹 |")
+    lines.append("| 📊 放缓 (slowing) | δ_decay=mild | 观望/择机 |")
+    lines.append("| 📉 衰退 (declining) | γ=decline 或 δ_decay=moderate | 规避风险 |")
+    lines.append("| 🔄 反转 (turnaround) | 衰退中+近期改善 | 逆向投资机会 |")
+    lines.append("| ⚠️ 困境 (distressed) | δ_decay=severe / 连跌4年+ | 高度警惕 |")
+    lines.append("")
+
     # ============================================================
     # 页脚
     # ============================================================
 
     lines.append("---")
     lines.append("")
-    lines.append("*报告由 T.R.U.T.H. v3.1 系统自动生成*")
+    lines.append("*报告由 T.R.U.T.H. v4.0 系统自动生成（决策+生命周期对齐 Evaluator）*")
     lines.append("")
     lines.append("**免责声明**: 本报告仅供参考，不构成投资建议。投资有风险，决策需谨慎。")
 

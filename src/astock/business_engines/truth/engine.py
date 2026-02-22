@@ -514,6 +514,7 @@ def _profile_to_dict(profile: TruthProfile) -> Dict[str, Any]:
                 "score": fr.score,
                 "confidence": fr.confidence,
                 "components": dict(fr.components),
+                "details": dict(fr.details),
             }
             for fid, fr in profile.factors.items()
         },
