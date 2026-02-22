@@ -518,7 +518,7 @@ class LogTrendProbe:
                 "median": trend_metrics.get('bootstrap_slope_median'),
                 "low": trend_metrics.get('bootstrap_ci_low'),
                 "high": trend_metrics.get('bootstrap_ci_high'),
-            }, 
+            },
         }
 
         return LogTrendResult(

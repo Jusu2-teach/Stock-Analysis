@@ -821,11 +821,35 @@ class CausalBayesianEvaluator:
             }
             trend_score = grade_scores.get(trend_grade, 50)
 
-            # v4.4: mk_tau 趋势一致性调整
-            # mk_tau 是非参数 Mann-Kendall 统计量 [-1,1]，与 log_slope 方向交叉验证
-            # 两者一致 → 趋势可信度高，给予小幅加分
-            # 两者矛盾 → 趋势可能被噪声/异常值扭曲，施加小幅扣分
+            # v4.5: R² 信度保护 — 趋势不可靠时分数向中性收缩
+            # 审计发现: 捷佳伟创 ROIC R²=0.001、广信科技 R²=0.04、海光信息 R²=0.05
+            # 这些公司的趋势方向完全不可靠，但系统仍用不可靠的方向给出极端评分
+            # 修复: 将 trend_score 按 R² 向 50(中性) 收缩
             metric_base = metric_score_key.replace("_trend", "")
+            r2 = features.get(f"{metric_base}_r_squared", 0.5)
+            if r2 < 0.20:
+                # R² 极低 → 趋势线几乎无意义，大幅收缩到中性
+                shrink_factor = r2 / 0.20  # 0→0, 0.10→0.5, 0.20→1.0
+                trend_score = 50 + (trend_score - 50) * shrink_factor
+            elif r2 < 0.40:
+                # R² 低 → 趋势有弱信号，适度收缩
+                shrink_factor = 0.6 + 0.4 * ((r2 - 0.20) / 0.20)  # 0.6→1.0
+                trend_score = 50 + (trend_score - 50) * shrink_factor
+
+            # v4.5: 近期趋势逆转检测
+            # 审计发现: 东方钽业10年slope正但近3年slope=-0.14(已在下降)
+            #          水晶光电10年ROIC方向=down但仍获A+评级
+            # 修复: 当近3年趋势与长期趋势严重矛盾时施加惩罚
+            recent_slope = features.get(f"{metric_base}_recent_trend", None)
+            if recent_slope is not None and value:
+                long_sign = 1 if value > 0.01 else (-1 if value < -0.01 else 0)
+                recent_sign = 1 if recent_slope > 0.01 else (-1 if recent_slope < -0.01 else 0)
+                if long_sign != 0 and recent_sign != 0 and long_sign != recent_sign:
+                    # 长期正但近期转负(或反之) → 趋势正在逆转
+                    reversal_penalty = min(8, abs(recent_slope - value) * 15)
+                    trend_score -= reversal_penalty
+
+            # v4.4: mk_tau 趋势一致性调整
             mk_tau = features.get(f"{metric_base}_mk_tau", 0.0)
             if mk_tau and value:  # 两者都非零
                 slope_sign = 1 if value > 0.005 else (-1 if value < -0.005 else 0)
@@ -876,6 +900,18 @@ class CausalBayesianEvaluator:
             total_weight += weight
 
         base_score = weighted_sum / total_weight if total_weight > 0 else 50.0
+
+        # v4.5: ROIC 绝对水平门槛 — 趋势好但ROIC太低的公司限制上限
+        # 审计发现: 中科曙光(ROIC 8.8%)、东方钽业(8.4%)、海光信息(10.8%)
+        # 趋势评分高但资本回报率不足以覆盖资金成本，不应获得 quality 评级
+        roic_latest = features.get("roic_level", None)
+        if roic_latest is not None and roic_latest < 10.0:
+            # ROIC < 10% → 资本效率差，score 上限 68(刚好低于 quality 阈值 72)
+            penalty = max(0, (10.0 - roic_latest) * 2.0)  # 8%→-4, 5%→-10
+            base_score -= penalty
+        elif roic_latest is not None and roic_latest < 12.0:
+            # ROIC 10-12% → 边际效率，小幅扣分
+            base_score -= (12.0 - roic_latest) * 0.8  # 10%→-1.6, 11%→-0.8
 
         # v4.2: 趋势-水平背离总结
         if _tl_divergence_count >= 2:
@@ -950,6 +986,21 @@ class CausalBayesianEvaluator:
             ))
 
         final_score = float(np.clip(base_score + rule_adjustment, 0, 100))
+
+        # v4.5: ROIC 绝对水平硬上限 — 资本回报率极低时封顶
+        # 审计发现: 蜀道装备(ROIC 5.4%)、金利华电(历史负ROIC)、中科曙光(8.8%)
+        # 即使其他指标(毛利率/EPS)表现好也不应获得 quality 评级
+        # 因为 ROIC 是衡量"资本创造价值能力"的核心指标
+        roic_latest_for_cap = features.get("roic_level", None)
+        if roic_latest_for_cap is not None:
+            if roic_latest_for_cap < 6.0:
+                # ROIC < 6%: 连资金成本都覆盖不了 → 硬封顶 58
+                final_score = min(final_score, 58.0)
+            elif roic_latest_for_cap < 9.0:
+                # ROIC 6-9%: 勉强覆盖资金成本 → 硬封顶 68 (低于 quality 72)
+                cap = 58.0 + (roic_latest_for_cap - 6.0) / 3.0 * 10.0  # 6%→58, 9%→68
+                final_score = min(final_score, cap)
+
         return final_score, factors
 
     def _get_adaptive_grade(
