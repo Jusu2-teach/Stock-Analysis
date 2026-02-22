@@ -111,7 +111,7 @@ class EvaluatorConfig:
     })
 
     # 决策阈值
-    quality_threshold: float = 70.0
+    quality_threshold: float = 72.0
     average_threshold: float = 50.0
 
     # 趋势特征到评分指标的映射
@@ -775,6 +775,7 @@ class CausalBayesianEvaluator:
         factors = []
         weighted_sum = 0.0
         total_weight = 0.0
+        _tl_divergence_count = 0  # v4.2: 趋势-水平背离计数
 
         # 1. 趋势 + 绝对水平 融合评分
         for metric_score_key, weight in self.config.score_weights.items():
@@ -798,12 +799,23 @@ class CausalBayesianEvaluator:
             level_feature = metric_score_key.replace("_trend", "_level")
             level_value = features.get(level_feature)
 
+            level_grade = None
             if level_key and level_value is not None:
                 level_grade = self._get_adaptive_grade(level_key, level_value, context)
                 level_score = grade_scores.get(level_grade, 50)
                 metric_score = 0.60 * trend_score + 0.40 * level_score
             else:
                 metric_score = trend_score
+
+            # v4.2: 趋势-水平背离检测 (Evaluator版 fake_growth 检测)
+            # 当水平"excellent"但趋势"poor"/"acceptable"时: 历史高位但正在衰退
+            # 这类公司不应获得level带来的高分加持, 降低level权重
+            if (level_grade in ("excellent", "good")
+                    and trend_grade in ("poor", "veto")
+                    and level_key and level_value is not None):
+                # 降级: 用纯趋势分 (不让高水平兜底)
+                metric_score = trend_score
+                _tl_divergence_count += 1
 
             direction = "positive" if value > 0.005 else ("negative" if value < -0.005 else "neutral")
             contribution = (metric_score - 50) / 50 * weight
@@ -821,15 +833,50 @@ class CausalBayesianEvaluator:
 
         base_score = weighted_sum / total_weight if total_weight > 0 else 50.0
 
-        # 2. 规则引擎调整 (加分/扣分均有递减效应)
+        # v4.2: 趋势-水平背离总结
+        if _tl_divergence_count >= 2:
+            # 多指标趋势-水平背离: 公司处于"虚假繁荣"状态
+            base_score -= 3 * _tl_divergence_count
+
+        # v4.2: 多指标恶化检测
+        # TRUTH 有 δ_decay/V_factor 检测衰退和虚假成长，Evaluator 需要对等能力
+        deterioration_count = sum(
+            1 for metric_key in self.config.score_weights
+            if features.get(f"{metric_key.replace('_trend', '')}_has_deterioration", False)
+        )
+
+        # v4.2: 多指标恶化直接调降基础分
+        # 当多个指标同时恶化，说明公司整体在走下坡路，不应获得 quality 评级
+        if deterioration_count >= 5:
+            base_score -= 12
+        elif deterioration_count >= 4:
+            base_score -= 8
+        elif deterioration_count >= 3:
+            base_score -= 5
+
+        # 2. 规则引擎调整 (v4.2: 恶化感知型惩罚缩放)
         rule_adjustment = 0.0
         if rule_result and not rule_result.vetoed:
             penalty = rule_result.total_penalty
             bonus = rule_result.total_bonus
 
-            # v4.1: 扣分递减——分数越低，扣分效果越小 (防止快速崩塾到0)
-            floor_headroom = max(0, base_score - 10)  # 最低不低于10分
-            effective_penalty = penalty * min(1.0, floor_headroom / 40.0)
+            # v4.2: 恶化感知型惩罚缩放 (解决"天花板压缩"问题)
+            # 问题: 优秀公司 (base=94) 因 R²<0.25 等小问题被规则引擎扣 25 分
+            #       导致 94-25=69 刚好低于 quality 阈值 70
+            # 修复: 无恶化/少恶化的公司获得惩罚折扣
+            #       多恶化的公司维持全额惩罚
+            if deterioration_count <= 1:
+                penalty_discount = 0.65    # 近乎无恙 → 35%折扣
+            elif deterioration_count == 2:
+                penalty_discount = 0.80
+            elif deterioration_count == 3:
+                penalty_discount = 0.90
+            else:
+                penalty_discount = 1.00    # 多指标恶化 → 全额惩罚
+
+            # 扣分递减 + 恶化感知
+            floor_headroom = max(0, base_score - 10)
+            effective_penalty = penalty * penalty_discount * min(1.0, floor_headroom / 40.0)
             penalty_adj = -effective_penalty
 
             # 加分递减: 基础分越高、加分效果越小 (headroom 式衰减)
@@ -845,6 +892,17 @@ class CausalBayesianEvaluator:
                     contribution=rule_adjustment / 100,
                     direction="positive" if rule_adjustment > 0 else "negative",
                 ))
+
+        # v4.2: 如果有恶化, 记录因子
+        if deterioration_count >= 3:
+            factors.append(Factor(
+                name="deterioration_quality",
+                display_name="恶化质量检测",
+                value=float(-deterioration_count),
+                contribution=-deterioration_count * 0.02,
+                direction="negative",
+                explanation=f"{deterioration_count}个指标同时恶化",
+            ))
 
         final_score = float(np.clip(base_score + rule_adjustment, 0, 100))
         return final_score, factors

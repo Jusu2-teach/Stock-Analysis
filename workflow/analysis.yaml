@@ -367,14 +367,18 @@ pipeline:
         parameters:
           - name: Evaluator_Result
 
-    # 🔵 Step 2: 综合报告生成（使用评估结果）
+    # 🔵 Step 2: 综合报告生成（使用评估结果 + TRUTH交叉验证）
     - name: "Generate_Comprehensive_Report"
       component: "business_engine"
       engine: "reporting"
       method: ["report_comprehensive"]
+      depends_on:
+        - "Run_Causal_Bayesian_Evaluator"
+        - "Run_TRUTH"
       parameters:
-        # 使用 Evaluator 处理后的结果
+        # 使用 Evaluator 处理后的结果 + TRUTH 交叉验证
         evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
+        truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
         output_path: "data/comprehensive_analysis_report.md"
       outputs:
         parameters:
@@ -428,14 +432,18 @@ pipeline:
         parameters:
           - name: Truth_Result
 
-    # 🟢 Step 2: TRUTH 报告生成（使用 TRUTH 结果）
+    # 🟢 Step 2: TRUTH 报告生成（使用 TRUTH 结果 + Evaluator交叉验证）
     - name: "Generate_Truth_Report"
       component: "business_engine"
       engine: "reporting"
       method: ["report_truth"]
+      depends_on:
+        - "Run_TRUTH"
+        - "Run_Causal_Bayesian_Evaluator"
       parameters:
-        # 使用 TRUTH 处理后的结果
+        # 使用 TRUTH 处理后的结果 + Evaluator 交叉验证
         truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
+        evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
         output_path: "data/truth_analysis_report.md"
       outputs:
         parameters:

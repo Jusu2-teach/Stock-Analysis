@@ -29,7 +29,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -144,10 +144,11 @@ def _generate_comprehensive_section(evaluation: Dict[str, Any]) -> List[str]:
 )
 def report_comprehensive(
     evaluator_result: Dict[str, Any],
+    truth_result: Optional[Dict[str, Any]] = None,
     output_path: str = "data/comprehensive_analysis_report.md",
 ) -> str:
     """
-    生成综合趋势分析报告（v2 因果贝叶斯评估器）
+    生成综合趋势分析报告（v4.2 因果贝叶斯评估器 + TRUTH 交叉验证）
 
     数据流:
         trend/engine (8个探针)
@@ -429,6 +430,92 @@ def report_comprehensive(
         if len(veto_evals) > 50:
             lines.append(f"| ... | | | | | 还有 {len(veto_evals) - 50} 家 |")
         lines.append("")
+
+    # ============================================================
+    # 🔬 双引擎交叉验证摘要 (v4.2 新增)
+    # ============================================================
+
+    if truth_result:
+        truth_profiles = truth_result.get("profiles", [])
+        truth_map = {p.get("ts_code", ""): p for p in truth_profiles}
+
+        lines.append("## 🔬 双引擎交叉验证")
+        lines.append("")
+        lines.append("> 对比 Evaluator (规则驱动) vs T.R.U.T.H. (数据驱动) 的选股结论")
+        lines.append("")
+
+        # 共识优质
+        consensus_quality = []
+        e_quality_t_poor = []
+        for e in evaluations:
+            if e.get("decision") != "quality":
+                continue
+            ts = e.get("ts_code", "")
+            t = truth_map.get(ts, {})
+            if not t:
+                continue
+            t_dec = _infer_decision_from_truth(t)
+            t_lc, _ = _infer_lifecycle_from_truth(t)
+            if t_dec == "quality":
+                factors = t.get("factors", {})
+                gamma_s = 0
+                gamma_fd = factors.get("gamma", {})
+                if isinstance(gamma_fd, dict):
+                    gamma_s = gamma_fd.get("score", 0)
+                gq = _get_factor_detail(factors, "verification", "growth_quality", "")
+                consensus_quality.append({
+                    "ts_code": ts,
+                    "name": (e.get("name") or t.get("name", ""))[:6],
+                    "industry": (e.get("industry") or t.get("industry", ""))[:6],
+                    "e_score": e.get("score", 0),
+                    "t_score": t.get("final_score", 0),
+                    "t_grade": t.get("grade", ""),
+                    "e_lifecycle": e.get("company_state", ""),
+                    "t_lifecycle": t_lc,
+                    "gamma": gamma_s,
+                    "growth_quality": gq,
+                })
+            elif t_dec == "poor":
+                e_quality_t_poor.append({
+                    "ts_code": ts,
+                    "name": (e.get("name") or "")[:6],
+                    "e_score": e.get("score", 0),
+                    "t_score": t.get("final_score", 0),
+                    "t_grade": t.get("grade", ""),
+                })
+
+        e_q_count = sum(1 for e in evaluations if e.get("decision") == "quality")
+        t_q_count = sum(1 for p in truth_profiles if _infer_decision_from_truth(p) == "quality")
+
+        lines.append(f"- Evaluator 优质: **{e_q_count}** 家")
+        lines.append(f"- T.R.U.T.H. 优质: **{t_q_count}** 家")
+        lines.append(f"- **双引擎共识**: **{len(consensus_quality)}** 家 ({len(consensus_quality)/max(1,e_q_count)*100:.0f}% of Evaluator)")
+        lines.append(f"- Evaluator优质但TRUTH较差: {len(e_quality_t_poor)} 家")
+        lines.append("")
+
+        if consensus_quality:
+            consensus_quality.sort(key=lambda x: -(x["e_score"] + x["t_score"] * 100) / 2)
+            lines.append("### ⭐ 双引擎共识优质 (最高信度)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 行业 | E评分 | T评分 | T评级 | E周期 | T周期 | γ | 成长质量 |")
+            lines.append("|------|------|------|-------|-------|-------|-------|-------|---|----------|")
+            for item in consensus_quality:
+                lines.append(f"| {item['ts_code']} | {item['name']} | {item['industry']} | "
+                           f"{item['e_score']:.1f} | {item['t_score']:.1%} | {item['t_grade']} | "
+                           f"{item['e_lifecycle']} | {item['t_lifecycle']} | "
+                           f"{item['gamma']:.2f} | {item['growth_quality']} |")
+            lines.append("")
+
+        if e_quality_t_poor:
+            lines.append("### ⚠️ 分歧警告 (Evaluator优质 / TRUTH较差)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | E评分 | T评分 | T评级 | 风险提示 |")
+            lines.append("|------|------|-------|-------|-------|----------|")
+            for item in sorted(e_quality_t_poor, key=lambda x: -x["e_score"])[:10]:
+                lines.append(f"| {item['ts_code']} | {item['name']} | "
+                           f"{item['e_score']:.1f} | {item['t_score']:.1%} | {item['t_grade']} | "
+                           f"水平高但成长存疑 |")
+            lines.append("")
 
     # ============================================================
     # 方法论说明
@@ -932,9 +1019,10 @@ DECISION_EMOJI = {"quality": "⭐", "average": "🟡", "poor": "🟠", "veto": "
 )
 def report_truth(
     truth_result: Dict[str, Any],
+    evaluator_result: Optional[Dict[str, Any]] = None,
     output_path: str = "data/truth_analysis_report.md",
 ) -> str:
-    """基于 T.R.U.T.H. v3.0 结果生成专业 Markdown 报告（v3.1 分层展示）.
+    """基于 T.R.U.T.H. v4.2 结果生成专业 Markdown 报告 + Evaluator 交叉验证.
 
     v3.1 改进（参照 evaluators 报告格式）：
     - 分层展示：汇总 → 完整列表(表格) → Top10详细 → 按评级分组
@@ -1325,6 +1413,82 @@ def report_truth(
                 lines.append(f"| {p.get('ts_code', '')} | {name} | {dec_str} | {score:.1%} | {grade} | γ:{gamma_s:.2f} |")
             if len(group) > 20:
                 lines.append(f"| ... | | | | | 还有 {len(group) - 20} 家 |")
+            lines.append("")
+
+    # ============================================================
+    # 🔬 双引擎交叉验证摘要 (v4.2 新增)
+    # ============================================================
+
+    if evaluator_result:
+        eval_list = evaluator_result.get("evaluations", [])
+        eval_map = {e.get("ts_code", ""): e for e in eval_list}
+
+        lines.append("## 🔬 双引擎交叉验证")
+        lines.append("")
+        lines.append("> 对比 T.R.U.T.H. (数据驱动) vs Evaluator (规则驱动) 的选股结论")
+        lines.append("")
+
+        # 共识优质
+        consensus_quality = []
+        t_quality_e_poor = []
+        for p in sorted_profiles:
+            if p.get("_decision") != "quality":
+                continue
+            ts = p.get("ts_code", "")
+            e = eval_map.get(ts, {})
+            if not e:
+                continue
+            e_dec = e.get("decision", "")
+            if e_dec == "quality":
+                consensus_quality.append({
+                    "ts_code": ts,
+                    "name": (p.get("name") or e.get("name", ""))[:6],
+                    "industry": (p.get("industry") or e.get("industry", ""))[:6],
+                    "t_score": p.get("final_score", 0),
+                    "t_grade": p.get("grade", ""),
+                    "e_score": e.get("score", 0),
+                    "e_lifecycle": e.get("company_state", ""),
+                    "t_lifecycle": p.get("_lifecycle", ""),
+                })
+            elif e_dec == "poor":
+                t_quality_e_poor.append({
+                    "ts_code": ts,
+                    "name": (p.get("name") or "")[:6],
+                    "t_score": p.get("final_score", 0),
+                    "t_grade": p.get("grade", ""),
+                    "e_score": e.get("score", 0),
+                })
+
+        t_q_count = sum(1 for p in sorted_profiles if p.get("_decision") == "quality")
+        e_q_count = sum(1 for e in eval_list if e.get("decision") == "quality")
+
+        lines.append(f"- T.R.U.T.H. 优质: **{t_q_count}** 家")
+        lines.append(f"- Evaluator 优质: **{e_q_count}** 家")
+        lines.append(f"- **双引擎共识**: **{len(consensus_quality)}** 家 ({len(consensus_quality)/max(1,t_q_count)*100:.0f}% of T.R.U.T.H.)")
+        lines.append(f"- TRUTH优质但Evaluator较差: {len(t_quality_e_poor)} 家")
+        lines.append("")
+
+        if consensus_quality:
+            consensus_quality.sort(key=lambda x: -(x["e_score"] + x["t_score"] * 100) / 2)
+            lines.append("### ⭐ 双引擎共识优质 (最高信度)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 行业 | T评分 | T评级 | E评分 | E周期 | T周期 |")
+            lines.append("|------|------|------|-------|-------|-------|-------|-------|")
+            for item in consensus_quality:
+                lines.append(f"| {item['ts_code']} | {item['name']} | {item['industry']} | "
+                           f"{item['t_score']:.1%} | {item['t_grade']} | "
+                           f"{item['e_score']:.1f} | {item['e_lifecycle']} | {item['t_lifecycle']} |")
+            lines.append("")
+
+        if t_quality_e_poor:
+            lines.append("### ⚠️ 分歧警告 (TRUTH优质 / Evaluator较差)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | T评分 | T评级 | E评分 | 提示 |")
+            lines.append("|------|------|-------|-------|-------|------|")
+            for item in sorted(t_quality_e_poor, key=lambda x: -x["t_score"])[:10]:
+                lines.append(f"| {item['ts_code']} | {item['name']} | "
+                           f"{item['t_score']:.1%} | {item['t_grade']} | "
+                           f"{item['e_score']:.1f} | 成长好但规则引擎扣分多 |")
             lines.append("")
 
     # ============================================================
