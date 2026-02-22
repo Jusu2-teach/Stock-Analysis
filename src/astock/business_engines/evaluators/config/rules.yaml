@@ -21,7 +21,7 @@ metadata:
 # ═══════════════════════════════════════════════════════════════════════════════
 scoring:
   base_score: 100.0
-  max_penalty: 50.0
+  max_penalty: 25.0
   max_bonus: 30.0
 
   # 评级阈值
@@ -49,9 +49,9 @@ scoring:
 veto_rules:
   - id: severe_trend_decline
     name: "严重趋势衰退"
-    description: "长期趋势严重下滑且统计显著"
+    description: "长期趋势严重下滑且统计显著 (p25, ≈复合年降幅39%)"
     condition:
-      log_slope_lt: -0.30
+      log_slope_lt: -0.50
       r_squared_gt: 0.60
     exemptions:
       - type: cyclical_bottom
@@ -79,21 +79,21 @@ veto_rules:
 
   - id: severe_deterioration
     name: "严重恶化"
-    description: "贝叶斯检测到严重恶化且跌幅超过60%"
+    description: "贝叶斯检测到严重恶化且跌幅超过70%"
     condition:
       deterioration_severity_in: ["severe", "catastrophic"]
-      decline_pct_gt: 0.60
+      decline_pct_gt: 0.70
     exemptions:
       - type: cyclical_bottom
     message_template: "恶化等级: {deterioration_severity}, 跌幅: {decline_pct:.1%}"
 
   - id: peak_decline
     name: "峰值暴跌"
-    description: "从历史峰值下跌超过75%"
+    description: "从加权均值下跌超过85% (注: 对比加权均值而非历史峰值)"
     condition:
-      peak_decline_pct_gt: 0.75
+      peak_decline_pct_gt: 0.85
     params:
-      cyclical_threshold: 0.85
+      cyclical_threshold: 0.92
     message_template: "从峰值下跌{peak_decline_pct:.1%}"
 
   - id: roiic_capital_destruction
@@ -111,12 +111,12 @@ veto_rules:
 penalty_rules:
   - id: mild_decline
     name: "轻度衰退"
-    description: "趋势轻度下滑"
+    description: "趋势轻度下滑 (p25~p50范围内的中度下降)"
     condition:
-      log_slope_lt: -0.03
-      log_slope_gte: -0.15
+      log_slope_lt: -0.10
+      log_slope_gte: -0.30
       r_squared_gt: 0.30
-    score_formula: "abs(log_slope) * 120"
+    score_formula: "abs(log_slope) * 80"
     max_score: 15
     message_template: "轻度下滑: slope={log_slope:.3f}"
 

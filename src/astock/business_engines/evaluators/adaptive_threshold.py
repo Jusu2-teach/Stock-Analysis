@@ -320,14 +320,28 @@ class AdaptiveThresholdEngine:
     @classmethod
     def with_defaults(cls) -> 'AdaptiveThresholdEngine':
         """使用内置默认值创建"""
+        # ─── 绝对水平阈值 (A股实际分位数校准, 单位: %) ───
+        # roic: p50=3.6%, p75=7.4%, p85=10.0%
+        # roe:  p50=4.3%, p75=9.0%, p85=11.7%
         base_thresholds = {
-            "roic_level": ThresholdSet("roic_level", 15.0, 10.0, 7.0, 4.0, 0.0),
-            "roic_trend": ThresholdSet("roic_trend", 0.02, 0.01, 0.0, -0.01, -0.03),
-            "roe_level": ThresholdSet("roe_level", 20.0, 15.0, 10.0, 5.0, 0.0),
+            "roic_level": ThresholdSet("roic_level", 12.0, 8.0, 4.0, 0.0, -5.0),
+            "roe_level": ThresholdSet("roe_level", 12.0, 8.0, 4.0, 0.0, -5.0),
             "revenue_growth": ThresholdSet("revenue_growth", 0.15, 0.10, 0.05, 0.0, -0.10),
             "gross_margin": ThresholdSet("gross_margin", 40.0, 30.0, 20.0, 10.0, 0.0),
             "net_margin": ThresholdSet("net_margin", 15.0, 10.0, 5.0, 2.0, 0.0),
             "ocf_ratio": ThresholdSet("ocf_ratio", 1.2, 1.0, 0.8, 0.5, 0.0),
+
+            # ─── 趋势阈值 (基于 A 股 2015-2024 实际 log_slope 分位数校准) ───
+            # 目标分布: excellent~p85, good~p70, acceptable~p50, poor~p25, veto~p15
+            # 数据源: data/filter_middle/*_trend_analysis.csv
+            "roic_trend": ThresholdSet("roic_trend", 0.05, -0.01, -0.16, -0.50, -0.85),
+            "roe_trend": ThresholdSet("roe_trend", 0.05, -0.01, -0.15, -0.50, -0.86),
+            "roiic_trend": ThresholdSet("roiic_trend", 0.75, 0.10, -0.10, -0.78, -1.28),
+            "revenue_trend": ThresholdSet("revenue_trend", 0.12, 0.03, 0.00, -0.05, -0.10),
+            "profit_trend": ThresholdSet("profit_trend", 0.05, 0.00, -0.01, -0.11, -0.20),
+            "gross_margin_trend": ThresholdSet("gross_margin_trend", 0.02, 0.00, -0.01, -0.06, -0.10),
+            "net_margin_trend": ThresholdSet("net_margin_trend", 0.06, -0.01, -0.06, -0.29, -0.68),
+            "ocf_trend": ThresholdSet("ocf_trend", 0.10, 0.02, 0.00, -0.07, -0.14),
         }
 
         # 默认行业乘数

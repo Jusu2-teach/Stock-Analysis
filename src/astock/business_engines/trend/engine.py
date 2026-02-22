@@ -732,7 +732,9 @@ def _extract_ratios_from_indicators(df_sorted: pd.DataFrame) -> pd.DataFrame:
             ratio_nca = float('nan')
 
         ratio_intang = 0.0
+        has_tba_data = False
         if not pd.isna(tba_pct):
+            has_tba_data = True
             ratio_intang = _clamp(1.0 - tba_pct / 100.0)
             features["ratio_intang_asset"] = ratio_intang
 
@@ -752,15 +754,22 @@ def _extract_ratios_from_indicators(df_sorted: pd.DataFrame) -> pd.DataFrame:
             ratio_recv = _clamp(1.0 / max(ar_turnover, 0.5))
             features["ratio_receivable_to_revenue"] = ratio_recv
 
-        if not pd.isna(assets_to_eqt) and assets_to_eqt > 0:
+        if has_tba_data and not pd.isna(assets_to_eqt) and assets_to_eqt > 0:
+            # 近似: 用无形资产占比×净资产倍数的小比例估算
+            # 这是粗略近似 — 真实商誉需要独立科目数据
             features["ratio_goodwill_to_equity"] = _clamp(
                 ratio_intang * (assets_to_eqt / 100.0) * 0.15
             )
-        elif ratio_intang > 0.5:
+        elif has_tba_data and ratio_intang > 0.5:
             features["ratio_goodwill_to_equity"] = ratio_intang * 0.25
+        else:
+            # 数据缺失 → 默认安全 (不设商誉风险)
+            features["ratio_goodwill_to_equity"] = 0.0
 
         # ── 风险标志 ──
-        features["flag_goodwill_risk"] = 1.0 if ratio_intang > 0.85 else 0.0
+        # v4.1.1 修复: 仅当无形资产数据实际可用时才判断商誉风险
+        # 缺失数据 (has_tba_data=False) 默认安全, 避免误杀
+        features["flag_goodwill_risk"] = 1.0 if (has_tba_data and ratio_intang > 0.85) else 0.0
         features["flag_cash_loan_anomaly"] = 0.0
         features["flag_high_receivable"] = 1.0 if ratio_recv > 1.0 else 0.0
 

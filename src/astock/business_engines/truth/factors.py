@@ -585,10 +585,11 @@ class GammaFactor:
         confidence = min(1.0, total_weight / 0.8)
 
         # 成长分类
+        # v4.1.1 修复: CAGR 为小数形式 (0.15=15%), 直接与 config 阈值比较
         if cagr is not None:
-            if cagr > conf.high_growth_threshold * 100:
+            if cagr > conf.high_growth_threshold:
                 growth_type = "high_growth"
-            elif cagr > conf.moderate_growth_threshold * 100:
+            elif cagr > conf.moderate_growth_threshold:
                 growth_type = "moderate_growth"
             elif cagr > 0:
                 growth_type = "low_growth"
@@ -1008,8 +1009,9 @@ class DeltaFraudFactor:
 
         if ocf_cagr is not None and profit_cagr is not None:
             # 利润增长但现金流不跟 = 危险信号
-            if profit_cagr > 5 and ocf_cagr < profit_cagr * 0.3:
-                divergence_score = min(1.0, (profit_cagr - ocf_cagr) / 30.0)
+            # v4.1.1 修复: CAGR 为小数形式 (0.05 = 5%), 阈值从 5 → 0.05
+            if profit_cagr > 0.05 and ocf_cagr < profit_cagr * 0.3:
+                divergence_score = min(1.0, (profit_cagr - ocf_cagr) / 0.30)
                 w = weights.get("ocf_profit_divergence", 0.25)
                 fraud_signals += w * divergence_score
                 total_weight += w
@@ -1069,9 +1071,19 @@ class DeltaFraudFactor:
 
         # ================================================================
         # 计算最终分数
+        # v4.1.1 修复: 用所有可能信号的最大权重之和作为分母
+        # 旧逻辑: score = fraud_signals / total_weight (仅触发信号的权重和)
+        # 问题: 单个信号触发时分母极小, 任何 raw_score > 0.58 直接触发熔断
+        # 新逻辑: 用固定分母 (所有信号权重之和), 只有多信号并发才能触发熔断
         # ================================================================
+        # 所有可能的信号权重总和:
+        # 一级: goodwill=0.35 + cash_loan=0.30 + receivable=0.15 = 0.80
+        # Beneish: DSRI=0.10 + AQI=0.08 + TATA=0.08 = 0.26
+        # 二级(from config): ocf_divergence + smoothness + r_squared + cross_val ≈ 0.80
+        # 总计 ≈ 1.86, 这里用保守估计 1.0 作为分母基底
+        max_possible_weight = max(1.0, total_weight)  # 至少为 1.0
         if total_weight > 0:
-            score = fraud_signals / total_weight
+            score = fraud_signals / max_possible_weight
         else:
             score = 0.0  # 无信号 = 无欺诈嫌疑
 
@@ -1209,8 +1221,9 @@ class DeltaDecayFactor:
         total_decline = aggregate_feature(probes, "total_decline_pct", "min", efficiency_metrics)
         if total_decline is not None:
             # 下跌幅度 (负数表示下跌)
-            decline_pct = abs(min(0, total_decline))
-            decline_score = min(1.0, decline_pct / conf.severe_decline_threshold / 100)
+            decline_pct = abs(min(0, total_decline))  # total_decline 为百分数 (如 -30 表示跌30%)
+            # v4.1.1 修复: severe_decline_threshold=0.30 (30%), 乘 100 转为百分数单位匹配
+            decline_score = min(1.0, decline_pct / (conf.severe_decline_threshold * 100))
             w = weights.get("total_decline_pct", 0.20)
             decay_score += w * decline_score
             total_weight += w

@@ -606,8 +606,10 @@ class CausalBayesianEvaluator:
             combined_result.total_penalty += result.total_penalty
             combined_result.total_bonus += result.total_bonus
 
-        # ≥3 指标共识否决
-        if veto_count >= 3:
+        # v4.1.1: ≥5 指标共识否决
+        # 8个指标中 roic↔roe, gross_margin↔net_margin 高度相关,
+        # ≥4 很容易被相关指标同时触发 (误杀); ≥5 要求真正的多维度衰退
+        if veto_count >= 5:
             combined_result.vetoed = True
             combined_result.veto_reason = (
                 f"多指标共识否决({veto_count}个): " + "; ".join(veto_reasons)
@@ -685,12 +687,26 @@ class CausalBayesianEvaluator:
             mf["max_value"] = max(level, weighted * 1.5)
 
         # 连续亏损年数 (用于 consecutive_loss 规则)
-        if level_val < 0 and weighted_val < 0:
-            mf["loss_year_count"] = 5
-        elif level_val < 0:
-            mf["loss_year_count"] = 2
+        # v4.1.1: 从 raw_values 实际计算, 而非硬编码猜测
+        raw_vals_key = f"{metric}_raw_values"
+        if raw_vals_key in features and isinstance(features[raw_vals_key], (list, tuple)):
+            raw_vals = features[raw_vals_key]
+            # 从末尾往前数连续 <0 的年数
+            loss_count = 0
+            for v in reversed(raw_vals):
+                if isinstance(v, (int, float)) and v < 0:
+                    loss_count += 1
+                else:
+                    break
+            mf["loss_year_count"] = loss_count
         else:
-            mf["loss_year_count"] = 0
+            # fallback: 用 level + weighted 的符号近似
+            if level_val < 0 and weighted_val < 0:
+                mf["loss_year_count"] = 4  # 两个均值都为负 → 大概率持续亏损
+            elif level_val < 0:
+                mf["loss_year_count"] = 1  # 仅当前为负 → 偶发
+            else:
+                mf["loss_year_count"] = 0
 
         # 近3年趋势 (用于 bonus 规则)
         recent_key = f"{metric}_recent_trend"
@@ -839,20 +855,22 @@ class CausalBayesianEvaluator:
         """
         获取自适应等级
 
-        基于 A 股实际 10 年 log_slope 分布校准:
-        p10≈-0.15, p25≈-0.08, p50≈-0.02, p75≈+0.02, p90≈+0.06
+        基于 A 股 2015-2024 实际 log_slope 分位数校准:
+        p15≈-0.85, p25≈-0.50, p50≈-0.16, p75≈-0.01, p85≈+0.05
+        (roic 为例; 不同指标有不同的标准差, 详见 adaptive_threshold.py)
         """
         try:
             thresholds = self._threshold_engine.get_thresholds(metric, context)
             return thresholds.get_grade(value, higher_is_better=True)
         except (ValueError, KeyError):
-            if value > 0.04:
+            # 通用 fallback: 基于所有指标的中位数分布
+            if value > 0.05:
                 return "excellent"
-            elif value > 0.01:
+            elif value > 0.00:
                 return "good"
-            elif value > -0.02:
+            elif value > -0.10:
                 return "acceptable"
-            elif value > -0.08:
+            elif value > -0.40:
                 return "poor"
             else:
                 return "veto"
