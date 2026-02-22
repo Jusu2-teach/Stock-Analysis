@@ -477,16 +477,18 @@ def _calibrate(
     confidences.extend([r.confidence for r in solvers.values() if r.confidence])
     confidence = sum(confidences) / len(confidences) if confidences else 0.5
 
-    # 【T-H2 修复】数据年限置信度调整
+    # 【T-H2 v3.4 修复】数据年限置信度调整 — 平滑曲线替代硬性cap
     cal = config.calibration
     if data_years < cal.full_confidence_years:
-        # 数据不满 full_confidence_years 时，压低置信度
-        # 不满 min_data_years 时 cap 在 max_confidence_5y 以下
-        year_ratio = data_years / cal.full_confidence_years
+        # 平滑曲线: 3年→60%, 5年→85%, 7年→100%
         if data_years <= cal.min_data_years:
-            confidence = min(confidence, cal.max_confidence_5y * 0.6)
+            year_factor = cal.min_confidence_3y if hasattr(cal, 'min_confidence_3y') else 0.60
         else:
-            confidence *= max(year_ratio, cal.max_confidence_5y)
+            # 线性插值: min_data_years → max_confidence_5y → full
+            progress = (data_years - cal.min_data_years) / (cal.full_confidence_years - cal.min_data_years)
+            year_factor = cal.max_confidence_5y + (1.0 - cal.max_confidence_5y) * progress
+        confidence = confidence * year_factor
+    # 不再使用 min() 硬性 cap, 让高质量公司可以突破天花板
 
     # 信号和评级（使用 ScoringConfig 阈值）
     signal = _score_to_signal(final_score, scoring)
@@ -645,7 +647,7 @@ def _calculate_summary(profiles: List[TruthProfile]) -> Dict[str, Any]:
         "signal_distribution": signal_dist,
         "grade_distribution": grade_dist,
         "average_score": round(avg_score, 4),
-        "top_picks_count": sum(1 for p in profiles if p.grade in (TruthGrade.A_PLUS, TruthGrade.A)),
+        "top_picks_count": sum(1 for p in profiles if p.grade in (TruthGrade.A_PLUS, TruthGrade.A, TruthGrade.B_PLUS)),
         "meltdown_count": sum(1 for p in profiles if p.signal == TruthSignal.FRAUD_ALERT),
     }
 

@@ -4,11 +4,11 @@
 
 ## 📋 报告概要
 
-- **生成时间**: 2026-01-31 11:31:31
+- **生成时间**: 2026-02-22 11:38:38
 - **算法版本**: v2.0 (Causal Bayesian)
 - **分析股票数**: 1913
-- **优质公司数**: 189
-- **否决公司数**: 1603
+- **优质公司数**: 153
+- **否决公司数**: 521
 
 ## 📊 汇总统计
 
@@ -16,636 +16,766 @@
 
 | 决策 | 数量 | 占比 |
 |------|------|------|
-| ✅ 优质 | 189 | 9.9% |
-| 🟡 一般 | 84 | 4.4% |
-| 🟠 较差 | 37 | 1.9% |
+| ✅ 优质 | 153 | 8.0% |
+| 🟡 一般 | 111 | 5.8% |
+| 🟠 较差 | 1128 | 59.0% |
 | ❓ 待定 | 0 | 0.0% |
-| ❌ 否决 | 1603 | 83.8% |
+| ❌ 否决 | 521 | 27.2% |
 
 ### 生命周期分布
 
 | 状态 | 数量 |
 |------|------|
-| ⚠️ 困境期 | 1069 |
-| 💰 现金牛 | 288 |
-| 🚀 成长期 | 263 |
-| 🏔️ 成熟期 | 212 |
-| 🔄 反转期 | 45 |
-| 📉 衰退期 | 36 |
+| 🔻 周期底部 | 564 |
+| 🔄 反转期 | 211 |
+| 🚀 成长期 | 132 |
+| 📊 放缓期 | 108 |
+| ⚠️ 困境期 | 102 |
+| 📈 高增长 | 99 |
+| 📉 衰退期 | 62 |
+| 🔝 周期顶部 | 44 |
+| 🏔️ 成熟期 | 36 |
+| 💰 现金牛 | 34 |
 
 ## ⭐ 优质公司完整列表 (QUALITY)
 
-> 共 189 家公司通过因果贝叶斯评估（得分≥70）
+> 共 153 家公司通过因果贝叶斯评估（得分≥70）
 
-| 代码 | 得分 | 置信度 | 生命周期 | 主要因素 |
-|------|------|--------|----------|----------|
-| 301678.SZ | 81.1 | 64% | 🏔️成熟 | roic_trend:1.64, roe_trend:1.87 |
-| 002595.SZ | 81.1 | 66% | 🏔️成熟 | roic_trend:1.35, roe_trend:1.13 |
-| 002837.SZ | 81.1 | 64% | 🏔️成熟 | roic_trend:1.21, roe_trend:1.01 |
-| 000682.SZ | 81.1 | 64% | 💰现金牛 | roic_trend:0.87, roe_trend:1.44 |
-| 688029.SH | 81.1 | 64% | 🏔️成熟 | roic_trend:0.81, roe_trend:1.21 |
-| 600062.SH | 81.1 | 64% | 🏔️成熟 | roic_trend:0.78, roe_trend:1.21 |
-| 688128.SH | 81.1 | 64% | 💰现金牛 | roic_trend:0.48, roe_trend:0.62 |
-| 605116.SH | 81.1 | 64% | 💰现金牛 | roic_trend:0.43, roe_trend:1.22 |
-| 000988.SZ | 81.1 | 64% | 💰现金牛 | roic_trend:0.38, roe_trend:0.87 |
-| 300049.SZ | 81.0 | 64% | 💰现金牛 | roic_trend:0.86, roe_trend:0.28 |
-| 603014.SH | 80.8 | 64% | 🏔️成熟 | roic_trend:0.48, roe_trend:0.10 |
-| 688050.SH | 80.8 | 64% | 💰现金牛 | roic_trend:1.27, roe_trend:2.06 |
-| 603036.SH | 80.8 | 64% | 💰现金牛 | roic_trend:0.40, roe_trend:0.39 |
-| 300832.SZ | 80.7 | 65% | 💰现金牛 | roic_trend:0.10, roe_trend:0.16 |
-| 688596.SH | 80.6 | 64% | 💰现金牛 | roic_trend:1.33, roe_trend:1.82 |
-| 600262.SH | 80.6 | 63% | 🏔️成熟 | roic_trend:1.58, roe_trend:1.48 |
-| 300743.SZ | 80.6 | 63% | 💰现金牛 | roic_trend:1.65, roe_trend:2.03 |
-| 688278.SH | 80.6 | 63% | 💰现金牛 | roic_trend:6.07, roe_trend:5.96 |
-| 002371.SZ | 80.6 | 63% | 🏔️成熟 | roic_trend:2.30, roe_trend:3.39 |
-| 002835.SZ | 80.6 | 64% | 🏔️成熟 | roic_trend:1.95, roe_trend:1.99 |
-| 603676.SH | 80.6 | 63% | 💰现金牛 | roic_trend:3.06, roe_trend:3.12 |
-| 600379.SH | 80.6 | 64% | 💰现金牛 | roic_trend:0.85, roe_trend:0.97 |
-| 300866.SZ | 80.6 | 65% | 💰现金牛 | roic_trend:0.48, roe_trend:1.44 |
-| 688198.SH | 80.5 | 64% | 🏔️成熟 | roic_trend:0.86, roe_trend:1.33 |
-| 688025.SH | 80.5 | 63% | 🏔️成熟 | roic_trend:0.71, roe_trend:0.97 |
-| 000551.SZ | 80.5 | 65% | 💰现金牛 | roic_trend:0.50, roe_trend:0.82 |
-| 300573.SZ | 80.5 | 65% | 💰现金牛 | roic_trend:0.34, roe_trend:0.37 |
-| 000756.SZ | 80.4 | 64% | 💰现金牛 | roic_trend:0.08, roe_trend:0.05 |
-| 301479.SZ | 80.3 | 64% | 💰现金牛 | roic_trend:3.16, roe_trend:3.70 |
-| 300724.SZ | 80.3 | 64% | 💰现金牛 | roic_trend:1.92, roe_trend:2.39 |
-| 688248.SH | 80.3 | 64% | 🏔️成熟 | roic_trend:1.05, roe_trend:1.13 |
-| 601633.SH | 80.3 | 64% | 🏔️成熟 | roic_trend:0.81, roe_trend:1.71 |
-| 002850.SZ | 80.3 | 63% | 🏔️成熟 | roic_trend:1.12, roe_trend:1.50 |
-| 688082.SH | 80.3 | 64% | 🏔️成熟 | roic_trend:0.92, roe_trend:1.42 |
-| 300406.SZ | 80.3 | 63% | 💰现金牛 | roic_trend:1.00, roe_trend:1.55 |
-| 603920.SH | 80.3 | 64% | 🏔️成熟 | roic_trend:0.43, roe_trend:1.15 |
-| 002655.SZ | 80.2 | 64% | 💰现金牛 | roic_trend:0.04, roe_trend:0.27 |
-| 601567.SH | 80.1 | 63% | 🏔️成熟 | roic_trend:1.97, roe_trend:2.40 |
-| 688138.SH | 80.1 | 64% | 🏔️成熟 | roic_trend:0.98, roe_trend:1.98 |
-| 002997.SZ | 80.1 | 64% | 🏔️成熟 | roic_trend:0.54, roe_trend:1.41 |
-| 688188.SH | 80.0 | 64% | 💰现金牛 | roic_trend:0.07, roe_trend:0.08 |
-| 300857.SZ | 80.0 | 64% | 🏔️成熟 | roic_trend:1.24, roe_trend:2.86 |
-| 688755.SH | 80.0 | 63% | 💰现金牛 | roic_trend:1.26, roe_trend:1.87 |
-| 601137.SH | 80.0 | 63% | 💰现金牛 | roic_trend:1.53, roe_trend:3.02 |
-| 600211.SH | 80.0 | 63% | 💰现金牛 | roic_trend:3.83, roe_trend:4.42 |
-| 301301.SZ | 80.0 | 63% | 💰现金牛 | roic_trend:3.47, roe_trend:4.85 |
-| 002947.SZ | 80.0 | 63% | 💰现金牛 | roic_trend:2.46, roe_trend:3.21 |
-| 920112.BJ | 80.0 | 63% | 💰现金牛 | roic_trend:2.71, roe_trend:2.45 |
-| 002594.SZ | 80.0 | 63% | 💰现金牛 | roic_trend:3.50, roe_trend:4.94 |
-| 002322.SZ | 80.0 | 63% | 🏔️成熟 | roic_trend:0.59, roe_trend:0.66 |
-| 300827.SZ | 80.0 | 63% | 🏔️成熟 | roic_trend:0.42, roe_trend:2.50 |
-| 002273.SZ | 80.0 | 64% | 🏔️成熟 | roic_trend:0.36, roe_trend:0.50 |
-| 300896.SZ | 80.0 | 64% | 💰现金牛 | roic_trend:2.89, roe_trend:3.12 |
-| 002056.SZ | 79.9 | 64% | 🏔️成熟 | roic_trend:0.12, roe_trend:0.42 |
-| 002152.SZ | 79.8 | 64% | 💰现金牛 | roic_trend:0.08, roe_trend:0.05 |
-| 002252.SZ | 79.8 | 62% | 🏔️成熟 | roic_trend:0.04, roe_trend:0.05 |
-| 603693.SH | 79.6 | 63% | 🏔️成熟 | roic_trend:0.42, roe_trend:0.78 |
-| 300457.SZ | 79.6 | 63% | 💰现金牛 | roic_trend:3.44, roe_trend:1.04 |
-| 600312.SH | 79.6 | 63% | 💰现金牛 | roic_trend:2.13, roe_trend:2.25 |
-| 000915.SZ | 79.6 | 66% | 🏔️成熟 | roic_trend:1.37, roe_trend:0.94 |
-| 603383.SH | 79.3 | 64% | 🏔️成熟 | roic_trend:1.07, roe_trend:1.52 |
-| 603530.SH | 79.3 | 63% | 💰现金牛 | roic_trend:1.17, roe_trend:1.36 |
-| 300545.SZ | 79.3 | 63% | 💰现金牛 | roic_trend:2.39, roe_trend:2.77 |
-| 688578.SH | 79.3 | 66% | 💰现金牛 | roic_trend:10.89, roe_trend:11.31 |
-| 688018.SH | 79.3 | 63% | 💰现金牛 | roic_trend:0.95, roe_trend:1.85 |
-| 000788.SZ | 79.3 | 63% | 💰现金牛 | roic_trend:0.57, roe_trend:0.68 |
-| 000020.SZ | 79.3 | 63% | 💰现金牛 | roic_trend:0.54, roe_trend:0.79 |
-| 603105.SH | 79.3 | 64% | 💰现金牛 | roic_trend:0.50, roe_trend:1.25 |
-| 605196.SH | 79.3 | 64% | 💰现金牛 | roic_trend:0.19, roe_trend:1.23 |
-| 301589.SZ | 79.2 | 60% | 🏔️成熟 | roic_trend:1.88, roe_trend:3.53 |
-| 920068.BJ | 79.2 | 63% | 💰现金牛 | roic_trend:4.59, roe_trend:4.67 |
-| 601958.SH | 79.2 | 63% | 💰现金牛 | roic_trend:4.99, roe_trend:4.69 |
-| 300907.SZ | 79.2 | 63% | 💰现金牛 | roic_trend:1.79, roe_trend:1.83 |
-| 688336.SH | 79.2 | 63% | 💰现金牛 | roic_trend:4.76, roe_trend:4.60 |
-| 601127.SH | 79.1 | 66% | 💰现金牛 | roic_trend:1.07, roe_trend:11.29 |
-| 300752.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:2.78, roe_trend:2.75 |
-| 002316.SZ | 79.1 | 64% | 💰现金牛 | roic_trend:13.37, roe_trend:37.55 |
-| 002219.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:5.32, roe_trend:10.27 |
-| 300540.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:3.90, roe_trend:4.36 |
-| 600301.SH | 79.1 | 63% | 💰现金牛 | roic_trend:3.27, roe_trend:2.53 |
-| 688726.SH | 79.1 | 66% | 💰现金牛 | roic_trend:28.99, roe_trend:5.43 |
-| 600550.SH | 79.1 | 63% | 💰现金牛 | roic_trend:0.44, roe_trend:1.81 |
-| 002970.SZ | 79.1 | 64% | 💰现金牛 | roic_trend:1.26, roe_trend:1.66 |
-| 688449.SH | 79.1 | 64% | 💰现金牛 | roic_trend:1.44, roe_trend:1.27 |
-| 300115.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:1.49, roe_trend:2.99 |
-| 002552.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:1.79, roe_trend:4.24 |
-| 688408.SH | 79.1 | 63% | 💰现金牛 | roic_trend:2.36, roe_trend:2.84 |
-| 920037.BJ | 79.1 | 63% | 💰现金牛 | roic_trend:4.19, roe_trend:4.39 |
-| 002550.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:4.73, roe_trend:4.77 |
-| 002380.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:2.72, roe_trend:2.43 |
-| 002782.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:0.95, roe_trend:0.91 |
-| 600711.SH | 79.1 | 63% | 💰现金牛 | roic_trend:0.64, roe_trend:2.07 |
-| 002167.SZ | 79.1 | 63% | 💰现金牛 | roic_trend:0.45, roe_trend:2.84 |
-| 688520.SH | 77.7 | 63% | 💰现金牛 | roic_trend:25.08, company_state:10.00 |
-| 603855.SH | 74.9 | 66% | 🏔️成熟 | roic_trend:1.23, roe_trend:1.41 |
-| 002533.SZ | 74.9 | 64% | 🏔️成熟 | roic_trend:1.26, roe_trend:1.55 |
-| 601717.SH | 74.9 | 64% | 🏔️成熟 | roic_trend:1.60, roe_trend:1.59 |
-| 601126.SH | 74.9 | 64% | 🏔️成熟 | roic_trend:1.78, roe_trend:1.94 |
-| 600582.SH | 74.9 | 64% | 💰现金牛 | roic_trend:1.01, roe_trend:0.98 |
-| 002130.SZ | 74.9 | 64% | 💰现金牛 | roic_trend:0.73, roe_trend:0.66 |
-| 300346.SZ | 74.9 | 65% | 🏔️成熟 | roic_trend:0.52, roe_trend:0.68 |
-| 603829.SH | 74.9 | 64% | 💰现金牛 | roic_trend:0.43, roe_trend:0.91 |
-| 000400.SZ | 74.9 | 64% | 💰现金牛 | roic_trend:0.40, roe_trend:0.44 |
-| 001395.SZ | 74.9 | 66% | 💰现金牛 | roic_trend:0.55, roe_trend:0.37 |
-| 603611.SH | 74.9 | 64% | 💰现金牛 | roic_trend:0.32, roe_trend:0.98 |
-| 000880.SZ | 74.9 | 64% | 💰现金牛 | roic_trend:0.28, roe_trend:0.45 |
-| 603277.SH | 74.9 | 64% | 💰现金牛 | roic_trend:0.17, roe_trend:0.50 |
-| 300962.SZ | 74.8 | 64% | 💰现金牛 | roic_trend:0.12, roe_trend:0.16 |
-| 688111.SH | 74.8 | 64% | 💰现金牛 | roic_trend:0.09, roe_trend:0.42 |
-| 002028.SZ | 74.8 | 65% | 💰现金牛 | roic_trend:0.08, roe_trend:0.20 |
-| 688019.SH | 74.6 | 64% | 💰现金牛 | roic_trend:1.21, roe_trend:1.81 |
-| 002249.SZ | 74.6 | 63% | 💰现金牛 | roic_trend:1.94, roe_trend:2.19 |
-| 688617.SH | 74.6 | 64% | 💰现金牛 | roic_trend:1.75, roe_trend:1.49 |
-| 300705.SZ | 74.6 | 64% | 🏔️成熟 | roic_trend:2.04, roe_trend:1.55 |
-| 002422.SZ | 74.6 | 63% | 💰现金牛 | roic_trend:1.72, roe_trend:2.14 |
-| 002351.SZ | 74.6 | 65% | 💰现金牛 | roic_trend:0.66, roe_trend:0.73 |
-| 000969.SZ | 74.6 | 64% | 🏔️成熟 | roic_trend:0.64, roe_trend:1.07 |
-| 300750.SZ | 74.6 | 64% | 🏔️成熟 | roic_trend:0.57, roe_trend:2.22 |
-| 300193.SZ | 74.6 | 64% | 💰现金牛 | roic_trend:0.50, roe_trend:0.93 |
-| 600483.SH | 74.6 | 64% | 💰现金牛 | roic_trend:0.37, roe_trend:0.47 |
-| 300760.SZ | 74.6 | 66% | 💰现金牛 | roic_trend:0.38, roe_trend:0.64 |
-| 920018.BJ | 74.5 | 64% | 🏔️成熟 | roic_trend:1.69, roe_trend:1.57 |
-| 603309.SH | 74.5 | 64% | 💰现金牛 | roic_trend:0.29, roe_trend:0.83 |
-| 000962.SZ | 74.5 | 63% | 🏔️成熟 | roic_trend:1.29, roe_trend:1.20 |
-| 002270.SZ | 74.5 | 64% | 🏔️成熟 | roic_trend:1.56, roe_trend:1.69 |
-| 603993.SH | 74.5 | 63% | 💰现金牛 | roic_trend:2.39, roe_trend:3.35 |
-| 300679.SZ | 74.5 | 64% | 💰现金牛 | roic_trend:1.09, roe_trend:1.11 |
-| 000657.SZ | 74.4 | 64% | 🏔️成熟 | roic_trend:0.67, roe_trend:1.41 |
-| 002112.SZ | 74.4 | 64% | 🏔️成熟 | roic_trend:1.30, roe_trend:4.24 |
-| 600268.SH | 74.4 | 64% | 🏔️成熟 | roic_trend:1.25, roe_trend:1.78 |
-| 002179.SZ | 74.3 | 64% | 💰现金牛 | roic_trend:0.42, roe_trend:0.22 |
-| 001389.SZ | 74.3 | 64% | 🏔️成熟 | roic_trend:2.32, roe_trend:2.35 |
-| 300508.SZ | 74.3 | 63% | 🏔️成熟 | roic_trend:0.94, roe_trend:1.15 |
-| 600875.SH | 74.2 | 64% | 💰现金牛 | roic_trend:1.04, roe_trend:1.10 |
-| 002484.SZ | 74.2 | 64% | 💰现金牛 | roic_trend:0.34, roe_trend:0.38 |
-| 002690.SZ | 74.2 | 65% | 💰现金牛 | roic_trend:1.70, roe_trend:1.87 |
-| 300693.SZ | 74.2 | 64% | 🏔️成熟 | roic_trend:3.20, roe_trend:4.12 |
-| 688775.SH | 74.2 | 63% | 💰现金牛 | roic_trend:5.41, roe_trend:5.61 |
-| 688516.SH | 74.2 | 65% | 🏔️成熟 | roic_trend:2.27, roe_trend:4.88 |
-| 600549.SH | 74.2 | 64% | 💰现金牛 | roic_trend:0.19, roe_trend:0.73 |
-| 000534.SZ | 74.1 | 64% | 🏔️成熟 | roic_trend:0.87, roe_trend:1.85 |
-| 838701.BJ | 74.1 | 64% | 🏔️成熟 | roic_trend:2.29, roe_trend:3.25 |
-| 300274.SZ | 74.0 | 63% | 💰现金牛 | roic_trend:4.52, roe_trend:6.67 |
-| 688389.SH | 74.0 | 64% | 🏔️成熟 | roic_trend:0.66, roe_trend:1.93 |
-| 688729.SH | 74.0 | 63% | 💰现金牛 | roic_trend:1.85, roe_trend:2.00 |
-| 920128.BJ | 74.0 | 64% | 💰现金牛 | roic_trend:0.06, roe_trend:0.47 |
-| 300855.SZ | 73.9 | 64% | 💰现金牛 | roic_trend:1.31, roe_trend:1.45 |
-| 603259.SH | 73.9 | 64% | 🏔️成熟 | roic_trend:1.52, roe_trend:1.72 |
-| 600066.SH | 73.9 | 64% | 💰现金牛 | roic_trend:5.68, roe_trend:5.57 |
-| 603063.SH | 73.9 | 64% | 💰现金牛 | roic_trend:0.21, roe_trend:0.29 |
-| 002622.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:5.67, roe_trend:3.78 |
-| 301522.SZ | 73.9 | 63% | 🏔️成熟 | roic_trend:1.53, roe_trend:2.85 |
-| 300009.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:2.37, roe_trend:2.38 |
-| 603283.SH | 73.9 | 59% | 💰现金牛 | roic_trend:2.25, roe_trend:2.31 |
-| 300300.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:9.72, roe_trend:8.12 |
-| 300254.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:6.55, roe_trend:10.14 |
-| 300069.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:5.13, roe_trend:8.16 |
-| 300833.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:1.91, roe_trend:1.54 |
-| 002773.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:4.86, roe_trend:4.23 |
-| 000533.SZ | 73.9 | 63% | 💰现金牛 | roic_trend:3.01, roe_trend:3.13 |
-| 301275.SZ | 73.8 | 63% | 💰现金牛 | roic_trend:7.83, roe_trend:8.25 |
-| 000997.SZ | 73.8 | 63% | 💰现金牛 | roic_trend:1.53, roe_trend:2.29 |
-| 600664.SH | 73.8 | 63% | 💰现金牛 | roic_trend:1.68, roe_trend:2.49 |
-| 603508.SH | 73.8 | 63% | 💰现金牛 | roic_trend:2.24, roe_trend:2.24 |
-| 688605.SH | 73.8 | 65% | 💰现金牛 | roic_trend:4.43, roe_trend:4.19 |
-| 000957.SZ | 73.8 | 63% | 💰现金牛 | roic_trend:1.80, roe_trend:2.25 |
-| 603031.SH | 73.8 | 63% | 💰现金牛 | roic_trend:5.08, roe_trend:3.04 |
-| 688411.SH | 73.8 | 63% | 💰现金牛 | roic_trend:5.36, roe_trend:6.75 |
-| 688072.SH | 73.8 | 63% | 💰现金牛 | roic_trend:3.31, roe_trend:4.40 |
-| 688327.SH | 73.8 | 65% | 🏔️成熟 | roic_trend:3.73, roe_trend:0.48 |
-| 002981.SZ | 73.8 | 63% | 💰现金牛 | roic_trend:1.61, roe_trend:2.20 |
-| 300842.SZ | 73.7 | 63% | 💰现金牛 | roic_trend:1.32, roe_trend:3.57 |
-| 600161.SH | 71.6 | 64% | 💰现金牛 | roic_trend:0.17, company_state:10.00 |
-| 920101.BJ | 71.6 | 64% | 💰现金牛 | roic_trend:0.16, company_state:10.00 |
-| 001382.SZ | 71.2 | 64% | 💰现金牛 | roic_trend:0.36, company_state:10.00 |
-| 002437.SZ | 71.2 | 63% | 💰现金牛 | roic_trend:0.58, company_state:10.00 |
-| 600406.SH | 71.0 | 64% | 🔄反转 | roic_trend:0.18, roe_trend:0.19 |
-| 002073.SZ | 70.6 | 63% | 🚀成长 | roic_trend:1.60, roe_trend:1.68 |
-| 002204.SZ | 70.5 | 63% | 🚀成长 | roic_trend:1.30, roe_trend:1.58 |
-| 600099.SH | 70.4 | 65% | 🔄反转 | roic_trend:0.30, roe_trend:0.42 |
-| 688401.SH | 70.3 | 63% | 🚀成长 | roic_trend:2.46, roe_trend:0.78 |
-| 688566.SH | 70.2 | 63% | 🔄反转 | roic_trend:0.21, roe_trend:0.20 |
-| 000550.SZ | 70.1 | 63% | 🚀成长 | roic_trend:1.45, roe_trend:2.68 |
-| 000821.SZ | 70.1 | 63% | 🚀成长 | roic_trend:2.04, roe_trend:2.13 |
-| 002074.SZ | 70.1 | 64% | 🔄反转 | roic_trend:0.30, roe_trend:0.84 |
-| 688041.SH | 70.0 | 63% | 🚀成长 | roic_trend:2.10, roe_trend:2.06 |
-| 300001.SZ | 70.0 | 63% | 🚀成长 | roic_trend:0.86, roe_trend:1.93 |
-| 002729.SZ | 70.0 | 63% | 🚀成长 | roic_trend:0.68, roe_trend:0.79 |
-| 688366.SH | 70.0 | 63% | 🚀成长 | roic_trend:0.68, roe_trend:0.70 |
+| 代码 | 名称 | 行业 | 得分 | 置信度 | 生命周期 | 主要驱动因素 |
+|------|------|------|------|--------|----------|-------------|
+| 603036.SH |  |  | 100.0 | 71% | 📈高增长 | ↑rule_engine:16.00, ↑roic_trend:0.09, ↑roe_trend:0.08 |
+| 002835.SZ |  |  | 100.0 | 64% | 📈高增长 | ↑rule_engine:23.00, ↑roic_trend:0.16, ↑roe_trend:0.15 |
+| 002351.SZ |  |  | 100.0 | 71% | 🏔️成熟 | ↑rule_engine:16.00, ↑roic_trend:0.04, ↑roe_trend:0.05 |
+| 920112.BJ |  |  | 100.0 | 64% | 🔝周期顶 | ↑roic_trend:0.05, ↑rule_engine:13.00, ↑roe_trend:0.09 |
+| 603016.SH |  |  | 100.0 | 71% | 🏔️成熟 | ↑rule_engine:16.00, ↑roic_trend:0.04, ↑roe_trend:0.04 |
+| 600560.SH |  |  | 100.0 | 74% | 💰现金牛 | ↑rule_engine:24.00, ↑roic_trend:0.03, ↑company_state:10.00 |
+| 002595.SZ |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:30.00, ↑roic_trend:0.07, ↑roe_trend:0.05 |
+| 601717.SH |  |  | 100.0 | 61% | 🔝周期顶 | ↑roic_trend:0.14, ↑rule_engine:15.00, ↑roe_trend:0.15 |
+| 600062.SH |  |  | 100.0 | 74% | 🏔️成熟 | ↑rule_engine:24.00, ↑revenue_trend:0.07, ↑company_state:10.00 |
+| 601179.SH |  |  | 100.0 | 64% | 🔄反转 | ↑roic_trend:0.26, ↑rule_engine:12.40, ↑roe_trend:0.29 |
+| 600582.SH |  |  | 100.0 | 74% | 🔄反转 | ↑rule_engine:30.00, ↑roic_trend:0.11, ↑roe_trend:0.09 |
+| 000400.SZ |  |  | 100.0 | 71% | 🏔️成熟 | ↑rule_engine:16.00, ↑roic_trend:0.05, ↑roe_trend:0.05 |
+| 832735.BJ |  |  | 100.0 | 74% | 🏔️成熟 | ↑rule_engine:30.00, ↑roic_trend:0.03, ↑revenue_trend:0.06 |
+| 688278.SH |  |  | 100.0 | 64% | 🔝周期顶 | ↑roic_trend:0.26, ↑rule_engine:14.20, ↑roe_trend:0.25 |
+| 603676.SH |  |  | 100.0 | 64% | 🔄反转 | ↑rule_engine:23.00, ↑roic_trend:0.27, ↑roe_trend:0.27 |
+| 002371.SZ |  |  | 100.0 | 64% | 📈高增长 | ↑rule_engine:23.00, ↑roic_trend:0.20, ↑roe_trend:0.24 |
+| 301678.SZ |  |  | 100.0 | 64% | 📈高增长 | ↑roic_trend:0.03, ↑revenue_trend:0.18, ↑company_state:10.00 |
+| 301479.SZ |  |  | 100.0 | 64% | 🔝周期顶 | ↑roic_trend:0.17, ↑rule_engine:13.57, ↑roe_trend:0.17 |
+| 688248.SH |  |  | 100.0 | 64% | 📈高增长 | ↑roic_trend:0.09, ↑roe_trend:0.09, ↑revenue_trend:0.22 |
+| 002533.SZ |  |  | 100.0 | 61% | 📈高增长 | ↑rule_engine:18.00, ↑roic_trend:0.14, ↑roe_trend:0.14 |
+| 603611.SH |  |  | 100.0 | 74% | 🏔️成熟 | ↑rule_engine:30.00, ↑roic_trend:0.04, ↑roe_trend:0.05 |
+| 688128.SH |  |  | 100.0 | 74% | 🏔️成熟 | ↑rule_engine:30.00, ↑roic_trend:0.03, ↑roe_trend:0.04 |
+| 688029.SH |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:24.00, ↑roic_trend:0.07, ↑roe_trend:0.09 |
+| 001395.SZ |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:24.00, ↑roic_trend:0.03, ↑revenue_trend:0.20 |
+| 601567.SH |  |  | 100.0 | 64% | 🔝周期顶 | ↑roic_trend:0.17, ↑roe_trend:0.19, ↑revenue_trend:0.19 |
+| 605116.SH |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:30.00, ↑roe_trend:0.07, ↑revenue_trend:0.17 |
+| 002837.SZ |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:24.00, ↑roic_trend:0.08, ↑roe_trend:0.06 |
+| 688617.SH |  |  | 100.0 | 64% | 📈高增长 | ↑roic_trend:0.10, ↑rule_engine:13.00, ↑roe_trend:0.07 |
+| 600379.SH |  |  | 100.0 | 69% | 📈高增长 | ↑rule_engine:18.00, ↑roic_trend:0.09, ↑roe_trend:0.10 |
+| 603829.SH |  |  | 100.0 | 74% | 📈高增长 | ↑rule_engine:24.00, ↑roic_trend:0.06, ↑roe_trend:0.09 |
+| 300274.SZ |  |  | 99.9 | 64% | 📈高增长 | ↑roic_trend:0.19, ↑roe_trend:0.22, ↑revenue_trend:0.32 |
+| 000915.SZ |  |  | 99.6 | 66% | 💰现金牛 | ↑roic_trend:0.05, ↑revenue_trend:0.05, ↑rule_engine:10.00 |
+| 603277.SH |  |  | 99.3 | 74% | 💰现金牛 | ↑rule_engine:24.00, ↑company_state:10.00, ↑ocf_trend:0.23 |
+| 300896.SZ |  |  | 99.2 | 64% | 📈高增长 | ↑roic_trend:0.14, ↑roe_trend:0.14, ↑revenue_trend:0.17 |
+| 300866.SZ |  |  | 99.1 | 71% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.17, ↑company_state:10.00 |
+| 600406.SH |  |  | 99.0 | 74% | 💰现金牛 | ↑rule_engine:29.00, ↑roic_trend:0.01, ↑company_state:10.00 |
+| 002422.SZ |  |  | 98.5 | 61% | 🔄反转 | ↑roic_trend:0.24, ↑roe_trend:0.21, ↑revenue_trend:0.05 |
+| 300743.SZ |  |  | 98.2 | 61% | 🔄反转 | ↑roic_trend:0.22, ↑roe_trend:0.23, ↑rule_engine:10.82 |
+| 832982.BJ |  |  | 97.8 | 64% | 🔝周期顶 | ↑roic_trend:0.39, ↑roe_trend:0.42, ↑revenue_trend:0.47 |
+| 688338.SH |  |  | 97.1 | 69% | 🏔️成熟 | ↑rule_engine:24.00, ↑roic_trend:0.01, ↑company_state:10.00 |
+| 002130.SZ |  |  | 96.9 | 74% | 🏔️成熟 | ↑rule_engine:29.00, ↑company_state:10.00, ↓ds_conflict:0.88 |
+| 000880.SZ |  |  | 96.6 | 71% | 🏔️成熟 | ↑rule_engine:24.86, ↑roe_trend:0.05, ↑company_state:10.00 |
+| 688596.SH |  |  | 95.8 | 66% | 🔝周期顶 | ↑roic_trend:0.10, ↑rule_engine:13.00, ↑roe_trend:0.13 |
+| 000988.SZ |  |  | 95.7 | 71% | 💰现金牛 | ↑rule_engine:16.00, ↑company_state:10.00, ↑ocf_trend:0.10 |
+| 600320.SH |  |  | 95.3 | 69% | 🏔️成熟 | ↑rule_engine:16.00, ↑roic_trend:0.02, ↑roe_trend:0.05 |
+| 688389.SH |  |  | 95.2 | 71% | 📈高增长 | ↑roic_trend:0.03, ↑roe_trend:0.09, ↑revenue_trend:0.16 |
+| 600885.SH |  |  | 95.1 | 74% | 🏔️成熟 | ↑rule_engine:24.00, ↑revenue_trend:0.04, ↑company_state:10.00 |
+| 002270.SZ |  |  | 95.1 | 64% | 📈高增长 | ↑roic_trend:0.11, ↑roe_trend:0.10, ↑revenue_trend:0.07 |
+| 600980.SH |  |  | 94.8 | 74% | 📈高增长 | ↑rule_engine:24.00, ↑revenue_trend:0.06, ↑company_state:10.00 |
+| 002056.SZ |  |  | 94.8 | 71% | 🏔️成熟 | ↑rule_engine:14.00, ↑revenue_trend:0.21, ↑roic_trend:0.02 |
+| 688138.SH |  |  | 94.7 | 64% | 📈高增长 | ↑roic_trend:0.16, ↑roe_trend:0.22, ↑revenue_trend:0.20 |
+| 603019.SH |  |  | 93.7 | 69% | 💰现金牛 | ↑rule_engine:18.00, ↑revenue_trend:0.07, ↑company_state:10.00 |
+| 833751.BJ |  |  | 93.4 | 69% | 💰现金牛 | ↑rule_engine:21.00, ↑company_state:10.00, ↓ds_conflict:0.95 |
+| 001389.SZ |  |  | 92.6 | 59% | 📈高增长 | ↑roic_trend:0.03, ↑roe_trend:0.05, ↑revenue_trend:0.15 |
+| 688111.SH |  |  | 92.4 | 71% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.19, ↑roic_trend:0.01 |
+| 000045.SZ |  |  | 92.3 | 64% | 🔄反转 | ↑roic_trend:0.25, ↑roe_trend:0.17, ↑revenue_trend:0.12 |
+| 600099.SH |  |  | 90.4 | 61% | 🔄反转 | ↑roic_trend:0.17, ↑roe_trend:0.17, ↑revenue_trend:0.09 |
+| 000963.SZ |  |  | 90.4 | 69% | 🏔️成熟 | ↑revenue_trend:0.06, ↑roic_trend:0.01, ↑company_state:10.00 |
+| 002028.SZ |  |  | 90.1 | 71% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.18, ↑company_state:10.00 |
+| 000682.SZ |  |  | 89.3 | 64% | 🔝周期顶 | ↑roic_trend:0.11, ↑roe_trend:0.13, ↑revenue_trend:0.17 |
+| 601137.SH |  |  | 89.0 | 61% | 🔝周期顶 | ↑roic_trend:0.16, ↑roe_trend:0.23, ↑revenue_trend:0.23 |
+| 600262.SH |  |  | 88.8 | 61% | 🔄反转 | ↑roic_trend:0.20, ↑roe_trend:0.18, ↑revenue_trend:0.19 |
+| 601633.SH |  |  | 88.3 | 64% | 📈高增长 | ↑revenue_trend:0.18, ↑company_state:10.00, ↑ocf_trend:0.21 |
+| 603283.SH |  |  | 87.9 | 61% | 📈高增长 | ↑roic_trend:0.20, ↑roe_trend:0.08, ↑revenue_trend:0.17 |
+| 300453.SZ |  |  | 87.9 | 74% | 💰现金牛 | ↑rule_engine:29.00, ↑company_state:10.00, ↓ds_conflict:0.86 |
+| 002484.SZ |  |  | 87.5 | 71% | 📈高增长 | ↑roic_trend:0.05, ↑roe_trend:0.05, ↑revenue_trend:0.14 |
+| 920101.BJ |  |  | 87.4 | 69% | 💰现金牛 | ↑company_state:10.00, ↑ocf_trend:0.39, ↑gross_margin_trend:0.10 |
+| 000969.SZ |  |  | 87.4 | 64% | 🏔️成熟 | ↑roe_trend:0.14, ↑revenue_trend:0.10, ↑roic_trend:0.01 |
+| 300049.SZ |  |  | 87.2 | 71% | 🔝周期顶 | ↑rule_engine:16.00, ↑roic_trend:0.12, ↑revenue_trend:0.12 |
+| 000551.SZ |  |  | 87.0 | 66% | 🏔️成熟 | ↑roic_trend:0.06, ↑revenue_trend:0.07, ↑company_state:10.00 |
+| 603014.SH |  |  | 85.8 | 69% | 📈高增长 | ↑roic_trend:0.07, ↑rule_engine:11.78, ↑revenue_trend:0.06 |
+| 300760.SZ |  |  | 85.8 | 71% | 🏔️成熟 | ↑rule_engine:14.00, ↑revenue_trend:0.14, ↑company_state:10.00 |
+| 688025.SH |  |  | 85.7 | 61% | 🔄反转 | ↑roic_trend:0.14, ↑roe_trend:0.17, ↑ocf_trend:0.27 |
+| 688589.SH |  |  | 85.4 | 64% | 🔄反转 | ↑roic_trend:0.10, ↑roe_trend:0.14, ↑revenue_trend:0.19 |
+| 300193.SZ |  |  | 85.2 | 69% | 🏔️成熟 | ↑roic_trend:0.06, ↑roe_trend:0.04, ↑company_state:10.00 |
+| 603309.SH |  |  | 85.1 | 69% | 📊放缓 | ↑rule_engine:16.00, ↑revenue_trend:0.04, ↓ds_conflict:0.94 |
+| 601126.SH |  |  | 84.8 | 59% | 📈高增长 | ↑roic_trend:0.16, ↑roe_trend:0.16, ↑revenue_trend:0.14 |
+| 688566.SH |  |  | 84.7 | 66% | 🏔️成熟 | ↑rule_engine:16.00, ↑revenue_trend:0.13, ↑company_state:10.00 |
+| 600161.SH |  |  | 84.6 | 71% | 💰现金牛 | ↑rule_engine:16.00, ↑company_state:10.00, ↓ds_conflict:0.95 |
+| 300679.SZ |  |  | 84.1 | 64% | 📈高增长 | ↑roic_trend:0.09, ↑roe_trend:0.09, ↑company_state:10.00 |
+| 603920.SH |  |  | 82.6 | 61% | 🔻周期底 | ↑roe_trend:0.11, ↑revenue_trend:0.04, ↑roic_trend:0.01 |
+| 600789.SH |  |  | 82.5 | 64% | 🔄反转 | ↑roic_trend:0.13, ↑roe_trend:0.17, ↑revenue_trend:0.09 |
+| 300962.SZ |  |  | 82.3 | 71% | 💰现金牛 | ↑rule_engine:16.00, ↑company_state:10.00, ↓ds_conflict:0.89 |
+| 300820.SZ |  |  | 82.1 | 59% | 📈高增长 | ↑roic_trend:0.07, ↑roe_trend:0.07, ↑company_state:10.00 |
+| 603259.SH |  |  | 82.0 | 66% | 📈高增长 | ↑roic_trend:0.10, ↑roe_trend:0.09, ↑revenue_trend:0.19 |
+| 920018.BJ |  |  | 81.6 | 61% | 📈高增长 | ↑revenue_trend:0.24, ↑company_state:10.00, ↑ocf_trend:0.30 |
+| 002850.SZ |  |  | 81.3 | 61% | 📈高增长 | ↑revenue_trend:0.40, ↑company_state:10.00, ↑ocf_trend:0.24 |
+| 300001.SZ |  |  | 80.5 | 64% | 📈高增长 | ↑roe_trend:0.05, ↑revenue_trend:0.17, ↓rule_engine:-11.48 |
+| 002463.SZ |  |  | 80.3 | 66% | 📈高增长 | ↑rule_engine:16.00, ↓roic_trend:-0.02, ↑company_state:10.00 |
+| 300573.SZ |  |  | 80.2 | 69% | 💰现金牛 | ↑roic_trend:0.03, ↑roe_trend:0.05, ↑company_state:10.00 |
+| 688019.SH |  |  | 79.8 | 64% | 🔝周期顶 | ↑roic_trend:0.11, ↑roe_trend:0.13, ↑ocf_trend:0.21 |
+| 300092.SZ |  |  | 79.7 | 69% | 💰现金牛 | ↑roic_trend:0.02, ↑company_state:10.00, ↑ocf_trend:0.06 |
+| 000507.SZ |  |  | 79.3 | 69% | 🔻周期底 | ↑rule_engine:16.45, ↑ocf_trend:0.19, ↑gross_margin_trend:0.12 |
+| 603367.SH |  |  | 79.3 | 66% | 🔻周期底 | ↑roic_trend:0.01, ↑ocf_trend:0.08, ↓ds_conflict:0.95 |
+| 002112.SZ |  |  | 79.2 | 64% | 📈高增长 | ↑roic_trend:0.15, ↑roe_trend:0.32, ↑revenue_trend:0.12 |
+| 300857.SZ |  |  | 78.6 | 61% | 📈高增长 | ↑revenue_trend:0.09, ↑company_state:10.00, ↑ocf_trend:0.05 |
+| 688082.SH |  |  | 78.5 | 61% | 📈高增长 | ↑revenue_trend:0.40, ↑company_state:10.00, ↓ds_conflict:0.96 |
+| 688198.SH |  |  | 78.5 | 63% | 🔄反转 | ↑roic_trend:0.14, ↑roe_trend:0.16, ↑revenue_trend:0.05 |
+| 600312.SH |  |  | 78.1 | 65% | 🚀成长 | ↓rule_engine:-16.00, ↑roic_trend:0.52, ↑roe_trend:0.58 |
+| 833523.BJ |  |  | 77.9 | 60% | 📈高增长 | ↑roic_trend:0.02, ↑roe_trend:0.05, ↑revenue_trend:0.15 |
+| 002252.SZ |  |  | 77.5 | 67% | 📈高增长 | ↑revenue_trend:0.17, ↑roic_trend:0.01, ↑company_state:10.00 |
+| 600268.SH |  |  | 77.3 | 59% | 📈高增长 | ↑roic_trend:0.14, ↑roe_trend:0.23, ↑company_state:10.00 |
+| 688516.SH |  |  | 77.2 | 59% | 📈高增长 | ↑roic_trend:0.09, ↓rule_engine:-12.00, ↑revenue_trend:0.21 |
+| 603328.SH |  |  | 77.2 | 59% | 🔄反转 | ↑roic_trend:0.24, ↑roe_trend:0.18, ↑revenue_trend:0.07 |
+| 002826.SZ |  |  | 77.1 | 56% | 🔻周期底 | ↑roic_trend:0.01, ↑rule_engine:10.00, ↓ds_conflict:0.95 |
+| 000657.SZ |  |  | 76.8 | 61% | 🔄反转 | ↑roic_trend:0.10, ↑roe_trend:0.15, ↑ocf_trend:0.09 |
+| 002134.SZ |  |  | 76.8 | 58% | 📈高增长 | ↓rule_engine:-21.44, ↑roic_trend:0.15, ↑roe_trend:0.27 |
+| 002358.SZ |  |  | 76.3 | 58% | 🔄反转 | ↓rule_engine:-16.00, ↑roic_trend:1.51, ↑roe_trend:1.63 |
+| 300346.SZ |  |  | 76.0 | 65% | 📈高增长 | ↑roe_trend:0.08, ↑revenue_trend:0.22, ↑company_state:10.00 |
+| 688676.SH |  |  | 75.9 | 65% | 📈高增长 | ↑roe_trend:0.08, ↑revenue_trend:0.24, ↑roic_trend:0.01 |
+| 300724.SZ |  |  | 75.9 | 57% | 📈高增长 | ↑revenue_trend:0.10, ↑company_state:10.00, ↑ocf_trend:0.48 |
+| 000409.SZ |  |  | 75.6 | 60% | 📈高增长 | ↓rule_engine:-13.39, ↑roe_trend:0.11, ↑roic_trend:0.01 |
+| 000962.SZ |  |  | 75.5 | 57% | 🔄反转 | ↑roic_trend:0.20, ↑roe_trend:0.17, ↑revenue_trend:0.11 |
+| 002937.SZ |  |  | 75.5 | 59% | 📈高增长 | ↑roic_trend:0.04, ↓rule_engine:-12.00, ↑roe_trend:0.08 |
+| 002655.SZ |  |  | 74.8 | 64% | 🏔️成熟 | ↑company_state:10.00, ↓ds_conflict:0.93, ↑rule_engine:8.00 |
+| 300545.SZ |  |  | 74.3 | 58% | 🔄反转 | ↓rule_engine:-18.93, ↑roic_trend:0.26, ↑roe_trend:0.24 |
+| 688520.SH |  |  | 73.6 | 57% | 🚀成长 | ↓rule_engine:-16.00, ↑roic_trend:1.78, ↑revenue_trend:0.67 |
+| 603063.SH |  |  | 73.6 | 65% | 📈高增长 | ↑revenue_trend:0.14, ↑roic_trend:0.01, ↑company_state:10.00 |
+| 600276.SH |  |  | 73.5 | 57% | 📊放缓 | ↑roic_trend:0.01, ↑ocf_trend:0.12, ↓ds_conflict:0.94 |
+| 002580.SZ |  |  | 73.4 | 57% | 🔄反转 | ↑roic_trend:0.36, ↓rule_engine:-14.41, ↑roe_trend:0.45 |
+| 600211.SH |  |  | 73.3 | 57% | 🔝周期顶 | ↑roic_trend:0.19, ↑roe_trend:0.22, ↓rule_engine:-11.45 |
+| 000550.SZ |  |  | 72.6 | 58% | 🔄反转 | ↑roic_trend:0.32, ↑roe_trend:0.30, ↓ds_conflict:0.91 |
+| 301602.SZ |  |  | 72.5 | 61% | 💰现金牛 | ↑rule_engine:21.00, ↓roic_trend:-0.03, ↑company_state:10.00 |
+| 688336.SH |  |  | 71.5 | 52% | 📈高增长 | ↓rule_engine:-26.00, ↑roic_trend:1.56, ↑roe_trend:1.37 |
+| 300831.SZ |  |  | 70.9 | 54% | 🔄反转 | ↑roic_trend:0.05, ↓ds_conflict:0.98, ↑rule_engine:8.00 |
+| 688097.SH |  |  | 70.2 | 55% | 📊放缓 | ↑ocf_trend:0.24, ↓ds_conflict:0.95, ↑rule_engine:8.00 |
+| 600483.SH |  |  | 70.1 | 53% | 🔻周期底 | ↑roic_trend:0.07, ↑ocf_trend:0.08, ↓ds_conflict:0.92 |
+| 002606.SZ |  |  | 69.7 | 48% | 📈高增长 | ↑revenue_trend:0.08, ↑company_state:10.00, ↓ds_conflict:0.98 |
+| 002273.SZ |  |  | 69.3 | 56% | 📊放缓 | ↑rule_engine:16.00, ↓roic_trend:-0.03, ↑revenue_trend:0.13 |
+| 601619.SH |  |  | 69.1 | 54% | 📈高增长 | ↓rule_engine:-17.00, ↑roic_trend:0.05, ↑roe_trend:0.07 |
+| 002997.SZ |  |  | 68.7 | 52% | 📈高增长 | ↓roic_trend:-0.03, ↑revenue_trend:0.21, ↑company_state:10.00 |
+| 002249.SZ |  |  | 68.6 | 54% | 🔄反转 | ↑roic_trend:0.46, ↓rule_engine:-13.00, ↑roe_trend:0.47 |
+| 002594.SZ |  |  | 68.5 | 52% | 🔝周期顶 | ↓rule_engine:-22.23, ↑roic_trend:0.36, ↑roe_trend:0.42 |
+| 300439.SZ |  |  | 68.3 | 55% | 🔻周期底 | ↑roic_trend:0.03, ↓revenue_trend:-0.09, ↑gross_margin_trend:0.05 |
+| 688013.SH |  |  | 67.9 | 58% | 📊放缓 | ↑revenue_trend:0.11, ↓ds_conflict:0.94, ↑roe_trend:0.01 |
+| 688062.SH |  |  | 67.8 | 58% | 🚀成长 | ↑roic_trend:0.22, ↓rule_engine:-12.00, ↑roe_trend:0.09 |
+| 002922.SZ |  |  | 67.7 | 53% | 📈高增长 | ↑roic_trend:0.09, ↑company_state:10.00, ↑ocf_trend:0.13 |
+| 688188.SH |  |  | 67.7 | 58% | 💰现金牛 | ↑revenue_trend:0.08, ↑company_state:10.00, ↑ocf_trend:0.06 |
+| 688366.SH |  |  | 67.6 | 53% | 🔄反转 | ↑roic_trend:0.18, ↓rule_engine:-12.27, ↑roe_trend:0.13 |
+| 603105.SH |  |  | 67.6 | 58% | 📈高增长 | ↓rule_engine:-17.00, ↑roic_trend:0.06, ↑roe_trend:0.15 |
+| 002340.SZ |  |  | 67.5 | 53% | 📊放缓 | ↑roe_trend:0.06, ↑revenue_trend:0.21, ↑ocf_trend:0.10 |
+| 300855.SZ |  |  | 67.4 | 61% | 💰现金牛 | ↑roic_trend:0.02, ↑company_state:10.00, ↓ds_conflict:0.98 |
+| 300693.SZ |  |  | 67.2 | 53% | 🔝周期顶 | ↑roic_trend:0.17, ↑roe_trend:0.19, ↑revenue_trend:0.16 |
+| 688578.SH |  |  | 66.8 | 56% | 🔝周期顶 | ↓rule_engine:-18.00, ↑roic_trend:1.83, ↑roe_trend:1.81 |
+| 300705.SZ |  |  | 66.6 | 54% | 🏔️成熟 | ↑roic_trend:0.02, ↑company_state:10.00, ↑ocf_trend:0.15 |
+| 002690.SZ |  |  | 66.3 | 60% | 🏔️成熟 | ↑roic_trend:0.06, ↓rule_engine:-12.00, ↑roe_trend:0.07 |
+| 300508.SZ |  |  | 65.7 | 55% | 🔝周期顶 | ↑roic_trend:0.11, ↑roe_trend:0.12, ↑ocf_trend:0.11 |
+| 002947.SZ |  |  | 65.7 | 58% | 🔝周期顶 | ↓rule_engine:-18.39, ↑roic_trend:0.32, ↑roe_trend:0.33 |
+| 300457.SZ |  |  | 65.7 | 55% | 🔄反转 | ↓rule_engine:-16.89, ↑roic_trend:0.39, ↑roe_trend:0.16 |
+| 300069.SZ |  |  | 65.6 | 60% | 📈高增长 | ↓rule_engine:-21.00, ↑roic_trend:1.68, ↑roe_trend:1.88 |
+| 300406.SZ |  |  | 65.5 | 58% | 📊放缓 | ↓roic_trend:-0.01, ↑ocf_trend:0.17, ↓ds_conflict:0.94 |
+| 002074.SZ |  |  | 65.4 | 56% | 🚀成长 | ↓rule_engine:-19.29, ↑roic_trend:0.10, ↑roe_trend:0.35 |
+| 688221.SH |  |  | 65.3 | 53% | 📈高增长 | ↑roic_trend:0.04, ↓rule_engine:-14.05, ↑revenue_trend:0.06 |
 
 ### 🏆 Top 10 详细分析
 
-### 301678.SZ ✅ 优质
+### 603036.SH ✅ 优质
 
-- **综合评分**: 81.1/100
-- **置信度**: 64.0%
+- **综合评分**: 100.0/100
+- **置信度**: 71.2%
+- **生命周期**: 📈 高增长
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.092 | +0.2 | ↑ |
+| roe_trend | 0.078 | +0.1 | ↑ |
+| revenue_trend | 0.088 | +0.1 | ↑ |
+| gross_margin_trend | 0.008 | +0.0 | ↑ |
+| net_margin_trend | 0.030 | +0.0 | ↑ |
+| ocf_trend | 0.012 | +0.1 | ↑ |
+
+---
+
+### 002835.SZ ✅ 优质
+
+- **综合评分**: 100.0/100
+- **置信度**: 63.7%
+- **生命周期**: 📈 高增长
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.156 | +0.2 | ↑ |
+| roe_trend | 0.150 | +0.1 | ↑ |
+| revenue_trend | 0.029 | +0.1 | ↑ |
+| gross_margin_trend | 0.058 | +0.1 | ↑ |
+| net_margin_trend | 0.174 | +0.1 | ↑ |
+| ocf_trend | 0.247 | +0.1 | ↑ |
+
+---
+
+### 002351.SZ ✅ 优质
+
+- **综合评分**: 100.0/100
+- **置信度**: 71.2%
 - **生命周期**: 🏔️ 成熟期
 
 #### 关键因素
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 1.637 | +0.2 | ↑ |
-| roe_trend | 1.869 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
+| roic_trend | 0.044 | +0.2 | ↑ |
+| roe_trend | 0.051 | +0.1 | ↑ |
+| revenue_trend | 0.093 | +0.1 | ↑ |
+| gross_margin_trend | 0.056 | +0.1 | ↑ |
+| net_margin_trend | 0.041 | +0.1 | ↑ |
+| ocf_trend | 0.055 | +0.1 | ↑ |
+
+---
+
+### 920112.BJ ✅ 优质
+
+- **综合评分**: 100.0/100
+- **置信度**: 63.7%
+- **生命周期**: 🔝 周期顶部
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.045 | +0.2 | ↑ |
+| roe_trend | 0.090 | +0.1 | ↑ |
+| revenue_trend | 0.044 | +0.1 | ↑ |
+| gross_margin_trend | 0.034 | +0.1 | ↑ |
+| net_margin_trend | 0.104 | +0.1 | ↑ |
+| ocf_trend | 0.042 | +0.1 | ↑ |
+
+---
+
+### 603016.SH ✅ 优质
+
+- **综合评分**: 100.0/100
+- **置信度**: 71.2%
+- **生命周期**: 🏔️ 成熟期
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.043 | +0.2 | ↑ |
+| roe_trend | 0.045 | +0.1 | ↑ |
+| revenue_trend | 0.081 | +0.1 | ↑ |
+| gross_margin_trend | -0.004 | +0.0 | → |
+| net_margin_trend | -0.002 | +0.0 | → |
+| ocf_trend | 0.073 | +0.1 | ↑ |
+
+---
+
+### 600560.SH ✅ 优质
+
+- **综合评分**: 100.0/100
+- **置信度**: 73.8%
+- **生命周期**: 💰 现金牛
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.034 | +0.2 | ↑ |
+| roe_trend | 0.038 | +0.1 | ↑ |
+| revenue_trend | 0.013 | +0.1 | ↑ |
+| gross_margin_trend | -0.006 | +0.0 | ↓ |
+| net_margin_trend | 0.042 | +0.1 | ↑ |
+| ocf_trend | -0.044 | -0.0 | ↓ |
 
 ---
 
 ### 002595.SZ ✅ 优质
 
-- **综合评分**: 81.1/100
-- **置信度**: 65.7%
-- **生命周期**: 🏔️ 成熟期
+- **综合评分**: 100.0/100
+- **置信度**: 73.8%
+- **生命周期**: 📈 高增长
 
 #### 关键因素
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 1.353 | +0.2 | ↑ |
-| roe_trend | 1.134 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
+| roic_trend | 0.068 | +0.2 | ↑ |
+| roe_trend | 0.046 | +0.1 | ↑ |
+| revenue_trend | 0.119 | +0.1 | ↑ |
+| gross_margin_trend | 0.042 | +0.1 | ↑ |
+| net_margin_trend | 0.062 | +0.1 | ↑ |
+| ocf_trend | 0.392 | +0.1 | ↑ |
 
 ---
 
-### 002837.SZ ✅ 优质
+### 601717.SH ✅ 优质
 
-- **综合评分**: 81.1/100
-- **置信度**: 64.4%
-- **生命周期**: 🏔️ 成熟期
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 1.210 | +0.2 | ↑ |
-| roe_trend | 1.013 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
-
----
-
-### 000682.SZ ✅ 优质
-
-- **综合评分**: 81.1/100
-- **置信度**: 64.3%
-- **生命周期**: 💰 现金牛
+- **综合评分**: 100.0/100
+- **置信度**: 61.3%
+- **生命周期**: 🔝 周期顶部
 
 #### 关键因素
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 0.874 | +0.2 | ↑ |
-| roe_trend | 1.442 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
-
----
-
-### 688029.SH ✅ 优质
-
-- **综合评分**: 81.1/100
-- **置信度**: 64.4%
-- **生命周期**: 🏔️ 成熟期
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.814 | +0.2 | ↑ |
-| roe_trend | 1.208 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
+| roic_trend | 0.141 | +0.2 | ↑ |
+| roe_trend | 0.148 | +0.1 | ↑ |
+| revenue_trend | 0.082 | +0.1 | ↑ |
+| gross_margin_trend | -0.014 | +0.0 | ↓ |
+| net_margin_trend | 0.185 | +0.1 | ↑ |
+| ocf_trend | 0.018 | +0.1 | ↑ |
 
 ---
 
 ### 600062.SH ✅ 优质
 
-- **综合评分**: 81.1/100
-- **置信度**: 64.4%
+- **综合评分**: 100.0/100
+- **置信度**: 73.8%
 - **生命周期**: 🏔️ 成熟期
 
 #### 关键因素
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 0.775 | +0.2 | ↑ |
-| roe_trend | 1.209 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
+| roic_trend | 0.004 | +0.0 | → |
+| roe_trend | 0.030 | +0.1 | ↑ |
+| revenue_trend | 0.068 | +0.1 | ↑ |
+| gross_margin_trend | 0.005 | +0.0 | ↑ |
+| net_margin_trend | 0.027 | +0.0 | ↑ |
+| ocf_trend | 0.066 | +0.1 | ↑ |
 
 ---
 
-### 688128.SH ✅ 优质
+### 601179.SH ✅ 优质
 
-- **综合评分**: 81.1/100
-- **置信度**: 64.5%
-- **生命周期**: 💰 现金牛
+- **综合评分**: 100.0/100
+- **置信度**: 63.7%
+- **生命周期**: 🔄 反转期
 
 #### 关键因素
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 0.476 | +0.2 | ↑ |
-| roe_trend | 0.624 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
-
----
-
-### 605116.SH ✅ 优质
-
-- **综合评分**: 81.1/100
-- **置信度**: 64.4%
-- **生命周期**: 💰 现金牛
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.431 | +0.2 | ↑ |
-| roe_trend | 1.221 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
-
----
-
-### 000988.SZ ✅ 优质
-
-- **综合评分**: 81.1/100
-- **置信度**: 64.5%
-- **生命周期**: 💰 现金牛
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.379 | +0.2 | ↑ |
-| roe_trend | 0.867 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
-
----
-
-### 300049.SZ ✅ 优质
-
-- **综合评分**: 81.0/100
-- **置信度**: 64.2%
-- **生命周期**: 💰 现金牛
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.863 | +0.2 | ↑ |
-| roe_trend | 0.277 | +0.1 | ↑ |
-| revenue_trend | 0.000 | +0.0 | → |
-| gross_margin_trend | 0.000 | +0.0 | → |
-| net_margin_trend | 0.000 | +0.0 | → |
-| ocf_trend | 0.000 | +0.0 | → |
+| roic_trend | 0.257 | +0.2 | ↑ |
+| roe_trend | 0.291 | +0.1 | ↑ |
+| revenue_trend | 0.100 | +0.1 | ↑ |
+| gross_margin_trend | 0.026 | +0.1 | ↑ |
+| net_margin_trend | 0.050 | +0.1 | ↑ |
+| ocf_trend | 0.025 | +0.1 | ↑ |
 
 ---
 
 ## 🟡 一般公司 (AVERAGE)
 
-> 共 84 家（得分 50-70）
+> 共 111 家（得分 50-70）
 
-| 代码 | 得分 | 生命周期 | 代码 | 得分 | 生命周期 |
-|------|------|----------|------|------|----------|
-| 002134.SZ | 69.7 | 🚀 | 600789.SH | 69.6 | 🚀 |
-| 000633.SZ | 69.6 | 🚀 | 603320.SH | 69.5 | 🔄 |
-| 300319.SZ | 69.5 | 🚀 | 300298.SZ | 69.5 | 🚀 |
-| 003021.SZ | 69.5 | 🔄 | 603507.SH | 69.3 | 🔄 |
-| 603861.SH | 69.3 | 🚀 | 601016.SH | 69.3 | 🔄 |
-| 002483.SZ | 69.2 | 🚀 | 300604.SZ | 69.1 | 🔄 |
-| 601619.SH | 69.1 | 🔄 | 000931.SZ | 69.1 | 🔄 |
-| 002546.SZ | 69.1 | 🚀 | 300018.SZ | 69.1 | 🚀 |
-| 600812.SH | 69.1 | 🔄 | 002364.SZ | 69.1 | 🔄 |
-| 688155.SH | 69.1 | 🔄 | 832491.BJ | 67.5 | 🏔️ |
-| 832735.BJ | 66.2 | 🏔️ | 688302.SH | 66.1 | ⚠️ |
-| 301626.SZ | 66.0 | 🏔️ | 603016.SH | 64.9 | 🔄 |
-| 600560.SH | 64.8 | 🔄 | 688382.SH | 64.7 | ⚠️ |
-| 002451.SZ | 64.5 | 🔄 | 600237.SH | 64.5 | 🚀 |
-| 603328.SH | 64.5 | 🚀 | 600587.SH | 64.4 | 🔄 |
-| 000597.SZ | 64.3 | 🚀 | 002580.SZ | 64.3 | 🚀 |
-| 300845.SZ | 64.2 | 🚀 | 002378.SZ | 64.2 | 🔄 |
-| 300017.SZ | 64.1 | 🚀 | 600488.SH | 64.1 | 🚀 |
-| 300433.SZ | 64.0 | 🚀 | 002937.SZ | 63.9 | 🔄 |
-| 688750.SH | 63.9 | 🚀 | 300629.SZ | 63.9 | 🔄 |
-| 688545.SH | 63.9 | 🔄 | 300220.SZ | 63.9 | 🚀 |
-| 600375.SH | 63.9 | 🚀 | 603090.SH | 63.9 | 🚀 |
-| 688676.SH | 63.4 | 💰 | 688013.SH | 63.1 | 💰 |
-| 002463.SZ | 63.0 | 🏔️ | 002826.SZ | 61.5 | 🔄 |
-| 300562.SZ | 61.2 | 🔄 | 002409.SZ | 57.7 | 🏔️ |
-| 301602.SZ | 57.7 | 💰 | 300791.SZ | 57.7 | 🏔️ |
-| 000503.SZ | 56.1 | ⚠️ | 601179.SH | 55.6 | ⚠️ |
-| 832982.BJ | 55.5 | 📉 | 688158.SH | 55.4 | ⚠️ |
-| 688469.SH | 55.4 | ⚠️ | 688343.SH | 55.3 | ⚠️ |
-| 688235.SH | 55.3 | ⚠️ | 839493.BJ | 55.3 | ⚠️ |
-| 002331.SZ | 54.5 | ⚠️ | 300293.SZ | 54.4 | ⚠️ |
-| 300004.SZ | 54.1 | ⚠️ | 300334.SZ | 54.1 | ⚠️ |
-| 300150.SZ | 54.1 | ⚠️ | 002358.SZ | 54.1 | ⚠️ |
-| 300449.SZ | 54.1 | ⚠️ | 600601.SH | 54.1 | ⚠️ |
-| 002370.SZ | 54.1 | ⚠️ | 300465.SZ | 54.1 | ⚠️ |
-| 300247.SZ | 54.1 | ⚠️ | 300479.SZ | 54.1 | ⚠️ |
-| 300048.SZ | 54.1 | ⚠️ | 600686.SH | 54.1 | ⚠️ |
-| 002512.SZ | 54.1 | ⚠️ | 603399.SH | 54.1 | ⚠️ |
-| 601727.SH | 54.1 | ⚠️ | 600476.SH | 54.1 | ⚠️ |
-| 688351.SH | 54.1 | ⚠️ | 300194.SZ | 54.1 | ⚠️ |
-| 300318.SZ | 54.0 | ⚠️ | 002172.SZ | 54.0 | ⚠️ |
-| 300757.SZ | 54.0 | ⚠️ | 688443.SH | 51.0 | ⚠️ |
+| 代码 | 名称 | 得分 | 置信度 | 生命周期 | 主要因素 |
+|------|------|------|--------|----------|----------|
+| 688358.SH |  | 78.4 | 74% | 💰 | rule_engine, roe_trend |
+| 603855.SH |  | 76.8 | 71% | 📈 | roic_trend, roe_trend |
+| 002179.SZ |  | 75.0 | 74% | 💰 | rule_engine, company_state |
+| 002334.SZ |  | 72.4 | 66% | 🔄 | roic_trend, roe_trend |
+| 833575.BJ |  | 71.4 | 61% | 🔄 | roic_trend, ocf_trend |
+| 603339.SH |  | 71.3 | 64% | 🚀 | roic_trend, roe_trend |
+| 301609.SZ |  | 71.3 | 69% | 📊 | revenue_trend, ocf_trend |
+| 688003.SH |  | 71.2 | 61% | 📊 | revenue_trend, roic_trend |
+| 601985.SH |  | 70.9 | 69% | 🏔️ | revenue_trend, roic_trend |
+| 002192.SZ |  | 70.8 | 59% | 🚀 | roic_trend, rule_engine |
+| 600456.SH |  | 70.2 | 66% | 💰 | rule_engine, revenue_trend |
+| 600241.SH |  | 69.3 | 64% | 🔻 | roic_trend, roe_trend |
+| 603109.SH |  | 69.0 | 64% | 🏔️ | rule_engine, roe_trend |
+| 603658.SH |  | 68.7 | 66% | 📊 | rule_engine, roic_trend |
+| 000625.SZ |  | 68.7 | 61% | 🔄 | roic_trend, roe_trend |
+| 002152.SZ |  | 68.4 | 66% | 📈 | revenue_trend, company_state |
+| 873576.BJ |  | 68.4 | 64% | 🔻 | revenue_trend, ds_conflict |
+| 002149.SZ |  | 68.4 | 61% | 🏔️ | rule_engine, roe_trend |
+| 300588.SZ |  | 68.1 | 66% | 🔻 | roic_trend, rule_engine |
+| 603351.SH |  | 67.5 | 66% | 🏔️ | roic_trend, company_state |
+| 600850.SH |  | 67.4 | 69% | 💰 | rule_engine, roic_trend |
+| 603312.SH |  | 67.1 | 64% | 📊 | roic_trend, rule_engine |
+| 000756.SZ |  | 66.2 | 66% | 🏔️ | revenue_trend, company_state |
+| 603050.SH |  | 66.1 | 61% | 🚀 | roic_trend, roe_trend |
+| 300832.SZ |  | 65.4 | 69% | 📊 | revenue_trend, rule_engine |
+| 603290.SH |  | 65.3 | 61% | 🔻 | revenue_trend, ds_conflict |
+| 301581.SZ |  | 64.7 | 59% | 📈 | roic_trend, rule_engine |
+| 601608.SH |  | 64.6 | 61% | 🔻 | roic_trend, roe_trend |
+| 688334.SH |  | 64.6 | 64% | 📊 | roic_trend, rule_engine |
+| 605118.SH |  | 64.5 | 66% | 📊 | roic_trend, revenue_trend |
+| 301301.SZ |  | 64.5 | 66% | 🔝 | rule_engine, roic_trend |
+| 688584.SH |  | 64.4 | 59% | 🔻 | roic_trend, ocf_trend |
+| 688226.SH |  | 64.3 | 61% | 📈 | revenue_trend, company_state |
+| 603628.SH |  | 64.3 | 66% | 📈 | roic_trend, roe_trend |
+| 000503.SZ |  | 64.2 | 66% | 🔄 | rule_engine, roic_trend |
+| 832491.BJ |  | 63.9 | 64% | 📈 | revenue_trend, company_state |
+| 688266.SH |  | 63.8 | 61% | 🚀 | rule_engine, roic_trend |
+| 920682.BJ |  | 63.5 | 69% | 💰 | company_state, rule_engine |
+| 300532.SZ |  | 63.5 | 61% | 🔝 | rule_engine, roic_trend |
+| 688078.SH |  | 63.4 | 61% | 🔻 | roic_trend, roe_trend |
+| 002073.SZ |  | 62.6 | 61% | 🔄 | rule_engine, roic_trend |
+| 600664.SH |  | 62.4 | 64% | 🏔️ | rule_engine, roic_trend |
+| 002475.SZ |  | 62.3 | 61% | 📈 | roic_trend, revenue_trend |
+| 002262.SZ |  | 61.4 | 64% | 🏔️ | roic_trend, revenue_trend |
+| 002276.SZ |  | 61.1 | 66% | 📈 | rule_engine, roic_trend |
+| 300827.SZ |  | 61.0 | 59% | 🔝 | roic_trend, roe_trend |
+| 300833.SZ |  | 60.7 | 64% | 🔄 | rule_engine, roic_trend |
+| 603383.SH |  | 60.6 | 61% | 📈 | rule_engine, roic_trend |
+| 300870.SZ |  | 60.6 | 64% | 🚀 | roic_trend, rule_engine |
+| 300389.SZ |  | 60.6 | 61% | 🔄 | rule_engine, roic_trend |
+| 000034.SZ |  | 60.0 | 64% | 📊 | rule_engine, roic_trend |
+| 600237.SH |  | 60.0 | 61% | 📈 | rule_engine, roic_trend |
+| 300791.SZ |  | 59.7 | 64% | 📊 | revenue_trend, ds_conflict |
+| 600875.SH |  | 59.2 | 66% | 📈 | rule_engine, roic_trend |
+| 300750.SZ |  | 59.0 | 61% | 📊 | roic_trend, revenue_trend |
+| 688517.SH |  | 58.8 | 63% | 📊 | rule_engine, ocf_trend |
+| 688755.SH |  | 58.7 | 63% | 🔻 | roic_trend, rule_engine |
+| 300907.SZ |  | 58.5 | 58% | 🔄 | rule_engine, roic_trend |
+| 000534.SZ |  | 58.4 | 58% | 🔄 | roic_trend, roe_trend |
+| 002530.SZ |  | 58.4 | 63% | 🔻 | rule_engine, roic_trend |
+| 688018.SH |  | 58.4 | 60% | 🔝 | rule_engine, roic_trend |
+| 603530.SH |  | 58.4 | 58% | 🔝 | rule_engine, roic_trend |
+| 688775.SH |  | 58.2 | 60% | 📈 | rule_engine, revenue_trend |
+| 688099.SH |  | 57.9 | 60% | 🔄 | rule_engine, roic_trend |
+| 603993.SH |  | 56.7 | 56% | 🔝 | roic_trend, rule_engine |
+| 300757.SZ |  | 56.6 | 63% | 🔻 | rule_engine, roic_trend |
+| 002773.SZ |  | 55.9 | 57% | 📈 | rule_engine, roic_trend |
+| 600601.SH |  | 55.6 | 59% | 🔻 | roic_trend, rule_engine |
+| 831689.BJ |  | 55.5 | 67% | 📊 | revenue_trend, ocf_trend |
+| 688729.SH |  | 55.3 | 59% | 🔄 | rule_engine, roic_trend |
+| 603861.SH |  | 55.0 | 59% | 🔄 | rule_engine, roic_trend |
+| 688401.SH |  | 55.0 | 59% | 🔄 | rule_engine, roic_trend |
+| 301491.SZ |  | 55.0 | 56% | 📊 | roic_trend, revenue_trend |
+| 000821.SZ |  | 54.6 | 56% | 🚀 | rule_engine, roic_trend |
+| 600420.SH |  | 54.1 | 60% | 🔻 | revenue_trend, roic_trend |
+| 300115.SZ |  | 53.9 | 52% | 🔄 | rule_engine, roic_trend |
+| 600860.SH |  | 53.4 | 52% | 🔄 | rule_engine, roic_trend |
+| 601958.SH |  | 53.1 | 59% | 🔝 | rule_engine, roic_trend |
+| 688041.SH |  | 53.1 | 56% | 🚀 | rule_engine, revenue_trend |
+| 002322.SZ |  | 52.5 | 56% | 🔻 | ds_conflict, rule_engine |
+| ... | | | | | 还有 31 家 |
 
 ## 📊 按生命周期分组（非否决）
 
-### 💰 现金牛 (126 家)
+### 💰 现金牛 (34 家)
 
 | 代码 | 决策 | 得分 | 置信度 |
 |------|------|------|--------|
-| 000682.SZ | ⭐quality | 81.1 | 64% |
-| 688128.SH | ⭐quality | 81.1 | 64% |
-| 605116.SH | ⭐quality | 81.1 | 64% |
-| 000988.SZ | ⭐quality | 81.1 | 64% |
-| 300049.SZ | ⭐quality | 81.0 | 64% |
-| 688050.SH | ⭐quality | 80.8 | 64% |
-| 603036.SH | ⭐quality | 80.8 | 64% |
-| 300832.SZ | ⭐quality | 80.7 | 65% |
-| 688596.SH | ⭐quality | 80.6 | 64% |
-| 300743.SZ | ⭐quality | 80.6 | 63% |
-| 688278.SH | ⭐quality | 80.6 | 63% |
-| 603676.SH | ⭐quality | 80.6 | 63% |
-| 600379.SH | ⭐quality | 80.6 | 64% |
-| 300866.SZ | ⭐quality | 80.6 | 65% |
-| 000551.SZ | ⭐quality | 80.5 | 65% |
-| 300573.SZ | ⭐quality | 80.5 | 65% |
-| 000756.SZ | ⭐quality | 80.4 | 64% |
-| 301479.SZ | ⭐quality | 80.3 | 64% |
-| 300724.SZ | ⭐quality | 80.3 | 64% |
-| 300406.SZ | ⭐quality | 80.3 | 63% |
-| ... | | | 还有 106 家 |
+| 600560.SH | ⭐quality | 100.0 | 74% |
+| 000915.SZ | ⭐quality | 99.6 | 66% |
+| 603277.SH | ⭐quality | 99.3 | 74% |
+| 600406.SH | ⭐quality | 99.0 | 74% |
+| 000988.SZ | ⭐quality | 95.7 | 71% |
+| 603019.SH | ⭐quality | 93.7 | 69% |
+| 833751.BJ | ⭐quality | 93.4 | 69% |
+| 300453.SZ | ⭐quality | 87.9 | 74% |
+| 920101.BJ | ⭐quality | 87.4 | 69% |
+| 600161.SH | ⭐quality | 84.6 | 71% |
+| 300962.SZ | ⭐quality | 82.3 | 71% |
+| 300573.SZ | ⭐quality | 80.2 | 69% |
+| 300092.SZ | ⭐quality | 79.7 | 69% |
+| 688358.SH | 🟡average | 78.4 | 74% |
+| 002179.SZ | 🟡average | 75.0 | 74% |
+| 301602.SZ | ⭐quality | 72.5 | 61% |
+| 600456.SH | 🟡average | 70.2 | 66% |
+| 688188.SH | ⭐quality | 67.7 | 58% |
+| 600850.SH | 🟡average | 67.4 | 69% |
+| 300855.SZ | ⭐quality | 67.4 | 61% |
+| ... | | | 还有 14 家 |
 
-### 🏔️ 成熟期 (59 家)
-
-| 代码 | 决策 | 得分 | 置信度 |
-|------|------|------|--------|
-| 301678.SZ | ⭐quality | 81.1 | 64% |
-| 002595.SZ | ⭐quality | 81.1 | 66% |
-| 002837.SZ | ⭐quality | 81.1 | 64% |
-| 688029.SH | ⭐quality | 81.1 | 64% |
-| 600062.SH | ⭐quality | 81.1 | 64% |
-| 603014.SH | ⭐quality | 80.8 | 64% |
-| 600262.SH | ⭐quality | 80.6 | 63% |
-| 002371.SZ | ⭐quality | 80.6 | 63% |
-| 002835.SZ | ⭐quality | 80.6 | 64% |
-| 688198.SH | ⭐quality | 80.5 | 64% |
-| 688025.SH | ⭐quality | 80.5 | 63% |
-| 688248.SH | ⭐quality | 80.3 | 64% |
-| 601633.SH | ⭐quality | 80.3 | 64% |
-| 002850.SZ | ⭐quality | 80.3 | 63% |
-| 688082.SH | ⭐quality | 80.3 | 64% |
-| 603920.SH | ⭐quality | 80.3 | 64% |
-| 601567.SH | ⭐quality | 80.1 | 63% |
-| 688138.SH | ⭐quality | 80.1 | 64% |
-| 002997.SZ | ⭐quality | 80.1 | 64% |
-| 300857.SZ | ⭐quality | 80.0 | 64% |
-| ... | | | 还有 39 家 |
-
-### 🚀 成长期 (30 家)
+### 🏔️ 成熟期 (36 家)
 
 | 代码 | 决策 | 得分 | 置信度 |
 |------|------|------|--------|
-| 002073.SZ | ⭐quality | 70.6 | 63% |
-| 002204.SZ | ⭐quality | 70.5 | 63% |
-| 688401.SH | ⭐quality | 70.3 | 63% |
-| 000550.SZ | ⭐quality | 70.1 | 63% |
-| 000821.SZ | ⭐quality | 70.1 | 63% |
-| 688041.SH | ⭐quality | 70.0 | 63% |
-| 300001.SZ | ⭐quality | 70.0 | 63% |
-| 002729.SZ | ⭐quality | 70.0 | 63% |
-| 688366.SH | ⭐quality | 70.0 | 63% |
-| 002134.SZ | 🟡average | 69.7 | 63% |
-| 600789.SH | 🟡average | 69.6 | 63% |
-| 000633.SZ | 🟡average | 69.6 | 63% |
-| 300319.SZ | 🟡average | 69.5 | 63% |
-| 300298.SZ | 🟡average | 69.5 | 63% |
-| 603861.SH | 🟡average | 69.3 | 64% |
-| 002483.SZ | 🟡average | 69.2 | 63% |
-| 002546.SZ | 🟡average | 69.1 | 63% |
-| 300018.SZ | 🟡average | 69.1 | 63% |
-| 600237.SH | 🟡average | 64.5 | 63% |
-| 603328.SH | 🟡average | 64.5 | 63% |
-| ... | | | 还有 10 家 |
+| 002351.SZ | ⭐quality | 100.0 | 71% |
+| 603016.SH | ⭐quality | 100.0 | 71% |
+| 600062.SH | ⭐quality | 100.0 | 74% |
+| 000400.SZ | ⭐quality | 100.0 | 71% |
+| 832735.BJ | ⭐quality | 100.0 | 74% |
+| 603611.SH | ⭐quality | 100.0 | 74% |
+| 688128.SH | ⭐quality | 100.0 | 74% |
+| 688338.SH | ⭐quality | 97.1 | 69% |
+| 002130.SZ | ⭐quality | 96.9 | 74% |
+| 000880.SZ | ⭐quality | 96.6 | 71% |
+| 600320.SH | ⭐quality | 95.3 | 69% |
+| 600885.SH | ⭐quality | 95.1 | 74% |
+| 002056.SZ | ⭐quality | 94.8 | 71% |
+| 000963.SZ | ⭐quality | 90.4 | 69% |
+| 000969.SZ | ⭐quality | 87.4 | 64% |
+| 000551.SZ | ⭐quality | 87.0 | 66% |
+| 300760.SZ | ⭐quality | 85.8 | 71% |
+| 300193.SZ | ⭐quality | 85.2 | 69% |
+| 688566.SH | ⭐quality | 84.7 | 66% |
+| 002655.SZ | ⭐quality | 74.8 | 64% |
+| ... | | | 还有 16 家 |
 
-### 🔄 反转期 (24 家)
-
-| 代码 | 决策 | 得分 | 置信度 |
-|------|------|------|--------|
-| 600406.SH | ⭐quality | 71.0 | 64% |
-| 600099.SH | ⭐quality | 70.4 | 65% |
-| 688566.SH | ⭐quality | 70.2 | 63% |
-| 002074.SZ | ⭐quality | 70.1 | 64% |
-| 603320.SH | 🟡average | 69.5 | 60% |
-| 003021.SZ | 🟡average | 69.5 | 63% |
-| 603507.SH | 🟡average | 69.3 | 63% |
-| 601016.SH | 🟡average | 69.3 | 61% |
-| 300604.SZ | 🟡average | 69.1 | 63% |
-| 601619.SH | 🟡average | 69.1 | 63% |
-| 000931.SZ | 🟡average | 69.1 | 64% |
-| 600812.SH | 🟡average | 69.1 | 64% |
-| 002364.SZ | 🟡average | 69.1 | 64% |
-| 688155.SH | 🟡average | 69.1 | 64% |
-| 603016.SH | 🟡average | 64.9 | 64% |
-| 600560.SH | 🟡average | 64.8 | 63% |
-| 002451.SZ | 🟡average | 64.5 | 63% |
-| 600587.SH | 🟡average | 64.4 | 63% |
-| 002378.SZ | 🟡average | 64.2 | 64% |
-| 002937.SZ | 🟡average | 63.9 | 64% |
-| ... | | | 还有 4 家 |
-
-### 📉 衰退期 (2 家)
+### 🚀 成长期 (132 家)
 
 | 代码 | 决策 | 得分 | 置信度 |
 |------|------|------|--------|
-| 832982.BJ | 🟡average | 55.5 | 66% |
-| 002340.SZ | 🟠poor | 38.1 | 62% |
+| 600312.SH | ⭐quality | 78.1 | 65% |
+| 688520.SH | ⭐quality | 73.6 | 57% |
+| 603339.SH | 🟡average | 71.3 | 64% |
+| 002192.SZ | 🟡average | 70.8 | 59% |
+| 688062.SH | ⭐quality | 67.8 | 58% |
+| 603050.SH | 🟡average | 66.1 | 61% |
+| 002074.SZ | ⭐quality | 65.4 | 56% |
+| 688266.SH | 🟡average | 63.8 | 61% |
+| 300870.SZ | 🟡average | 60.6 | 64% |
+| 002506.SZ | 🟠poor | 56.9 | 61% |
+| 000821.SZ | 🟡average | 54.6 | 56% |
+| 688041.SH | 🟡average | 53.1 | 56% |
+| 300602.SZ | 🟡average | 52.4 | 53% |
+| 300236.SZ | 🟡average | 51.3 | 54% |
+| 000931.SZ | 🟡average | 51.2 | 54% |
+| 300444.SZ | 🟠poor | 51.1 | 49% |
+| 688235.SH | 🟡average | 50.8 | 53% |
+| 300153.SZ | 🟡average | 50.7 | 53% |
+| 688279.SH | 🟠poor | 49.9 | 53% |
+| 300298.SZ | 🟡average | 49.7 | 55% |
+| ... | | | 还有 112 家 |
 
-### ⚠️ 困境期 (69 家)
+### 📈 高增长 (99 家)
 
 | 代码 | 决策 | 得分 | 置信度 |
 |------|------|------|--------|
-| 688302.SH | 🟡average | 66.1 | 67% |
-| 688382.SH | 🟡average | 64.7 | 69% |
-| 000503.SZ | 🟡average | 56.1 | 67% |
-| 601179.SH | 🟡average | 55.6 | 64% |
-| 688158.SH | 🟡average | 55.4 | 67% |
-| 688469.SH | 🟡average | 55.4 | 67% |
-| 688343.SH | 🟡average | 55.3 | 67% |
-| 688235.SH | 🟡average | 55.3 | 67% |
-| 839493.BJ | 🟡average | 55.3 | 65% |
-| 002331.SZ | 🟡average | 54.5 | 65% |
-| 300293.SZ | 🟡average | 54.4 | 67% |
-| 300004.SZ | 🟡average | 54.1 | 64% |
-| 300334.SZ | 🟡average | 54.1 | 65% |
-| 300150.SZ | 🟡average | 54.1 | 65% |
-| 002358.SZ | 🟡average | 54.1 | 64% |
-| 300449.SZ | 🟡average | 54.1 | 68% |
-| 600601.SH | 🟡average | 54.1 | 63% |
-| 002370.SZ | 🟡average | 54.1 | 64% |
-| 300465.SZ | 🟡average | 54.1 | 64% |
-| 300247.SZ | 🟡average | 54.1 | 63% |
-| ... | | | 还有 49 家 |
+| 603036.SH | ⭐quality | 100.0 | 71% |
+| 002835.SZ | ⭐quality | 100.0 | 64% |
+| 002595.SZ | ⭐quality | 100.0 | 74% |
+| 002371.SZ | ⭐quality | 100.0 | 64% |
+| 301678.SZ | ⭐quality | 100.0 | 64% |
+| 688248.SH | ⭐quality | 100.0 | 64% |
+| 002533.SZ | ⭐quality | 100.0 | 61% |
+| 688029.SH | ⭐quality | 100.0 | 74% |
+| 001395.SZ | ⭐quality | 100.0 | 74% |
+| 605116.SH | ⭐quality | 100.0 | 74% |
+| 002837.SZ | ⭐quality | 100.0 | 74% |
+| 688617.SH | ⭐quality | 100.0 | 64% |
+| 600379.SH | ⭐quality | 100.0 | 69% |
+| 603829.SH | ⭐quality | 100.0 | 74% |
+| 300274.SZ | ⭐quality | 99.9 | 64% |
+| 300896.SZ | ⭐quality | 99.2 | 64% |
+| 300866.SZ | ⭐quality | 99.1 | 71% |
+| 688389.SH | ⭐quality | 95.2 | 71% |
+| 002270.SZ | ⭐quality | 95.1 | 64% |
+| 600980.SH | ⭐quality | 94.8 | 74% |
+| ... | | | 还有 79 家 |
+
+### 🔄 反转期 (211 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 601179.SH | ⭐quality | 100.0 | 64% |
+| 600582.SH | ⭐quality | 100.0 | 74% |
+| 603676.SH | ⭐quality | 100.0 | 64% |
+| 002422.SZ | ⭐quality | 98.5 | 61% |
+| 300743.SZ | ⭐quality | 98.2 | 61% |
+| 000045.SZ | ⭐quality | 92.3 | 64% |
+| 600099.SH | ⭐quality | 90.4 | 61% |
+| 600262.SH | ⭐quality | 88.8 | 61% |
+| 688025.SH | ⭐quality | 85.7 | 61% |
+| 688589.SH | ⭐quality | 85.4 | 64% |
+| 600789.SH | ⭐quality | 82.5 | 64% |
+| 688198.SH | ⭐quality | 78.5 | 63% |
+| 603328.SH | ⭐quality | 77.2 | 59% |
+| 000657.SZ | ⭐quality | 76.8 | 61% |
+| 002358.SZ | ⭐quality | 76.3 | 58% |
+| 000962.SZ | ⭐quality | 75.5 | 57% |
+| 300545.SZ | ⭐quality | 74.3 | 58% |
+| 002580.SZ | ⭐quality | 73.4 | 57% |
+| 000550.SZ | ⭐quality | 72.6 | 58% |
+| 002334.SZ | 🟡average | 72.4 | 66% |
+| ... | | | 还有 191 家 |
+
+### 📊 放缓期 (108 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 603309.SH | ⭐quality | 85.1 | 69% |
+| 600276.SH | ⭐quality | 73.5 | 57% |
+| 301609.SZ | 🟡average | 71.3 | 69% |
+| 688003.SH | 🟡average | 71.2 | 61% |
+| 688097.SH | ⭐quality | 70.2 | 55% |
+| 002273.SZ | ⭐quality | 69.3 | 56% |
+| 603658.SH | 🟡average | 68.7 | 66% |
+| 688013.SH | ⭐quality | 67.9 | 58% |
+| 002340.SZ | ⭐quality | 67.5 | 53% |
+| 603312.SH | 🟡average | 67.1 | 64% |
+| 300406.SZ | ⭐quality | 65.5 | 58% |
+| 300832.SZ | 🟡average | 65.4 | 69% |
+| 688334.SH | 🟡average | 64.6 | 64% |
+| 605118.SH | 🟡average | 64.5 | 66% |
+| 000034.SZ | 🟡average | 60.0 | 64% |
+| 300791.SZ | 🟡average | 59.7 | 64% |
+| 300750.SZ | 🟡average | 59.0 | 61% |
+| 688517.SH | 🟡average | 58.8 | 63% |
+| 300452.SZ | 🟠poor | 57.9 | 65% |
+| 002938.SZ | 🟠poor | 56.8 | 59% |
+| ... | | | 还有 88 家 |
+
+### 📉 衰退期 (62 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 001289.SZ | 🟠poor | 45.2 | 64% |
+| 002409.SZ | 🟠poor | 44.4 | 62% |
+| 603031.SH | 🟠poor | 37.2 | 66% |
+| 001288.SZ | 🟠poor | 35.2 | 61% |
+| 600587.SH | 🟠poor | 35.0 | 64% |
+| 300254.SZ | 🟠poor | 34.8 | 61% |
+| 600475.SH | 🟠poor | 33.6 | 69% |
+| 001277.SZ | 🟠poor | 31.4 | 64% |
+| 920060.BJ | 🟠poor | 31.3 | 66% |
+| 300010.SZ | 🟠poor | 30.1 | 59% |
+| 301598.SZ | 🟠poor | 28.4 | 61% |
+| 301628.SZ | 🟠poor | 26.1 | 64% |
+| 600380.SH | 🟠poor | 25.7 | 64% |
+| 835237.BJ | 🟠poor | 24.6 | 51% |
+| 002219.SZ | 🟠poor | 19.6 | 64% |
+| 603344.SH | 🟠poor | 19.2 | 64% |
+| 002953.SZ | 🟠poor | 16.0 | 61% |
+| 920799.BJ | 🟠poor | 14.8 | 64% |
+| 605117.SH | 🟠poor | 14.7 | 51% |
+| 688543.SH | 🟠poor | 14.3 | 61% |
+| ... | | | 还有 42 家 |
+
+### ⚠️ 困境期 (102 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 688031.SH | 🟠poor | 45.9 | 55% |
+| 688302.SH | 🟠poor | 44.6 | 62% |
+| 688165.SH | 🟠poor | 42.1 | 65% |
+| 688158.SH | 🟠poor | 41.7 | 58% |
+| 688382.SH | 🟠poor | 41.1 | 66% |
+| 300293.SZ | 🟠poor | 39.0 | 61% |
+| 688316.SH | 🟠poor | 37.1 | 59% |
+| 603207.SH | 🟠poor | 36.9 | 66% |
+| 603778.SH | 🟠poor | 33.1 | 59% |
+| 600589.SH | 🟠poor | 32.9 | 60% |
+| 300250.SZ | 🟠poor | 27.6 | 61% |
+| 002432.SZ | 🟠poor | 25.9 | 64% |
+| 600206.SH | 🟠poor | 24.8 | 61% |
+| 688365.SH | 🟠poor | 23.9 | 64% |
+| 688229.SH | 🟠poor | 9.3 | 64% |
+| 834950.BJ | 🟠poor | 6.7 | 66% |
+| 300289.SZ | 🟠poor | 6.6 | 63% |
+| 600666.SH | 🟠poor | 5.2 | 66% |
+| 300210.SZ | 🟠poor | 4.2 | 59% |
+| 688197.SH | 🟠poor | 4.2 | 70% |
+| ... | | | 还有 82 家 |
+
+### 🔝 周期顶部 (44 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 920112.BJ | ⭐quality | 100.0 | 64% |
+| 601717.SH | ⭐quality | 100.0 | 61% |
+| 688278.SH | ⭐quality | 100.0 | 64% |
+| 301479.SZ | ⭐quality | 100.0 | 64% |
+| 601567.SH | ⭐quality | 100.0 | 64% |
+| 832982.BJ | ⭐quality | 97.8 | 64% |
+| 688596.SH | ⭐quality | 95.8 | 66% |
+| 000682.SZ | ⭐quality | 89.3 | 64% |
+| 601137.SH | ⭐quality | 89.0 | 61% |
+| 300049.SZ | ⭐quality | 87.2 | 71% |
+| 688019.SH | ⭐quality | 79.8 | 64% |
+| 600211.SH | ⭐quality | 73.3 | 57% |
+| 002594.SZ | ⭐quality | 68.5 | 52% |
+| 300693.SZ | ⭐quality | 67.2 | 53% |
+| 688578.SH | ⭐quality | 66.8 | 56% |
+| 300508.SZ | ⭐quality | 65.7 | 55% |
+| 002947.SZ | ⭐quality | 65.7 | 58% |
+| 301301.SZ | 🟡average | 64.5 | 66% |
+| 300532.SZ | 🟡average | 63.5 | 61% |
+| 300827.SZ | 🟡average | 61.0 | 59% |
+| ... | | | 还有 24 家 |
+
+### 🔻 周期底部 (564 家)
+
+| 代码 | 决策 | 得分 | 置信度 |
+|------|------|------|--------|
+| 603920.SH | ⭐quality | 82.6 | 61% |
+| 000507.SZ | ⭐quality | 79.3 | 69% |
+| 603367.SH | ⭐quality | 79.3 | 66% |
+| 002826.SZ | ⭐quality | 77.1 | 56% |
+| 600483.SH | ⭐quality | 70.1 | 53% |
+| 600241.SH | 🟡average | 69.3 | 64% |
+| 873576.BJ | 🟡average | 68.4 | 64% |
+| 300439.SZ | ⭐quality | 68.3 | 55% |
+| 300588.SZ | 🟡average | 68.1 | 66% |
+| 603290.SH | 🟡average | 65.3 | 61% |
+| 601608.SH | 🟡average | 64.6 | 61% |
+| 688584.SH | 🟡average | 64.4 | 59% |
+| 688078.SH | 🟡average | 63.4 | 61% |
+| 688691.SH | 🟠poor | 60.0 | 59% |
+| 688755.SH | 🟡average | 58.7 | 63% |
+| 002530.SZ | 🟡average | 58.4 | 63% |
+| 603507.SH | 🟠poor | 58.1 | 60% |
+| 000153.SZ | 🟠poor | 57.2 | 69% |
+| 300757.SZ | 🟡average | 56.6 | 63% |
+| 600435.SH | 🟠poor | 56.5 | 58% |
+| ... | | | 还有 544 家 |
 
 ## ❌ 否决公司 (VETO)
 
-> 共 1603 家公司被否决（得分<30 或 DS判定reject）
+> 共 521 家公司被否决（得分<30 或 DS判定reject）
 
 | 代码 | 得分 | 置信度 | 状态 |
 |------|------|--------|------|
-| 300691.SZ | 24.9 | 100.0% | distressed |
-| 002384.SZ | 24.9 | 100.0% | distressed |
-| 002368.SZ | 24.9 | 100.0% | distressed |
-| 002649.SZ | 24.9 | 100.0% | distressed |
-| 836717.BJ | 24.9 | 100.0% | distressed |
-| 301266.SZ | 24.9 | 100.0% | distressed |
-| 301329.SZ | 24.9 | 100.0% | distressed |
-| 301226.SZ | 24.9 | 100.0% | distressed |
-| 301353.SZ | 24.9 | 100.0% | distressed |
-| 873167.BJ | 24.9 | 100.0% | distressed |
-| 301251.SZ | 24.9 | 100.0% | distressed |
-| 301387.SZ | 24.9 | 100.0% | distressed |
-| 301236.SZ | 24.9 | 100.0% | distressed |
-| 301418.SZ | 24.9 | 100.0% | distressed |
-| 000049.SZ | 24.9 | 100.0% | distressed |
-| 301163.SZ | 24.9 | 100.0% | distressed |
-| 871857.BJ | 24.9 | 100.0% | distressed |
-| 603012.SH | 24.9 | 100.0% | distressed |
-| 002300.SZ | 24.9 | 100.0% | distressed |
-| 834639.BJ | 24.9 | 100.0% | distressed |
-| 300496.SZ | 24.9 | 100.0% | distressed |
-| 688579.SH | 24.9 | 100.0% | distressed |
-| 688073.SH | 24.9 | 100.0% | distressed |
-| 301290.SZ | 24.9 | 100.0% | distressed |
-| 688409.SH | 24.9 | 100.0% | distressed |
-| 688166.SH | 24.9 | 100.0% | distressed |
-| 300248.SZ | 24.9 | 100.0% | distressed |
-| 300411.SZ | 24.9 | 100.0% | distressed |
-| 600478.SH | 24.9 | 100.0% | distressed |
-| 688010.SH | 24.9 | 100.0% | distressed |
-| ... | | | 还有 1573 家 |
+| 002842.SZ | 0.0 | 95.0% | None |
+| 002421.SZ | 0.0 | 95.0% | None |
+| 688216.SH | 0.0 | 95.0% | None |
+| 300290.SZ | 0.0 | 95.0% | None |
+| 301357.SZ | 0.0 | 95.0% | None |
+| 832171.BJ | 0.0 | 95.0% | None |
+| 688702.SH | 0.0 | 95.0% | None |
+| 300443.SZ | 0.0 | 95.0% | None |
+| 600446.SH | 0.0 | 95.0% | None |
+| 300296.SZ | 0.0 | 95.0% | None |
+| 300327.SZ | 0.0 | 95.0% | None |
+| 688152.SH | 0.0 | 95.0% | None |
+| 600703.SH | 0.0 | 95.0% | None |
+| 688011.SH | 0.0 | 95.0% | None |
+| 300656.SZ | 0.0 | 95.0% | None |
+| 000066.SZ | 0.0 | 95.0% | None |
+| 301516.SZ | 0.0 | 95.0% | None |
+| 300713.SZ | 0.0 | 95.0% | None |
+| 300212.SZ | 0.0 | 95.0% | None |
+| 688020.SH | 0.0 | 95.0% | None |
+| 300485.SZ | 0.0 | 95.0% | None |
+| 600867.SH | 0.0 | 95.0% | None |
+| 603011.SH | 0.0 | 95.0% | None |
+| 688409.SH | 0.0 | 95.0% | None |
+| 001373.SZ | 0.0 | 95.0% | None |
+| 600728.SH | 0.0 | 95.0% | None |
+| 688084.SH | 0.0 | 95.0% | None |
+| 300865.SZ | 0.0 | 95.0% | None |
+| 600734.SH | 0.0 | 95.0% | None |
+| 688728.SH | 0.0 | 95.0% | None |
+| ... | | | 还有 491 家 |
 
 ## 📖 方法论说明
 
@@ -661,11 +791,11 @@ PDDA 聚合趋势数据 (单行/公司/指标)
 │  2. 自适应阈值 (行业/规模)          │
 │  3. 因果推断 (Pearl do-calculus)    │
 │  4. 状态机推断 (HMM 5状态)          │
-│  5. Copula 证据融合                 │
-│  6. Dempster-Shafer 不确定性合并    │
+│  5. 规则驱动融合 (50% Rules)        │
+│  6. DS/Copula 辅助验证 (各15%)      │
 └─────────────────────────────────────┘
         ↓
-   决策: QUALITY / HOLD / VETO
+   决策: QUALITY / AVERAGE / POOR / VETO
 ```
 
 ### 公司生命周期状态

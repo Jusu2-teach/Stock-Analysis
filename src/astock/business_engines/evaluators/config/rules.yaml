@@ -51,8 +51,8 @@ veto_rules:
     name: "严重趋势衰退"
     description: "长期趋势严重下滑且统计显著"
     condition:
-      log_slope_lt: -0.15
-      r_squared_gt: 0.50
+      log_slope_lt: -0.30
+      r_squared_gt: 0.60
     exemptions:
       - type: cyclical_bottom
       - type: turnaround
@@ -79,12 +79,13 @@ veto_rules:
 
   - id: severe_deterioration
     name: "严重恶化"
-    description: "贝叶斯检测到严重或灾难级恶化"
+    description: "贝叶斯检测到严重恶化且跌幅超过60%"
     condition:
       deterioration_severity_in: ["severe", "catastrophic"]
+      decline_pct_gt: 0.60
     exemptions:
       - type: cyclical_bottom
-    message_template: "恶化等级: {deterioration_severity}"
+    message_template: "恶化等级: {deterioration_severity}, 跌幅: {decline_pct:.1%}"
 
   - id: peak_decline
     name: "峰值暴跌"
@@ -113,9 +114,9 @@ penalty_rules:
     description: "趋势轻度下滑"
     condition:
       log_slope_lt: -0.03
-      log_slope_gte: -0.10
+      log_slope_gte: -0.15
       r_squared_gt: 0.30
-    score_formula: "abs(log_slope) * 150"
+    score_formula: "abs(log_slope) * 120"
     max_score: 15
     message_template: "轻度下滑: slope={log_slope:.3f}"
 

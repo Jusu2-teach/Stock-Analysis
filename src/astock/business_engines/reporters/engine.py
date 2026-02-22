@@ -277,8 +277,8 @@ def report_comprehensive(
         lines.append("")
 
         # 表格形式显示全部
-        lines.append("| 代码 | 得分 | 置信度 | 生命周期 | 主要因素 |")
-        lines.append("|------|------|--------|----------|----------|")
+        lines.append("| 代码 | 名称 | 行业 | 得分 | 置信度 | 生命周期 | 主要驱动因素 |")
+        lines.append("|------|------|------|------|--------|----------|-------------|")
         state_labels = {
             "emerging": "🚀成长", "growth": "📈高增长", "mature": "🏔️成熟", "declining": "📉衰退",
             "slowing": "📊放缓", "turnaround": "🔄反转", "distressed": "⚠️困境", "cash_cow": "💰现金牛",
@@ -286,15 +286,21 @@ def report_comprehensive(
         }
         for e in sorted(quality_evals, key=lambda x: -x.get("score", 0)):
             ts_code = e.get("ts_code", "")
+            name = e.get("name", "") or ""
+            industry = e.get("industry", "") or ""
             score = e.get("score", 0)
             conf = e.get("confidence", 0)
             state = e.get("company_state", "")
             state_str = state_labels.get(state, state)
-            # 主要贡献因素
+            # 主要贡献因素（取top3，用箭头标方向）
             factors = e.get("factors", [])
-            top_factors = sorted(factors, key=lambda f: abs(f.get("contribution", 0)), reverse=True)[:2]
-            factor_str = ", ".join([f"{f.get('name', '')}:{f.get('value', 0):.2f}" for f in top_factors])
-            lines.append(f"| {ts_code} | {score:.1f} | {conf:.0%} | {state_str} | {factor_str} |")
+            top_factors = sorted(factors, key=lambda f: abs(f.get("contribution", 0)), reverse=True)[:3]
+            factor_parts = []
+            for f in top_factors:
+                arrow = "↑" if f.get("direction") == "positive" else "↓"
+                factor_parts.append(f"{arrow}{f.get('name', '')}:{f.get('value', 0):.2f}")
+            factor_str = ", ".join(factor_parts)
+            lines.append(f"| {ts_code} | {name[:6]} | {industry[:6]} | {score:.1f} | {conf:.0%} | {state_str} | {factor_str} |")
         lines.append("")
 
         # 详细展示 Top 10
@@ -314,24 +320,22 @@ def report_comprehensive(
         lines.append("")
         lines.append(f"> 共 {len(average_evals)} 家（得分 50-70）")
         lines.append("")
-        lines.append("| 代码 | 得分 | 生命周期 | 代码 | 得分 | 生命周期 |")
-        lines.append("|------|------|----------|------|------|----------|")
+        lines.append("| 代码 | 名称 | 得分 | 置信度 | 生命周期 | 主要因素 |")
+        lines.append("|------|------|------|--------|----------|----------|")
         sorted_avg = sorted(average_evals, key=lambda x: -x.get("score", 0))
         state_labels = {
             "emerging": "🚀", "growth": "📈", "mature": "🏔️", "declining": "📉",
             "slowing": "📊", "turnaround": "🔄", "distressed": "⚠️", "cash_cow": "💰",
             "cyclical_peak": "🔝", "cyclical_trough": "🔻",
         }
-        # 两列显示
-        for i in range(0, len(sorted_avg), 2):
-            e1 = sorted_avg[i]
-            row = f"| {e1.get('ts_code', '')} | {e1.get('score', 0):.1f} | {state_labels.get(e1.get('company_state', ''), '')} "
-            if i + 1 < len(sorted_avg):
-                e2 = sorted_avg[i + 1]
-                row += f"| {e2.get('ts_code', '')} | {e2.get('score', 0):.1f} | {state_labels.get(e2.get('company_state', ''), '')} |"
-            else:
-                row += "| | | |"
-            lines.append(row)
+        for e in sorted_avg[:80]:
+            name = (e.get('name') or '')[:6]
+            factors = e.get('factors', [])
+            top_f = sorted(factors, key=lambda f: abs(f.get('contribution', 0)), reverse=True)[:2]
+            f_str = ', '.join(f"{f.get('name','')}" for f in top_f)
+            lines.append(f"| {e.get('ts_code', '')} | {name} | {e.get('score', 0):.1f} | {e.get('confidence', 0):.0%} | {state_labels.get(e.get('company_state', ''), '')} | {f_str} |")
+        if len(sorted_avg) > 80:
+            lines.append(f"| ... | | | | | 还有 {len(sorted_avg) - 80} 家 |")
         lines.append("")
 
     # ============================================================
@@ -375,6 +379,33 @@ def report_comprehensive(
             lines.append("")
 
     # ============================================================
+    # 按行业分组统计（新增）
+    # ============================================================
+
+    industry_stats = {}
+    for e in evaluations:
+        ind = e.get("industry") or "未知"
+        if ind not in industry_stats:
+            industry_stats[ind] = {"count": 0, "quality": 0, "veto": 0, "total_score": 0}
+        industry_stats[ind]["count"] += 1
+        industry_stats[ind]["total_score"] += e.get("score", 0)
+        if e.get("decision") == "quality":
+            industry_stats[ind]["quality"] += 1
+        elif e.get("decision") == "veto":
+            industry_stats[ind]["veto"] += 1
+
+    if len(industry_stats) > 1:
+        lines.append("## 🏭 行业分析")
+        lines.append("")
+        lines.append("| 行业 | 总数 | 优质 | 否决 | 优质率 | 平均分 |")
+        lines.append("|------|------|------|------|--------|--------|")
+        for ind, stats in sorted(industry_stats.items(), key=lambda x: -x[1]["quality"]):
+            avg = stats["total_score"] / stats["count"] if stats["count"] > 0 else 0
+            quality_rate = stats["quality"] / stats["count"] * 100 if stats["count"] > 0 else 0
+            lines.append(f"| {ind[:8]} | {stats['count']} | {stats['quality']} | {stats['veto']} | {quality_rate:.0f}% | {avg:.1f} |")
+        lines.append("")
+
+    # ============================================================
     # 否决股票（简化）
     # ============================================================
 
@@ -414,11 +445,11 @@ def report_comprehensive(
     lines.append("│  2. 自适应阈值 (行业/规模)          │")
     lines.append("│  3. 因果推断 (Pearl do-calculus)    │")
     lines.append("│  4. 状态机推断 (HMM 5状态)          │")
-    lines.append("│  5. Copula 证据融合                 │")
-    lines.append("│  6. Dempster-Shafer 不确定性合并    │")
+    lines.append("│  5. 规则驱动融合 (50% Rules)        │")
+    lines.append("│  6. DS/Copula 辅助验证 (各15%)      │")
     lines.append("└─────────────────────────────────────┘")
     lines.append("        ↓")
-    lines.append("   决策: QUALITY / HOLD / VETO")
+    lines.append("   决策: QUALITY / AVERAGE / POOR / VETO")
     lines.append("```")
     lines.append("")
 
@@ -640,34 +671,43 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
 
 
 def _generate_compact_row(profile: Dict[str, Any]) -> str:
-    """生成紧凑的表格行（用于汇总列表）"""
+    """生成紧凑的表格行（用于汇总列表）——展示全部6因子+3求解器"""
     ts_code = profile.get("ts_code", "")
     final_score = profile.get("final_score", 0) or 0
     grade = profile.get("grade", "-")
     signal = profile.get("signal", "-")
     confidence = profile.get("confidence", 0) or 0
 
-    # 提取关键因子分数
+    # 提取全部因子分数
     factors = profile.get("factors", {})
-    gamma_score = 0
-    alpha_score = 0
-    if isinstance(factors, dict):
-        gamma_data = factors.get("gamma") or factors.get("GAMMA", {})
-        alpha_data = factors.get("alpha") or factors.get("ALPHA", {})
-        gamma_score = gamma_data.get("score", 0) if isinstance(gamma_data, dict) else gamma_data or 0
-        alpha_score = alpha_data.get("score", 0) if isinstance(alpha_data, dict) else alpha_data or 0
+    def _get_factor(fid_lower, fid_upper):
+        fd = factors.get(fid_lower) or factors.get(fid_upper, {})
+        return fd.get("score", 0) if isinstance(fd, dict) else (fd or 0)
 
-    # 提取关键求解器分数
+    alpha = _get_factor("alpha", "ALPHA")
+    beta = _get_factor("beta", "BETA")
+    gamma = _get_factor("gamma", "GAMMA")
+    d_fraud = _get_factor("delta_fraud", "DELTA_FRAUD")
+    d_decay = _get_factor("delta_decay", "DELTA_DECAY")
+    verif = _get_factor("verification", "VERIFICATION")
+
+    # 提取全部求解器分数
     solvers = profile.get("solvers", {})
-    gravity_score = 0
-    if isinstance(solvers, dict):
-        gravity_data = solvers.get("gravity") or solvers.get("GRAVITY", {})
-        gravity_score = gravity_data.get("score", 0) if isinstance(gravity_data, dict) else gravity_data or 0
+    def _get_solver(sid_lower, sid_upper):
+        sd = solvers.get(sid_lower) or solvers.get(sid_upper, {})
+        return sd.get("score", 0) if isinstance(sd, dict) else (sd or 0)
+
+    gravity = _get_solver("gravity", "GRAVITY")
+    velocity = _get_solver("velocity", "VELOCITY")
+    structure = _get_solver("structure", "STRUCTURE")
 
     grade_emoji = GRADE_EMOJI.get(grade, "")
     signal_emoji = SIGNAL_EMOJI.get(signal, "")
 
-    return f"| {ts_code} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | γ:{gamma_score:.2f} α:{alpha_score:.2f} | G:{gravity_score:.2f} |"
+    factor_str = f"α:{alpha:.2f} β:{beta:.2f} γ:{gamma:.2f} δf:{d_fraud:.2f} δd:{d_decay:.2f} V:{verif:.2f}"
+    solver_str = f"G:{gravity:.2f} V:{velocity:.2f} S:{structure:.2f}"
+
+    return f"| {ts_code} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | {factor_str} | {solver_str} |"
 
 
 def _get_top_warning(profile: Dict[str, Any]) -> str:
@@ -993,13 +1033,13 @@ def report_truth(
     lines.append("")
     lines.append("| 评级 | 分数区间 | 投资建议 |")
     lines.append("|------|----------|----------|")
-    lines.append("| ⭐⭐⭐ A+ | ≥85% | 极度优质，强烈推荐 |")
-    lines.append("| ⭐⭐ A | 75-85% | 优质标的，建议关注 |")
-    lines.append("| ⭐ B+ | 65-75% | 良好标的，可考虑 |")
-    lines.append("| ✅ B | 55-65% | 中等偏上，观察 |")
-    lines.append("| ➖ C | 45-55% | 一般，持有观望 |")
-    lines.append("| ⚠️ D | 35-45% | 较差，谨慎 |")
-    lines.append("| ❌ F | <35% | 否决，回避 |")
+    lines.append("| ⭐⭐⭐ A+ | ≥78% | 极度优质，强烈推荐 |")
+    lines.append("| ⭐⭐ A | 68-78% | 优质标的，建议关注 |")
+    lines.append("| ⭐ B+ | 58-68% | 良好标的，可考虑 |")
+    lines.append("| ✅ B | 48-58% | 中等偏上，观察 |")
+    lines.append("| ➖ C | 38-48% | 一般，持有观望 |")
+    lines.append("| ⚠️ D | 28-38% | 较差，谨慎 |")
+    lines.append("| ❌ F | <28% | 否决，回避 |")
     lines.append("")
 
     # ============================================================

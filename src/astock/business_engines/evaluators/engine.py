@@ -88,6 +88,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from ..pdda_columns import PDDAColumns, ProbeData, CompanyProbes
+from shared.naming_convention import MetricRegistry
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -540,124 +541,132 @@ class CausalBayesianEvaluator:
             if df.empty:
                 continue
 
+            # PDDA 键为 business_key（如 gross_margin），列前缀为 output_prefix（如 grossprofit_margin）
+            try:
+                prefix = MetricRegistry.get_output_prefix(metric)
+            except (ValueError, KeyError):
+                prefix = metric
+
             # PDDA 输出每公司只有 1 行
             row = df.iloc[0]
 
             # ============ 趋势特征 ============
-            # 优先使用稳健斜率（Theil-Sen），回退到 OLS 斜率
-            robust_col = C.col(metric, C.ROBUST_SLOPE)
-            slope_col = C.col(metric, C.SLOPE)
+            # 使用 OLS 对数斜率（与 rules.yaml 阈值对齐），回退到线性斜率
+            log_slope_col = C.col(prefix, C.LOG_SLOPE)
+            slope_col = C.col(prefix, C.SLOPE)
 
-            if robust_col in row.index and pd.notna(row[robust_col]):
-                features[f"{metric}_trend"] = float(row[robust_col])
+            if log_slope_col in row.index and pd.notna(row[log_slope_col]):
+                features[f"{metric}_trend"] = float(row[log_slope_col])
             elif slope_col in row.index and pd.notna(row[slope_col]):
                 features[f"{metric}_trend"] = float(row[slope_col])
             else:
                 features[f"{metric}_trend"] = 0.0
 
             # R² 拟合优度
-            r2_col = C.col(metric, C.R_SQUARED)
+            r2_col = C.col(prefix, C.R_SQUARED)
             features[f"{metric}_r_squared"] = (
                 float(row[r2_col]) if r2_col in row.index and pd.notna(row[r2_col]) else 0.0
             )
 
             # Mann-Kendall tau（非参数趋势）
-            mk_col = C.col(metric, C.MK_TAU)
+            mk_col = C.col(prefix, C.MK_TAU)
             features[f"{metric}_mk_tau"] = (
                 float(row[mk_col]) if mk_col in row.index and pd.notna(row[mk_col]) else 0.0
             )
 
             # 趋势方向（PDDA 已判断）
-            dir_col = C.col(metric, C.TREND_DIRECTION)
+            dir_col = C.col(prefix, C.TREND_DIRECTION)
             features[f"{metric}_direction"] = (
                 str(row[dir_col]) if dir_col in row.index else "flat"
             )
 
             # 近3年趋势（短期）
-            recent_col = C.col(metric, C.RECENT_3Y_SLOPE)
+            recent_col = C.col(prefix, C.RECENT_3Y_SLOPE)
             features[f"{metric}_recent_trend"] = (
                 float(row[recent_col]) if recent_col in row.index and pd.notna(row[recent_col]) else 0.0
             )
 
             # ============ 水平特征 ============
-            latest_col = C.col(metric, C.LATEST_VALUE)
+            latest_col = C.col(prefix, C.LATEST_VALUE)
             features[f"{metric}_level"] = (
                 float(row[latest_col]) if latest_col in row.index and pd.notna(row[latest_col]) else 0.0
             )
 
-            weighted_col = C.col(metric, C.WEIGHTED_AVG)
+            weighted_col = C.col(prefix, C.WEIGHTED_AVG)
             features[f"{metric}_weighted_avg"] = (
                 float(row[weighted_col]) if weighted_col in row.index and pd.notna(row[weighted_col]) else 0.0
             )
 
             # 最新值 vs 加权平均（衡量近期表现）
-            ratio_col = C.col(metric, C.LATEST_VS_WEIGHTED)
+            ratio_col = C.col(prefix, C.LATEST_VS_WEIGHTED)
             features[f"{metric}_latest_vs_weighted"] = (
                 float(row[ratio_col]) if ratio_col in row.index and pd.notna(row[ratio_col]) else 1.0
             )
 
             # ============ 波动特征 ============
-            cv_col = C.col(metric, C.CV)
+            cv_col = C.col(prefix, C.CV)
             features[f"{metric}_volatility"] = (
                 float(row[cv_col]) if cv_col in row.index and pd.notna(row[cv_col]) else 0.2
             )
 
-            vol_type_col = C.col(metric, C.VOLATILITY_TYPE)
+            vol_type_col = C.col(prefix, C.VOLATILITY_TYPE)
             features[f"{metric}_volatility_type"] = (
                 str(row[vol_type_col]) if vol_type_col in row.index else "moderate"
             )
 
             # ============ 恶化检测（布尔特征）============
-            det_col = C.col(metric, C.HAS_DETERIORATION)
+            det_col = C.col(prefix, C.HAS_DETERIORATION)
             features[f"{metric}_has_deterioration"] = (
                 bool(row[det_col]) if det_col in row.index else False
             )
 
-            sev_col = C.col(metric, C.DETERIORATION_SEVERITY)
+            sev_col = C.col(prefix, C.DETERIORATION_SEVERITY)
             features[f"{metric}_deterioration_severity"] = (
                 str(row[sev_col]) if sev_col in row.index else "none"
             )
 
-            decline_col = C.col(metric, C.TOTAL_DECLINE_PCT)
-            features[f"{metric}_decline_pct"] = (
+            decline_col = C.col(prefix, C.TOTAL_DECLINE_PCT)
+            # total_decline_pct 存储为百分点（如 -37.5），转换为绝对比率（0.375）以匹配 rules.yaml 阈值
+            raw_decline = (
                 float(row[decline_col]) if decline_col in row.index and pd.notna(row[decline_col]) else 0.0
             )
+            features[f"{metric}_decline_pct"] = abs(raw_decline) / 100.0
 
             # ============ 拐点检测 ============
-            infl_col = C.col(metric, C.HAS_INFLECTION)
+            infl_col = C.col(prefix, C.HAS_INFLECTION)
             features[f"{metric}_has_inflection"] = (
                 bool(row[infl_col]) if infl_col in row.index else False
             )
 
             # ============ 周期性特征 ============
-            cyc_col = C.col(metric, C.IS_CYCLICAL)
+            cyc_col = C.col(prefix, C.IS_CYCLICAL)
             features[f"{metric}_is_cyclical"] = (
                 bool(row[cyc_col]) if cyc_col in row.index else False
             )
 
-            phase_col = C.col(metric, C.CURRENT_PHASE)
+            phase_col = C.col(prefix, C.CURRENT_PHASE)
             features[f"{metric}_cycle_phase"] = (
                 str(row[phase_col]) if phase_col in row.index else ""
             )
 
             # ============ 加速/减速 ============
-            acc_col = C.col(metric, C.IS_ACCELERATING)
+            acc_col = C.col(prefix, C.IS_ACCELERATING)
             features[f"{metric}_is_accelerating"] = (
                 bool(row[acc_col]) if acc_col in row.index else False
             )
 
-            dec_col = C.col(metric, C.IS_DECELERATING)
+            dec_col = C.col(prefix, C.IS_DECELERATING)
             features[f"{metric}_is_decelerating"] = (
                 bool(row[dec_col]) if dec_col in row.index else False
             )
 
             # ============ 结构断点 ============
-            break_col = C.col(metric, C.HAS_STRUCTURAL_BREAK)
+            break_col = C.col(prefix, C.HAS_STRUCTURAL_BREAK)
             features[f"{metric}_has_break"] = (
                 bool(row[break_col]) if break_col in row.index else False
             )
 
-            regime_col = C.col(metric, C.DATA_REGIME)
+            regime_col = C.col(prefix, C.DATA_REGIME)
             features[f"{metric}_data_regime"] = (
                 str(row[regime_col]) if regime_col in row.index else "stable"
             )
@@ -1047,11 +1056,19 @@ class CausalBayesianEvaluator:
             if sev_key in features:
                 metric_features["deterioration_severity"] = features[sev_key]
 
-            # 下降幅度
+            # 下降幅度（恶化探针3年变化，用于 severe_deterioration 规则）
             decline_key = f"{metric}_decline_pct"
             if decline_key in features:
                 metric_features["decline_pct"] = features[decline_key]
-                metric_features["peak_decline_pct"] = features[decline_key]
+
+            # 峰值下跌（从加权平均估算峰值到最新值的跌幅，用于 peak_decline 规则）
+            weighted_key = f"{metric}_weighted_avg"
+            level_val = features.get(level_key, 0)
+            weighted_val = features.get(weighted_key, 0)
+            if weighted_val > 0 and level_val < weighted_val:
+                metric_features["peak_decline_pct"] = (weighted_val - level_val) / weighted_val
+            else:
+                metric_features["peak_decline_pct"] = 0.0
 
             # 周期性
             cyc_key = f"{metric}_is_cyclical"
@@ -1087,8 +1104,9 @@ class CausalBayesianEvaluator:
             combined_result.total_penalty += result.total_penalty
             combined_result.total_bonus += result.total_bonus
 
-        # 【进化修复】需要 ≥2 个指标同时否决才真否决
-        if veto_count >= 2:
+        # 【多维共识否决】需要 ≥3 个指标同时触发否决规则
+        # 避免 ROIC/ROE 高相关性导致 2 指标就淘汰的假阳性
+        if veto_count >= 3:
             combined_result.vetoed = True
             combined_result.veto_reason = f"多指标共识否决({veto_count}个): " + "; ".join(veto_reasons)
 
@@ -1347,13 +1365,15 @@ class CausalBayesianEvaluator:
             ))
 
         # ============ 计算最终分数 ============
+        # v3.4: 降低 DS/Copula 对评分的直接影响
+        # 保留它们作为诊断信息, 但不让它们拉平分数
         final_score = (
             base_score
             + rule_adjustment
             + state_adjustment
             + causal_adjustment
-            + copula_adjustment
-            + ds_adjustment
+            + copula_adjustment * 0.7   # v3.5: 保留 Copula 惩罚但降低幅度
+            + ds_adjustment * 0.7       # v3.5: 保留 DS 惩罚但降低幅度
         )
 
         final_score = np.clip(final_score, 0, 100)
@@ -1369,24 +1389,28 @@ class CausalBayesianEvaluator:
         """
         获取自适应等级
 
-        修复：处理阈值引擎不存在对应指标的情况
+        v3.6 修复：基于 A 股实际分布校准阈值
+        - 10 年 log_slope 分布: p25≈-0.08, p50≈-0.02, p75≈+0.02
+        - 旧阈值: -0.025 就判"veto"(10分), 导致 68% 公司得 10 分
+        - 新阈值: 基于百分位, 使评分有合理区分度
+        - 评分仅用于 QUALITY/AVERAGE/POOR 排名, 不产生 VETO
         """
         try:
             thresholds = self._threshold_engine.get_thresholds(metric, context)
             return thresholds.get_grade(value, higher_is_better=True)
         except (ValueError, KeyError):
-            # 使用基于趋势的默认评分逻辑 (A股校准: 放宽阈值)
-            # 这些是趋势斜率，不是绝对值
-            if value > 0.02:
-                return "excellent"
-            elif value > 0.005:
-                return "good"
-            elif value > -0.005:
-                return "acceptable"
+            # v3.6: 基于实际 A 股趋势斜率分布校准
+            # 斜率分布: p10≈-0.15, p25≈-0.08, p50≈-0.02, p75≈+0.02, p90≈+0.06
+            if value > 0.04:
+                return "excellent"   # top ~15%
+            elif value > 0.01:
+                return "good"        # top ~30%
             elif value > -0.02:
-                return "poor"
+                return "acceptable"  # 中位数附近
+            elif value > -0.08:
+                return "poor"        # bottom ~25%
             else:
-                return "veto"
+                return "veto"        # bottom ~10%, 真正的长期恶化
 
     def _make_integrated_decision(
         self,
@@ -1397,60 +1421,58 @@ class CausalBayesianEvaluator:
         rule_result: Optional[RuleEngineResult]
     ) -> Tuple[DecisionType, float]:
         """
-        【关键修复】做出综合决策 - 整合所有信号
+        v3.6 决策函数 — 已通过规则引擎的公司仅用分数排名
 
-        决策逻辑：
-        1. 规则引擎否决 → VETO
-        2. DS 强烈反对 → VETO
-        3. 基于分数的决策
-        4. 置信度综合计算
+        设计原则:
+        - 到达此函数的公司已通过 step3 规则引擎否决检查 (≥3指标共识)
+        - 规则引擎是唯一的硬否决网关，此函数不再产生 VETO
+        - 此函数仅做 QUALITY / AVERAGE / POOR 三档排名
+        - DS 信号作为辅助信号微调评分，不改变大方向
+
+        改进 (v3.5→v3.6):
+        - 移除 score < veto_threshold → VETO 路径（冗余且过度惩罚）
+        - 保留 QUALITY / AVERAGE / POOR 三档纯排名
         """
-        # 1. 检查规则引擎否决
-        if rule_result and rule_result.vetoed:
-            return DecisionType.VETO, 0.95
+        # 1. DS 信号辅助决策 (微调，不否决)
+        ds_boost = 0
+        if ds_result.decision == "accept" and ds_result.confidence > 0.6:
+            ds_boost = 5  # DS支持时微升评分
+        elif ds_result.decision == "reject" and ds_result.confidence > 0.85:
+            ds_boost = -10  # DS强烈反对时降评
 
-        # 2. 检查 DS 强烈反对
-        if ds_result.decision == "reject" and ds_result.confidence > 0.7:
-            return DecisionType.VETO, ds_result.confidence
+        adjusted_score = score + ds_boost
 
-        # 3. 基于分数的决策
-        if score >= self.config.quality_threshold:
+        # 2. 基于调整后分数的排名（不产生 VETO — 规则引擎已处理）
+        if adjusted_score >= self.config.quality_threshold:
             decision = DecisionType.QUALITY
-        elif score >= self.config.average_threshold:
+        elif adjusted_score >= self.config.average_threshold:
             decision = DecisionType.AVERAGE
-        elif score >= self.config.veto_threshold:
-            decision = DecisionType.POOR
         else:
-            decision = DecisionType.VETO
+            decision = DecisionType.POOR
 
-        # 4. 综合置信度计算
-        # 权重：DS 40%，状态机 25%，Copula 效率 20%，规则引擎 15%
-        ds_conf = ds_result.confidence
-
-        state_conf = state_inference.confidence if state_inference else 0.5
-
-        # Copula 效率作为置信度因子
-        copula_conf = 0.5
-        if copula_result and copula_result.effective_evidence_count > 0:
-            nominal = len(copula_result.individual_contributions)
-            if nominal > 0:
-                copula_conf = min(1.0, copula_result.effective_evidence_count / nominal)
-
-        # 规则引擎置信度（基于触发规则的数量和一致性）
-        rule_conf = 0.5
+        # 4. v3.4 置信度: 规则引擎结果 + 状态机 + 评分离散度
+        # 规则引擎置信度: 触发越多规则, 置信度越高
+        rule_conf = 0.50
         if rule_result:
-            # 如果有策略被识别，增加置信度
+            triggered_count = len(rule_result.penalty_rules) + len(rule_result.bonus_rules)
             if rule_result.strategies:
-                rule_conf = 0.8
-            # 如果没有触发任何规则，中等置信度
-            elif not rule_result.penalty_rules and not rule_result.bonus_rules:
-                rule_conf = 0.6
+                rule_conf = min(0.95, 0.65 + 0.05 * len(rule_result.strategies))
+            elif triggered_count > 3:
+                rule_conf = 0.80
+            elif triggered_count > 0:
+                rule_conf = 0.65
+
+        state_conf = state_inference.confidence if state_inference else 0.50
+
+        # 评分离散度: 分数距离决策边界越远, 置信度越高
+        boundary = self.config.quality_threshold if decision == DecisionType.QUALITY else self.config.average_threshold
+        distance = abs(score - boundary) / 20.0  # 归一化
+        score_conf = min(0.95, 0.50 + distance)
 
         confidence = (
-            0.40 * ds_conf +
+            0.50 * rule_conf +
             0.25 * state_conf +
-            0.20 * copula_conf +
-            0.15 * rule_conf
+            0.25 * score_conf
         )
 
         return decision, confidence

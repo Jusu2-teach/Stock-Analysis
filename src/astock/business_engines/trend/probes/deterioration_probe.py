@@ -254,7 +254,7 @@ class DeteriorationProbe:
                 severity = "severe"
                 deterioration_pattern = "chronic_decline"
             else:
-                severity = "severe"
+                severity = "moderate"
                 deterioration_pattern = "sustained_decline"
 
         elif is_meaningful_decline_4_to_5:

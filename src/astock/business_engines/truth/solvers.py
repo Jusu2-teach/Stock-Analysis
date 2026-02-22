@@ -123,29 +123,32 @@ class GravitySolver:
         components["verification"] = verification
 
         # ============================================================
-        # 使用设计文档的公式:
-        # T_roic = T_base × (1 + k1×(1-β)) × (1 + k2×α) - k3×δ_decay + k4×V
+        # v3.4 加法模型 (替代原连乘模型):
+        # T_roic = T_base + k1*(1-β) + k2*α - k3*δ_decay - k4*V
+        #
+        # 原连乘模型问题: 因子值域0~1时 (1+k*x) 的变化幅度极小,
+        # 导致所有公司的阈值几乎相同 (0.82~0.83)
+        # 加法模型: 每个因子直接贡献 ±百分点, 区分度大幅提升
         # ============================================================
 
-        # k1: 轻资产加成 (1-β 越大，轻资产属性越强，阈值上浮)
-        light_asset_factor = 1.0 + conf.k_light_asset * (1.0 - beta)
-        components["light_asset_factor"] = light_asset_factor
+        # k1: 轻资产加成 (轻资产公司需要更高 ROIC 证明价值)
+        light_asset_adj = conf.k_light_asset * (1.0 - beta)
+        components["light_asset_adj"] = light_asset_adj
 
-        # k2: 周期容忍 (α 越大，周期性越强，阈值上浮)
-        cycle_factor = 1.0 + conf.k_cycle_tolerance * alpha
-        components["cycle_factor"] = cycle_factor
+        # k2: 周期性惩罚 (高周期性需要更高 ROIC 补偿风险)
+        cycle_adj = conf.k_cycle_tolerance * alpha
+        components["cycle_adj"] = cycle_adj
 
-        # k3: 衰退惩罚
+        # k3: 衰退惩罚 (衰退中的公司阈值降低, 给复苏机会)
         decay_penalty = conf.k_decay_penalty * delta_decay
         components["decay_penalty"] = decay_penalty
 
-        # k4: 真成长加成 (V 越大，阈值可以下调)
+        # k4: 真成长折扣 (验证因子高 = 成长可信, 阈值可降)
         verification_bonus = conf.k_verification_bonus * verification
         components["verification_bonus"] = verification_bonus
 
         # 欺诈熔断检查
         if conf.fraud_meltdown_enabled and delta_fraud > 0.7:
-            # 欺诈警报：返回熔断结果
             warnings.append(TruthWarning(
                 code="GRAVITY_FRAUD_MELTDOWN",
                 level=WarningLevel.FATAL,
@@ -164,24 +167,32 @@ class GravitySolver:
                 details={"status": "fraud_meltdown"},
             ), warnings
 
-        # 最终阈值计算
-        roic_threshold = (conf.base_roic_threshold * light_asset_factor * cycle_factor
-                         - decay_penalty + verification_bonus)
+        # 欺诈熵线性惩罚 (非熔断情况下)
+        fraud_adj = 2.0 * delta_fraud  # 最大 +2pp
+        components["fraud_adj"] = fraud_adj
 
-        # 限制在合理范围 [5%, 25%]
-        roic_threshold = clamp(roic_threshold, 5.0, 25.0)
+        # v3.4 加法模型最终计算
+        roic_threshold = (conf.base_roic_threshold
+                         + light_asset_adj    # 轻资产 → 要求更高
+                         + cycle_adj          # 高周期 → 要求更高
+                         + fraud_adj          # 高欺诈 → 要求更高
+                         - decay_penalty      # 衰退 → 降低要求 (给复苏机会)
+                         - verification_bonus # 真成长 → 降低要求
+                         )
+
+        # 限制在合理范围 [4%, 22%]
+        roic_threshold = clamp(roic_threshold, 4.0, 22.0)
         components["roic_threshold"] = roic_threshold
 
-        # 置信区间 (±15%)
-        margin = roic_threshold * 0.15
-        lower_bound = max(5.0, roic_threshold - margin)
-        upper_bound = min(25.0, roic_threshold + margin)
+        # 置信区间 (±20%, 比原来15%更宽, 反映输入不确定性)
+        margin = roic_threshold * 0.20
+        lower_bound = max(4.0, roic_threshold - margin)
+        upper_bound = min(22.0, roic_threshold + margin)
 
         # ============================================================
-        # Step 6: 生成动态阈值和评分
+        # 生成动态阈值和评分
         # ============================================================
 
-        # 构建动态阈值
         threshold = DynamicThreshold(
             name="roic_safe_threshold",
             value=roic_threshold,
@@ -192,10 +203,11 @@ class GravitySolver:
             description=f"安全边际: ROIC 应 > {roic_threshold:.1f}% 才具备投资价值",
         )
 
-        # 归一化评分: sigmoid 使分数分布更合理
-        # 新 k 系数动态范围 7.6%-15.9%, 中心 11%, 缩放 3.5
-        # 阈值 7.6% → 0.73, 11% → 0.50, 15.9% → 0.20
-        centered = (roic_threshold - 11.0) / 3.5
+        # v3.4 sigmoid 归一化 — 扩大区分范围
+        # 加法模型输出范围 ~4%~22%, 中心 10%, 缩放 4.0
+        # 4% → 0.82, 10% → 0.50, 16% → 0.18, 22% → 0.05
+        # 关键: 低要求(=好公司) 得分高, 高要求(=差公司) 得分低
+        centered = (roic_threshold - 10.0) / 4.0
         normalized_score = 1.0 / (1.0 + math.exp(centered))
         normalized_score = clamp(normalized_score, 0.0, 1.0)
 
@@ -352,8 +364,9 @@ class VelocitySolver:
         )
 
         # 评分: 使用 sigmoid 归一化, 天花板越高越好
-        # 7% → 0.27, 12% → 0.50, 17% → 0.73, 25% → 0.91
-        centered = (growth_ceiling - 12.0) / 5.0
+        # v3.4: 中心12%→10%, scale 5→4 扩大区分度
+        # 5% → 0.12, 8% → 0.38, 10% → 0.50, 14% → 0.73, 20% → 0.92
+        centered = (growth_ceiling - 10.0) / 4.0
         normalized_score = 1.0 / (1.0 + math.exp(-centered))
         normalized_score = clamp(normalized_score, 0.0, 1.0)
 

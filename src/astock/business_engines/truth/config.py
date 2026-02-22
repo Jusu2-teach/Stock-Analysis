@@ -133,21 +133,33 @@ class MacroConfig:
 
 @dataclass(frozen=True)
 class GravitySolverConfig:
-    """重力求解器 - ROIC 动态阈值计算"""
-    base_roic_threshold: float = 8.0
-    base_roe_threshold: float = 10.0
-    k_light_asset: float = 0.50        # 轻资产加成 (原 0.08, ×6.25 — 扩大动态范围)
-    k_cycle_tolerance: float = 0.30    # 周期容忍 (原 0.04, ×7.5)
-    k_decay_penalty: float = 0.40      # 衰退惩罚 (原 0.06, ×6.7)
-    k_verification_bonus: float = 0.25  # 真成长加成 (原 0.03, ×8.3)
+    """重力求解器 - ROIC 动态阈值计算
+
+    v3.4 变更:
+    - 从连乘模型改为加法模型，每个因子直接贡献±百分点
+    - 扩大系数范围，使输出从 [7.6-15.9%] 扩展到 [4-22%]
+    - 这样不同质量公司的 ROIC 阈值差异显著
+    """
+    base_roic_threshold: float = 10.0   # 基准ROIC (原8.0)
+    base_roe_threshold: float = 12.0
+    # 加法模型系数: 每个因子贡献的百分点范围
+    k_light_asset: float = 4.0          # 轻资产加成: 最高+4pp (原0.50乘法)
+    k_cycle_tolerance: float = 3.0      # 周期惩罚: 最高+3pp (原0.30乘法)
+    k_decay_penalty: float = 5.0        # 衰退惩罚: 最高-5pp (原0.40乘法)
+    k_verification_bonus: float = 3.0   # 真成长加成: 最高-3pp (原0.25乘法)
     fraud_meltdown_enabled: bool = True
 
 
 @dataclass(frozen=True)
 class VelocitySolverConfig:
-    """速度求解器 - 增长边界计算"""
-    k_true_growth: float = 0.15
-    k_cycle_tolerance: float = 0.10
+    """速度求解器 - 增长边界计算
+
+    v3.4 变更:
+    - k_true_growth: 0.15→0.25 扩大成长因子影响力
+    - sigmoid中心从12%→10%，使中等增长公司也有区分度
+    """
+    k_true_growth: float = 0.25       # 原0.15, 真成长影响力
+    k_cycle_tolerance: float = 0.12   # 原0.10
     # 增长分类标签: (normalized_score 范围)
     labels: Mapping[str, Tuple[float, float]] = field(default_factory=lambda: {
         "hypergrowth": (0.60, 1.00),   # 高速增长
@@ -180,7 +192,13 @@ class StructureSolverConfig:
 
 @dataclass(frozen=True)
 class CalibrationConfig:
-    """校准配置 - 规模/行业/置信度调整"""
+    """校准配置 - 规模/行业/置信度调整
+
+    v3.4 变更:
+    - full_confidence_years: 10→7 (A股上市<10年公司占比高)
+    - max_confidence_5y: 0.55→0.85 (5年数据已足够判断趋势)
+    - 新增 confidence_curve: 平滑置信度曲线而非硬性 cap
+    """
     size_adjustments: Mapping[str, float] = field(default_factory=lambda: {
         "mega": -1.5,   # >1000亿
         "large": 0.0,   # 300-1000亿
@@ -189,40 +207,47 @@ class CalibrationConfig:
         "micro": 3.0,   # <30亿
     })
     min_data_years: int = 3
-    full_confidence_years: int = 10
-    max_confidence_5y: float = 0.55
+    full_confidence_years: int = 7      # 7年即给满置信度 (原10年太严)
+    max_confidence_5y: float = 0.85     # 5年数据置信度上限 (原0.55太低)
+    min_confidence_3y: float = 0.60     # 3年数据最低置信度
     industry_adjustment_enabled: bool = True
     industry_adjustment_weight: float = 0.05
 
 
 @dataclass(frozen=True)
 class ScoringConfig:
-    """综合评分配置"""
+    """综合评分配置
+
+    v3.4 变更:
+    - factor_vs_solver_weight: 0.5→0.6 (因子比求解器更有区分度)
+    - signal/grade thresholds 大幅下调: A股市场整体质量偏低,
+      原阈值导致0家A+/A, 现在top 5%能拿到A
+    """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
         "ALPHA": 0.10,
-        "BETA": 0.10,
+        "BETA": 0.08,
         "GAMMA": 0.25,
-        "DELTA_FRAUD": 0.20,
-        "DELTA_DECAY": 0.15,
-        "VERIFICATION": 0.20,
+        "DELTA_FRAUD": 0.18,
+        "DELTA_DECAY": 0.14,
+        "VERIFICATION": 0.25,
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "GRAVITY": 0.40,
+        "GRAVITY": 0.35,
         "VELOCITY": 0.35,
-        "STRUCTURE": 0.25,
+        "STRUCTURE": 0.30,
     })
-    factor_vs_solver_weight: float = 0.5
+    factor_vs_solver_weight: float = 0.60  # 因子权重提高 (原0.5)
     signal_thresholds: Mapping[str, float] = field(default_factory=lambda: {
-        "strong_buy": 0.75,
-        "buy": 0.62,
-        "hold": 0.48,
-        "caution": 0.35,
+        "strong_buy": 0.68,   # 原0.75, top ~3%
+        "buy": 0.58,          # 原0.62, top ~10%
+        "hold": 0.45,         # 原0.48, top ~35%
+        "caution": 0.32,      # 原0.35
     })
     grade_thresholds: Mapping[str, float] = field(default_factory=lambda: {
-        "A": 0.75,
-        "B": 0.62,
-        "C": 0.48,
-        "D": 0.35,
+        "A": 0.68,    # 原0.75
+        "B": 0.58,    # 原0.62
+        "C": 0.45,    # 原0.48
+        "D": 0.32,    # 原0.35
     })
 
 
