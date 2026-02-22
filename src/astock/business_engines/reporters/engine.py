@@ -187,7 +187,7 @@ def report_comprehensive(
 
     lines.append("# 📊 AStock 综合基本面分析报告")
     lines.append("")
-    lines.append("> 因果贝叶斯网络 × 状态机推断 × Dempster-Shafer证据融合")
+    lines.append("> 29条规则引擎 × 生命周期推断 × 8维指标趋势分析")
     lines.append("")
 
     # ============================================================

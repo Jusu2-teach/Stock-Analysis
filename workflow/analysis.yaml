@@ -403,8 +403,8 @@ pipeline:
         - "Analyze_OCF_Trend"
       parameters:
         # 🌟 PDDA 自动注入 aggregated_trends 参数
-        # 系统会自动收集前面8个 analyze_metric_trend 的输出
-        {}  # 空参数字典，让 PDDA 自动聚合
+          # 同时显式传递原始财务数据，激活 β 因子和 δ_fraud 因子
+        raw_financial_data: "steps.Load_Financial_Data.outputs.parameters.Raw_Data"
       outputs:
         parameters:
           - name: Truth_Result
@@ -421,6 +421,33 @@ pipeline:
       outputs:
         parameters:
           - name: Truth_Report_Path
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🔬 双引擎交叉验证 (Cross-Engine Reconciliation)
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 融合 Evaluator (规则驱动) 与 T.R.U.T.H. (数据驱动) 的结论:
+    # - Spearman 秩相关系数: 衡量两引擎排序一致性
+    # - 信号方向一致率: 看好/看空的吻合度
+    # - 严重分歧检测: 一个看好一个看空的异常标的
+    # - 共识精选 Top 20: 双引擎同时认可的高置信标的
+    # - 风险预警: 任一引擎触发的高级别警告
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    - name: "Generate_Cross_Validation_Report"
+      component: "business_engine"
+      engine: "reporting"
+      method: ["report_cross_validation"]
+      depends_on:
+        - "Run_Causal_Bayesian_Evaluator"
+        - "Run_TRUTH"
+      parameters:
+        truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
+        evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
+        output_path: "data/cross_validation_report.md"
+      outputs:
+        parameters:
+          - name: Cross_Validation_Report_Path
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 📊 估值分析模块 (Valuation Analysis)
