@@ -31,8 +31,8 @@ states:
     name: "快速成长"
     description: "高增长、盈利改善的成长期"
     characteristics:
-      revenue_growth: [0.15, 0.50]
-      roic_level: [8.0, 25.0]
+      revenue_growth: [0.08, 0.50]
+      roic_level: [5.0, 25.0]
       roic_trend: [0.0, 0.15]
       volatility: [0.15, 0.35]
     investment_implication: "成长股投资，关注增速持续性"
@@ -44,7 +44,7 @@ states:
     description: "低增长、高盈利、低波动的成熟期"
     characteristics:
       revenue_growth: [0.0, 0.15]
-      roic_level: [10.0, 20.0]
+      roic_level: [6.0, 20.0]
       roic_trend: [-0.02, 0.05]
       volatility: [0.05, 0.20]
     investment_implication: "价值股投资，关注分红和估值"
@@ -68,8 +68,8 @@ states:
     name: "增速放缓"
     description: "从成长转向成熟的过渡期"
     characteristics:
-      revenue_growth: [0.05, 0.20]
-      roic_level: [8.0, 18.0]
+      revenue_growth: [0.02, 0.15]
+      roic_level: [5.0, 18.0]
       roic_trend: [-0.05, 0.02]
       volatility: [0.10, 0.30]
     investment_implication: "关注转型能力，可能重新加速或进入成熟"
@@ -94,9 +94,9 @@ states:
     description: "亏损、现金流紧张的危机状态"
     characteristics:
       revenue_growth: [-0.30, 0.0]
-      roic_level: [-20.0, 3.0]
+      roic_level: [-20.0, 0.0]
       roic_trend: [-0.20, 0.0]
-      volatility: [0.40, 1.00]
+      volatility: [0.50, 1.00]
     investment_implication: "高风险，可能破产或反转"
     typical_duration_years: [1, 3]
     quality_class: "poor"
@@ -182,10 +182,9 @@ transition_matrix:
     cash_cow: 0.05
 
   distressed:
-    distressed: 0.35
+    distressed: 0.40
     turnaround: 0.30
-    declining: 0.25
-    # 10% 退市（未建模）
+    declining: 0.30
 
   turnaround:
     growth: 0.35
@@ -213,7 +212,7 @@ transition_matrix:
 quality_classification:
   quality:
     states: ["growth", "mature", "cash_cow"]
-    base_score_bonus: 10
+    base_score_bonus: 5
 
   uncertain:
     states: ["emerging", "slowing", "turnaround", "cyclical_peak", "cyclical_trough"]
@@ -221,4 +220,4 @@ quality_classification:
 
   poor:
     states: ["declining", "distressed"]
-    base_score_penalty: 15
+    base_score_penalty: 8

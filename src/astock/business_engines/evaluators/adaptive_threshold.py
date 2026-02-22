@@ -91,6 +91,8 @@ class ThresholdSet:
 
     def scale(self, multiplier: float) -> 'ThresholdSet':
         """按乘数缩放所有阈值"""
+        if multiplier is None:
+            return None
         return ThresholdSet(
             metric=self.metric,
             excellent=self.excellent * multiplier,
@@ -190,7 +192,7 @@ class AdaptiveThresholdEngine:
     从 YAML 配置加载基础阈值和调整乘数。
 
     Example:
-        >>> engine = AdaptiveThresholdEngine.from_config("config/adaptive_thresholds.yaml")
+        >>> engine = AdaptiveThresholdEngine.with_defaults()
         >>> ctx = AdaptiveContext.from_company_info("医药生物", 500.0)
         >>> thresholds = engine.get_thresholds("roic_level", ctx)
         >>> print(thresholds.excellent)  # 医药行业调整后的阈值

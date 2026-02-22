@@ -242,7 +242,36 @@ class CopulaEvidenceFusion:
             ("profit", "ocf"): 0.55,
             ("roic", "gross_margin"): 0.40,
             ("roe", "net_margin"): 0.50,
+            ("fcf_margin", "ocf"): 0.70,          # FCF 基于 OCF
+            ("fcf_margin", "net_margin"): 0.55,    # 现金利润率 vs 应计利润率
+            ("asset_turnover", "roic"): 0.60,      # DuPont 组分
+            ("asset_turnover", "revenue"): 0.45,   # 都反映营收效率
         }
+
+    @staticmethod
+    def _extract_base_metric(evidence_name: str) -> str:
+        """
+        从证据名称中提取基础指标名
+
+        【M2 修复】处理各种证据后缀：
+        - roic_trend → roic
+        - roe_stability → roe
+        - gross_margin_deterioration → gross_margin
+        - roic_structural_break → roic
+        - roic_improving → roic
+        - roic_cycle_bottom → roic
+        """
+        # 已知的基础指标名（按最长优先匹配）
+        known_metrics = [
+            "gross_margin", "net_margin",
+            "fcf_margin", "asset_turnover", "interest_coverage",
+            "roic", "roiic", "roe",
+            "revenue", "ocf", "profit",
+        ]
+        for metric in known_metrics:
+            if evidence_name == metric or evidence_name.startswith(metric + "_"):
+                return metric
+        return evidence_name
 
     def _build_correlation_matrix(
         self,
@@ -263,9 +292,17 @@ class CopulaEvidenceFusion:
                 if i >= j:
                     continue
 
-                # 提取指标名（去除后缀）
-                metric_i = name_i.replace("_trend", "").replace("_level", "")
-                metric_j = name_j.replace("_trend", "").replace("_level", "")
+                # 【M2 修复】提取基础指标名，处理各种证据后缀
+                metric_i = self._extract_base_metric(name_i)
+                metric_j = self._extract_base_metric(name_j)
+
+                # 同一基础指标的不同证据 (如 roic_trend 和 roic_stability)
+                # 高度冗余，应设置高相关性以避免重复计算
+                if metric_i == metric_j:
+                    corr = 0.85
+                    matrix[i, j] = corr
+                    matrix[j, i] = corr
+                    continue
 
                 # 查找相关系数
                 key1 = (metric_i, metric_j)
@@ -373,21 +410,21 @@ class CopulaEvidenceFusion:
         weight_adjustment: float
     ) -> float:
         """
-        Copula 加权融合
+        Copula-adjusted fusion using ESS-weighted blend.
 
-        使用调整后的几何平均
+        当 ESS = n (独立): 纯算术均值 (正确累积独立证据)
+        当 ESS → 1 (完全相关): 纯中位数 (冗余证据不应膨胀置信度)
+
+        旧公式 exp(log_mean * w) 在高相关性下会膨胀 belief，方向反了。
         """
-        # 避免零值
         values = np.maximum(values, 1e-10)
+        arith_mean = float(np.mean(values))
+        median_val = float(np.median(values))
 
-        # 几何平均
-        log_mean = np.mean(np.log(values))
+        # 线性混合: ESS/n=1 → 纯均值; ESS/n→0 → 纯中位数
+        adjusted = weight_adjustment * arith_mean + (1.0 - weight_adjustment) * median_val
 
-        # 应用权重调整
-        # 当相关性高时，结果更接近单个值而非乘积
-        adjusted = np.exp(log_mean * weight_adjustment)
-
-        return float(adjusted)
+        return adjusted
 
     def _compute_contributions(
         self,

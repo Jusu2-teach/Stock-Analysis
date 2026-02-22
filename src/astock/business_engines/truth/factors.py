@@ -27,8 +27,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from ..domain import FactorId, FactorResult, ProbeInput, TruthWarning, WarningLevel
-from ..config import (
+from .models import FactorId, FactorResult, ProbeInput, TruthWarning, WarningLevel
+from .config import (
     TruthConfig,
     AlphaFactorConfig,
     BetaFactorConfig,
@@ -360,6 +360,8 @@ class BetaFactor:
 
         warnings: List[TruthWarning] = []
         components: Dict[str, float] = {}
+        conf = config.beta_config
+        weights = conf.component_weights
 
         score = 0.0
         total_weight = 0.0
@@ -385,39 +387,39 @@ class BetaFactor:
                 details={"asset_type": "unknown", "data_available": False},
             ), warnings
 
-        # 1. 硬资产比率 (核心指标，权重45%)
+        # 1. 硬资产比率 (核心指标)
         hard_asset_ratio = get_financial_context(probes, "ratio_hard_asset", -1.0)
         if hard_asset_ratio >= 0:
             # 硬资产比率直接就是 β 分数: 高硬资产 = 高β = 重资产
-            w = 0.45
+            w = weights.get("hard_asset_ratio", 0.45)
             score += w * hard_asset_ratio
             total_weight += w
             components["hard_asset_ratio"] = hard_asset_ratio
 
-        # 2. 非流动资产比率 (权重25%)
+        # 2. 非流动资产比率
         nca_ratio = get_financial_context(probes, "ratio_nca", -1.0)
         if nca_ratio >= 0:
-            w = 0.25
+            w = weights.get("nca_ratio", 0.25)
             score += w * nca_ratio
             total_weight += w
             components["nca_ratio"] = nca_ratio
 
-        # 3. 无形资产比率 (轻资产特征，反向，权重15%)
+        # 3. 无形资产比率 (轻资产特征，反向)
         intang_ratio = get_financial_context(probes, "ratio_intang_asset", -1.0)
         if intang_ratio >= 0:
             # 高无形资产 = 轻资产 = 低β
             beta_from_intang = 1.0 - min(1.0, intang_ratio * 2)
-            w = 0.15
+            w = weights.get("intang_ratio", 0.15)
             score += w * beta_from_intang
             total_weight += w
             components["intang_ratio"] = intang_ratio
 
-        # 4. 营运资本比率 (轻资产特征，反向，权重15%)
+        # 4. 营运资本比率 (轻资产特征，反向)
         working_capital_ratio = get_financial_context(probes, "ratio_working_capital", -1.0)
         if working_capital_ratio >= 0:
             # 高营运资本比率 = 轻资产 = 低β
             beta_from_wc = 1.0 - min(1.0, working_capital_ratio)
-            w = 0.15
+            w = weights.get("working_capital_ratio", 0.15)
             score += w * beta_from_wc
             total_weight += w
             components["working_capital_ratio"] = working_capital_ratio

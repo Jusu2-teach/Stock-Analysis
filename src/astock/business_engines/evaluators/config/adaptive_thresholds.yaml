@@ -1,257 +1,251 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# AStock Evaluators v2.0 - 自适应阈值配置
+# AStock Evaluators v2.1 - 自适应阈值配置
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 # 设计原则:
-#   动态阈值 = 基准 × 行业系数 × 规模系数 × 周期系数
+#   动态阈值 = 基准 × 行业系数 × 规模系数 + 周期调整
 #
-# 告别硬编码！不同行业/规模/周期有不同的合理范围
+# 注意: 字段名必须与 adaptive_threshold.py 的 ThresholdSet 一致:
+#   excellent, good, acceptable, poor, veto
+# 指标键名必须与 with_defaults() 及 engine.py 的查询一致:
+#   roic_level, roic_trend, roe_level, revenue_growth,
+#   gross_margin, net_margin, ocf_ratio
 # ═══════════════════════════════════════════════════════════════════════════════
 
 metadata:
-  version: "2.0.0"
-  description: "自适应阈值配置 - 告别硬编码"
+  version: "2.1.0"
+  description: "自适应阈值配置 - 与代码命名对齐"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 基准阈值（全市场中位数水平）
+# 字段: excellent, good, acceptable, poor, veto
 # ═══════════════════════════════════════════════════════════════════════════════
 base_thresholds:
-  # ROIC 阈值
-  roic:
-    excellent: 15.0      # 优秀 (P75)
-    good: 10.0           # 良好 (P50)
-    fair: 5.0            # 一般 (P25)
-    warning: 0.0         # 警告 (盈亏线)
-    high_value: 15.0     # 高位稳定阈值
-    moat_min: 12.0       # 护城河最低
-    dividend_min: 10.0   # 稳定分红最低
+  # ROIC 绝对水平阈值 (A股校准)
+  roic_level:
+    excellent: 12.0       # 优秀 (A股P75)
+    good: 8.0             # 良好 (A股P50)
+    acceptable: 5.0       # 一般 (A股P25)
+    poor: 2.0             # 较差
+    veto: -5.0            # 否决线（允许短期亏损）
 
-  # ROE 阈值
-  roe:
-    excellent: 18.0
-    good: 12.0
-    fair: 6.0
-    warning: 0.0
-    high_value: 15.0
-    moat_min: 12.0
-    dividend_min: 10.0
+  # ROIC 趋势斜率阈值
+  roic_trend:
+    excellent: 0.02       # 强势改善
+    good: 0.01            # 稳步改善
+    acceptable: 0.0       # 持平
+    poor: -0.01           # 轻微恶化
+    veto: -0.05           # 严重恶化
+
+  # ROE 绝对水平阈值 (A股校准)
+  roe_level:
+    excellent: 15.0
+    good: 10.0
+    acceptable: 6.0
+    poor: 3.0
+    veto: -5.0
+
+  # 营收增长率阈值
+  revenue_growth:
+    excellent: 0.15
+    good: 0.08
+    acceptable: 0.03
+    poor: -0.02
+    veto: -0.15
 
   # 毛利率阈值
   gross_margin:
-    excellent: 50.0
-    good: 35.0
-    fair: 20.0
-    warning: 10.0
-    high_value: 40.0
-    moat_min: 35.0
-    dividend_min: 30.0
+    excellent: 35.0
+    good: 25.0
+    acceptable: 15.0
+    poor: 8.0
+    veto: 0.0
 
   # 净利率阈值
   net_margin:
-    excellent: 20.0
-    good: 12.0
-    fair: 5.0
-    warning: 0.0
-    high_value: 15.0
-    moat_min: 10.0
-    dividend_min: 8.0
+    excellent: 12.0
+    good: 8.0
+    acceptable: 4.0
+    poor: 1.0
+    veto: -5.0
 
-  # 斜率阈值（通用）
-  slope:
-    strong_up: 0.10
-    mild_up: 0.03
-    flat_upper: 0.03
-    flat_lower: -0.03
-    mild_down: -0.10
-    strong_down: -0.20
+  # 经营现金流比率阈值
+  ocf_ratio:
+    excellent: 1.2
+    good: 0.9
+    acceptable: 0.7
+    poor: 0.4
+    veto: 0.0
 
-  # 波动性阈值
-  volatility:
-    very_low: 0.10
-    low: 0.20
-    moderate: 0.35
-    high: 0.50
-    extreme: 0.70
+  # 自由现金流利润率阈值 (%)
+  fcf_margin:
+    excellent: 12.0       # 优秀: FCF/Revenue > 12%
+    good: 7.0             # 良好
+    acceptable: 3.0       # 一般
+    poor: 0.0             # 较差 (不产生自由现金流)
+    veto: -10.0           # 严重烧钱
 
-  # 默认值（其他指标）
-  _default:
-    excellent: 15.0
-    good: 10.0
-    fair: 5.0
-    warning: 0.0
-    high_value: 10.0
-    moat_min: 8.0
-    dividend_min: 5.0
+  # 资产周转率阈值 (次/年)
+  asset_turnover:
+    excellent: 1.20       # 高效率
+    good: 0.80            # 良好
+    acceptable: 0.50      # 一般
+    poor: 0.30            # 低效率
+    veto: 0.10            # 极低效率
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 行业调整系数
+# 键名必须与 IndustryCategory 枚举值匹配:
+#   technology, healthcare, consumer_staples, consumer_discretionary,
+#   financials, industrials, materials, energy, utilities,
+#   real_estate, telecom
 # ═══════════════════════════════════════════════════════════════════════════════
 industry_multipliers:
-  # 高资本密集行业 - ROIC天然较低
-  capital_intensive:
-    industries: ["钢铁", "化工", "公用事业", "电力", "交通运输", "建筑"]
-    multipliers:
-      roic: 0.70          # ROIC阈值 × 0.7
-      roe: 0.80
-      gross_margin: 0.60
-      net_margin: 0.70
-      slope: 1.0
-      cv_tolerance: 1.2   # 波动容忍度提高
+  technology:
+    roic_level: 1.20
+    roic_trend: 1.20
+    roe_level: 1.10
+    revenue_growth: 1.50
+    gross_margin: 1.20
+    net_margin: 1.30
+    fcf_margin: 1.10           # 科技公司 FCF 要求不高 (大量研发投入)
+    asset_turnover: 0.80       # 科技公司资产周转率较低
 
-  # 轻资产行业 - ROIC天然较高
-  asset_light:
-    industries: ["软件", "互联网", "咨询", "广告", "传媒"]
-    multipliers:
-      roic: 1.50
-      roe: 1.30
-      gross_margin: 1.20
-      net_margin: 1.30
-      slope: 1.20
-      cv_tolerance: 1.0
+  healthcare:
+    roic_level: 1.10
+    roic_trend: 1.00
+    roe_level: 1.10
+    revenue_growth: 1.20
+    gross_margin: 1.30
+    net_margin: 1.20
+    fcf_margin: 1.00
+    asset_turnover: 0.90
 
-  # 消费品牌 - 毛利率高
-  consumer_brand:
-    industries: ["白酒", "食品饮料", "医药", "化妆品", "家电"]
-    multipliers:
-      roic: 1.20
-      roe: 1.10
-      gross_margin: 1.30
-      net_margin: 1.20
-      slope: 1.0
-      cv_tolerance: 0.9
+  consumer_staples:
+    roic_level: 1.20
+    roe_level: 1.10
+    gross_margin: 1.30
+    net_margin: 1.20
+    fcf_margin: 1.20           # 必选消费 FCF 应稳定较高
+    asset_turnover: 1.10
 
-  # 周期性行业 - 波动容忍度高
-  cyclical:
-    industries: ["有色", "航运", "券商", "房地产", "煤炭", "石油"]
-    multipliers:
-      roic: 0.80
-      roe: 0.80
-      gross_margin: 0.70
-      net_margin: 0.70
-      slope: 0.80          # 斜率要求降低
-      cv_tolerance: 1.50   # 波动容忍度大幅提高
-      decline_tolerance: 1.30  # 下跌容忍度提高
+  consumer_discretionary:
+    roic_level: 1.00
+    roe_level: 1.00
+    revenue_growth: 1.10
+    gross_margin: 0.90
+    fcf_margin: 0.90
+    asset_turnover: 1.10
 
-  # 金融行业 - 特殊指标体系
-  financial:
-    industries: ["银行", "保险", "证券", "信托"]
-    multipliers:
-      roic: 0.50          # 金融机构ROIC计算方式不同
-      roe: 1.0
-      gross_margin: 0.0   # 不适用
-      net_margin: 0.80
-      slope: 0.90
-      cv_tolerance: 1.20
+  financials:
+    roic_level: 0.60
+    roic_trend: 0.80
+    roe_level: 0.80
+    revenue_growth: 0.70
+    gross_margin: null      # 不适用
+    net_margin: 0.80
+    fcf_margin: null           # 金融业 FCF 不适用
+    asset_turnover: null       # 金融业资产周转不适用
 
-  # 科技制造 - 高增长高波动
-  tech_manufacturing:
-    industries: ["半导体", "电子", "新能源", "汽车零部件"]
-    multipliers:
-      roic: 1.10
-      roe: 1.0
-      gross_margin: 0.90
-      net_margin: 0.90
-      slope: 1.30          # 对增长要求更高
-      cv_tolerance: 1.30
+  industrials:
+    roic_level: 0.90
+    revenue_growth: 0.90
+    gross_margin: 0.80
+    net_margin: 0.80
+    fcf_margin: 0.90
+    asset_turnover: 0.90
 
-  # 默认（未分类）
-  _default:
-    multipliers:
-      roic: 1.0
-      roe: 1.0
-      gross_margin: 1.0
-      net_margin: 1.0
-      slope: 1.0
-      cv_tolerance: 1.0
+  materials:
+    roic_level: 0.80
+    roe_level: 0.80
+    gross_margin: 0.70
+    net_margin: 0.70
+    revenue_growth: 0.80
+    fcf_margin: 0.80
+    asset_turnover: 0.80
+
+  energy:
+    roic_level: 0.80
+    roe_level: 0.80
+    gross_margin: 0.60
+    net_margin: 0.70
+    fcf_margin: 0.70           # 能源行业 capex 重
+    asset_turnover: 0.70
+
+  utilities:
+    roic_level: 0.70
+    roic_trend: 0.80
+    roe_level: 0.80
+    revenue_growth: 0.50
+    gross_margin: 0.60
+    net_margin: 0.70
+    fcf_margin: 0.60           # 公用事业 capex 极重
+    asset_turnover: 0.50
+
+  real_estate:
+    roic_level: 0.70
+    roe_level: 0.80
+    revenue_growth: 0.60
+    gross_margin: 0.70
+    net_margin: 0.70
+    fcf_margin: 0.50           # 房地产 FCF 极度波动
+    asset_turnover: 0.40
+
+  telecom:
+    roic_level: 0.80
+    revenue_growth: 0.60
+    gross_margin: 0.90
+    net_margin: 0.80
+    fcf_margin: 0.80
+    asset_turnover: 0.60
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 规模调整系数
+# 键名必须与 SizeTier 枚举值匹配:
+#   mega_cap, large_cap, mid_cap, small_cap
+# 值为各指标的乘数
 # ═══════════════════════════════════════════════════════════════════════════════
 size_tier_multipliers:
-  # 超大盘 > 1000亿
   mega_cap:
-    market_cap_min: 100000000000
-    multipliers:
-      stability_weight: 1.30   # 更看重稳定性
-      growth_weight: 0.80      # 降低增长期望
-      slope_threshold: 0.70    # 斜率要求降低
-      volatility_tolerance: 0.80  # 波动容忍度降低
+    revenue_growth: 0.70      # 大盘股增长预期较低
+    roic_level: 1.0
+    roe_level: 1.0
 
-  # 大盘 200-1000亿
   large_cap:
-    market_cap_min: 20000000000
-    market_cap_max: 100000000000
-    multipliers:
-      stability_weight: 1.10
-      growth_weight: 1.0
-      slope_threshold: 0.90
-      volatility_tolerance: 0.90
+    revenue_growth: 0.90
+    roic_level: 1.0
+    roe_level: 1.0
 
-  # 中盘 50-200亿
   mid_cap:
-    market_cap_min: 5000000000
-    market_cap_max: 20000000000
-    multipliers:
-      stability_weight: 0.90
-      growth_weight: 1.20
-      slope_threshold: 1.10
-      volatility_tolerance: 1.10
+    revenue_growth: 1.10
+    roic_level: 1.0
+    roe_level: 1.0
 
-  # 小盘 < 50亿
   small_cap:
-    market_cap_max: 5000000000
-    multipliers:
-      stability_weight: 0.70
-      growth_weight: 1.50      # 更看重成长性
-      slope_threshold: 1.30
-      volatility_tolerance: 1.30
+    revenue_growth: 1.30      # 小盘股增长预期较高
+    roic_level: 0.90
+    roe_level: 0.90
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 市场周期调整（可从宏观数据自动推断）
+# 市场周期调整（加法偏移）
+# 键名必须与 MarketCycle 枚举值匹配:
+#   expansion, peak, contraction, trough
 # ═══════════════════════════════════════════════════════════════════════════════
 market_cycle_adjustments:
-  bull_market:
-    description: "牛市"
-    indicators:
-      index_trend: "up"
-      pe_percentile_gt: 70
-    adjustments:
-      growth_threshold: 1.20   # 牛市提高增长要求
-      decline_tolerance: 0.80  # 降低下跌容忍
-      turnaround_bonus: 0.80   # 降低反转加分
+  expansion:
+    roic_level: 0.0
+    revenue_growth: 0.0
 
-  bear_market:
-    description: "熊市"
-    indicators:
-      index_trend: "down"
-      pe_percentile_lt: 30
-    adjustments:
-      growth_threshold: 0.70   # 熊市降低增长要求
-      decline_tolerance: 1.30  # 提高下跌容忍
-      turnaround_bonus: 1.50   # 增加反转加分
-      cyclical_bottom_bonus: 1.50
+  peak:
+    roic_level: 1.0           # 顶部适度提高要求
+    revenue_growth: 0.02
 
-  recovery:
-    description: "复苏期"
-    indicators:
-      index_trend: "up"
-      pe_percentile_range: [30, 50]
-    adjustments:
-      growth_threshold: 0.90
-      decline_tolerance: 1.10
-      turnaround_bonus: 1.30
+  contraction:
+    roic_level: -2.0          # 收缩期降低要求
+    revenue_growth: -0.05
+    net_margin: -1.0
 
-  neutral:
-    description: "震荡市"
-    adjustments:
-      growth_threshold: 1.0
-      decline_tolerance: 1.0
-      turnaround_bonus: 1.0
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 时间衰减配置
-# ═══════════════════════════════════════════════════════════════════════════════
-temporal_decay:
-  half_life_years: 2.0      # 半衰期（年）
-  min_weight: 0.10          # 最低权重
-  recency_bonus: 1.50       # 最近1年额外加权
+  trough:
+    roic_level: -3.0          # 底部大幅降低要求
+    revenue_growth: -0.08
+    net_margin: -2.0

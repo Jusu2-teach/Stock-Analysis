@@ -128,7 +128,7 @@ class CompanyStateMachine:
     基于 HMM 思想推断公司当前状态和预测未来转移。
 
     Example:
-        >>> machine = CompanyStateMachine.from_config("config/state_machine.yaml")
+        >>> machine = CompanyStateMachine()
         >>> features = {
         ...     "revenue_growth": 0.25,
         ...     "roic_level": 18.0,
@@ -331,8 +331,9 @@ class CompanyStateMachine:
         # 计算置信度（基于概率分布的熵）
         probs_array = np.array(list(probabilities.values()))
         entropy = -np.sum(probs_array * np.log(probs_array + 1e-10))
-        max_entropy = np.log(len(self._profiles))
+        max_entropy = np.log(min(len(self._profiles), 5))
         confidence = 1.0 - (entropy / max_entropy) if max_entropy > 0 else 0.5
+        confidence = max(0.1, min(1.0, confidence))
 
         # 获取质量分类
         quality_class = self._profiles[most_likely_state].quality_class

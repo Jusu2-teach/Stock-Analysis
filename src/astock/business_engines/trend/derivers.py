@@ -204,6 +204,153 @@ class ROIICDeriver(BaseDeriver):
 
 
 # ============================================================================
+# FCF Margin 派生器
+# ============================================================================
+
+class FCFMarginDeriver(BaseDeriver):
+    """FCF Margin (Free Cash Flow Margin) 派生器
+
+    计算自由现金流利润率：FCF Margin = (OCF - Capex) / Revenue
+    其中：
+    - OCF = n_cashflow_act (经营活动产生的现金流量净额)
+    - Capex = c_pay_acq_const_fiolta (购建固定资产等支付的现金)
+    - Revenue = revenue (营业收入)
+
+    意义：衡量公司将收入转化为自由现金流的能力，
+    是比净利率更难操纵的盈利质量指标。
+    """
+
+    @property
+    def metric_name(self) -> str:
+        return "fcf_margin"
+
+    @property
+    def required_columns(self) -> Set[str]:
+        return {"n_cashflow_act", "c_pay_acq_const_fiolta", "revenue"}
+
+    @property
+    def description(self) -> str:
+        return "自由现金流利润率 (FCF Margin): (OCF - Capex) / Revenue"
+
+    def derive(self, con: Any, source_sql: str, group_column: str) -> str:
+        def _q(col: str) -> str:
+            return f'"{col}"'
+
+        view_name = self._generate_view_name()
+
+        sql = f"""
+            CREATE OR REPLACE TEMP VIEW {view_name} AS
+            SELECT *,
+                CASE
+                    WHEN revenue IS NULL OR revenue = 0 THEN NULL
+                    WHEN n_cashflow_act IS NULL THEN NULL
+                    ELSE (
+                        COALESCE(n_cashflow_act, 0)
+                        - COALESCE(c_pay_acq_const_fiolta, 0)
+                    ) / NULLIF(revenue, 0) * 100.0
+                END AS fcf_margin
+            FROM {source_sql}
+        """
+
+        logger.info(f"🔌 FCF Margin 派生器: (OCF - Capex) / Revenue → {view_name}")
+        con.execute(sql)
+        return view_name
+
+
+# ============================================================================
+# Asset Turnover 派生器 (DuPont 分解组分)
+# ============================================================================
+
+class AssetTurnoverDeriver(BaseDeriver):
+    """Asset Turnover (资产周转率) 派生器
+
+    计算资产周转率：Asset Turnover = Revenue / Total Assets
+    DuPont 分解要素：ROIC = Net Margin × Asset Turnover
+
+    意义：衡量公司利用资产创造收入的效率，
+    是区分 "利润型" 与 "效率型" 公司的关键指标。
+    """
+
+    @property
+    def metric_name(self) -> str:
+        return "asset_turnover"
+
+    @property
+    def required_columns(self) -> Set[str]:
+        return {"total_revenue", "total_assets"}
+
+    @property
+    def description(self) -> str:
+        return "资产周转率 (Asset Turnover): Revenue / Total Assets (DuPont 组分)"
+
+    def derive(self, con: Any, source_sql: str, group_column: str) -> str:
+        view_name = self._generate_view_name()
+
+        sql = f"""
+            CREATE OR REPLACE TEMP VIEW {view_name} AS
+            SELECT *,
+                CASE
+                    WHEN total_assets IS NULL OR total_assets = 0 THEN NULL
+                    WHEN total_revenue IS NULL THEN NULL
+                    ELSE total_revenue / NULLIF(total_assets, 0)
+                END AS asset_turnover
+            FROM {source_sql}
+        """
+
+        logger.info(f"🔌 Asset Turnover 派生器: Revenue / Total Assets → {view_name}")
+        con.execute(sql)
+        return view_name
+
+
+# ============================================================================
+# Interest Coverage 派生器
+# ============================================================================
+
+class InterestCoverageDeriver(BaseDeriver):
+    """Interest Coverage (利息覆盖倍数) 派生器
+
+    计算利息保障倍数：Interest Coverage = EBIT / Interest Expense
+    其中：
+    - EBIT ≈ 营业利润 + 利息支出 (简化估计)
+    - Interest Expense = int_exp (利息费用)
+
+    意义：衡量公司偿付利息的能力，
+    是评估财务安全性的核心杠杆指标。
+    < 1.5 = 危险, > 5.0 = 健康
+    """
+
+    @property
+    def metric_name(self) -> str:
+        return "interest_coverage"
+
+    @property
+    def required_columns(self) -> Set[str]:
+        return {"operate_profit", "int_exp"}
+
+    @property
+    def description(self) -> str:
+        return "利息覆盖倍数 (Interest Coverage): EBIT / Interest Expense"
+
+    def derive(self, con: Any, source_sql: str, group_column: str) -> str:
+        view_name = self._generate_view_name()
+
+        sql = f"""
+            CREATE OR REPLACE TEMP VIEW {view_name} AS
+            SELECT *,
+                CASE
+                    WHEN int_exp IS NULL OR int_exp = 0 THEN NULL
+                    ELSE (COALESCE(operate_profit, 0) + COALESCE(int_exp, 0))
+                         / NULLIF(ABS(int_exp), 0)
+                END AS interest_coverage
+            FROM {source_sql}
+        """
+
+        logger.info(f"🔌 Interest Coverage 派生器: EBIT / Interest Expense → {view_name}")
+        con.execute(sql)
+        return view_name
+
+
+# ============================================================================
 # 派生器注册系统
 # ============================================================================
 
@@ -346,6 +493,9 @@ def get_deriver_info(metric_name: str) -> Optional[Dict[str, Any]]:
 # ============================================================================
 
 register_deriver(ROIICDeriver())
+register_deriver(FCFMarginDeriver())
+register_deriver(AssetTurnoverDeriver())
+register_deriver(InterestCoverageDeriver())
 
 
 # ============================================================================
@@ -358,6 +508,9 @@ __all__ = [
     'BaseDeriver',
     # 内置派生器
     'ROIICDeriver',
+    'FCFMarginDeriver',
+    'AssetTurnoverDeriver',
+    'InterestCoverageDeriver',
     # 注册系统
     'DeriverRegistry',
     'register_deriver',

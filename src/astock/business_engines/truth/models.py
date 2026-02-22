@@ -238,6 +238,17 @@ class DynamicThreshold:
     confidence: float = 0.85         # 置信度
     unit: str = "percent"            # 单位
     description: str = ""            # 描述
+    actual_value: Optional[float] = None  # 实际观测值（用于 passed 判断）
+
+    @property
+    def passed(self) -> bool:
+        """实际值是否达标（超过阈值）
+
+        如果未设置 actual_value，默认返回 False。
+        """
+        if self.actual_value is None:
+            return False
+        return self.actual_value >= self.value
 
 
 @dataclass(frozen=True)
@@ -377,7 +388,7 @@ class TruthProfile:
 class TruthRunResult:
     """TRUTH 批量运行结果"""
     profiles: Sequence[TruthProfile] = ()
-    algo_version: str = "3.2.0"
+    algo_version: str = "3.3.0"
 
     def __len__(self) -> int:
         return len(self.profiles)

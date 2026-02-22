@@ -25,7 +25,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Mapping, Optional, Tuple
 
-from ..domain import (
+from .models import (
     DynamicThreshold,
     FactorId,
     FactorResult,
@@ -34,7 +34,7 @@ from ..domain import (
     TruthWarning,
     WarningLevel,
 )
-from ..config import (
+from .config import (
     TruthConfig,
     GravitySolverConfig,
     VelocitySolverConfig,
@@ -192,9 +192,11 @@ class GravitySolver:
             description=f"安全边际: ROIC 应 > {roic_threshold:.1f}% 才具备投资价值",
         )
 
-        # 归一化评分: 阈值越低 = 风险越低 = 评分越高
-        # 使用硬编码范围 [5%, 25%]
-        normalized_score = 1.0 - (roic_threshold - 5.0) / (25.0 - 5.0)
+        # 归一化评分: sigmoid 使分数分布更合理
+        # 新 k 系数动态范围 7.6%-15.9%, 中心 11%, 缩放 3.5
+        # 阈值 7.6% → 0.73, 11% → 0.50, 15.9% → 0.20
+        centered = (roic_threshold - 11.0) / 3.5
+        normalized_score = 1.0 / (1.0 + math.exp(centered))
         normalized_score = clamp(normalized_score, 0.0, 1.0)
 
         # 置信度基于数据完整性
@@ -310,8 +312,8 @@ class VelocitySolver:
         cycle_tolerance = conf.k_cycle_tolerance * alpha * 0.5
         components["cycle_tolerance"] = cycle_tolerance
 
-        # 基准增长 = GDP + CPI (名义增速)
-        base_growth = conf.gdp_growth_rate + conf.cpi_rate
+        # 基准增长 = GDP + CPI (名义增速) — 从宏观配置读取
+        base_growth = config.macro.gdp_growth_rate + config.macro.cpi_rate
         components["base_growth"] = base_growth
 
         # 增长天花板
@@ -349,8 +351,10 @@ class VelocitySolver:
             description=f"保守增长下限: {growth_floor:.1f}%/年",
         )
 
-        # 评分: 天花板越高 = 越好 (范围 0-50%)
-        normalized_score = growth_ceiling / 50.0
+        # 评分: 使用 sigmoid 归一化, 天花板越高越好
+        # 7% → 0.27, 12% → 0.50, 17% → 0.73, 25% → 0.91
+        centered = (growth_ceiling - 12.0) / 5.0
+        normalized_score = 1.0 / (1.0 + math.exp(-centered))
         normalized_score = clamp(normalized_score, 0.0, 1.0)
 
         # 置信度
@@ -485,21 +489,28 @@ class StructureSolver:
         components["stability_score"] = stability_score
 
         # ============================================================
-        # 维度2: 轻资产审查 (轻资产公司更需要护城河)
+        # 维度2: 资本壁垒 (重资产 = 天然护城河)
         # ============================================================
 
-        # 低 β = 轻资产 = 需要更强的护城河证明
-        # 使用 k_light_asset_scrutiny 系数
-        light_asset_factor = 1.0 - beta  # 0=重资产, 1=轻资产
+        # 高 β = 重资产 = 天然资本壁垒 (新进入者需要大量资本)
+        # 低 β = 轻资产 = 无资本壁垒，需要品牌/网络效应等护城河
+        capital_barrier = beta  # 0=无壁垒(轻资产), 1=高壁垒(重资产)
+        components["capital_barrier"] = capital_barrier
+
+        # 轻资产审查: 轻资产公司需更高标准证明护城河
+        light_asset_factor = 1.0 - beta
         scrutiny_adjustment = conf.k_light_asset_scrutiny * light_asset_factor
         components["light_asset_factor"] = light_asset_factor
         components["scrutiny_adjustment"] = scrutiny_adjustment
 
         # ============================================================
-        # 维度3: 成长质量 (真成长 = 护城河有支撑)
+        # 维度3: 成长动能 (高成长 = 护城河有经济动力支撑)
+        # 注意: 之前使用 verification (V因子), 但 V 已在 factor 层级
+        #       有 20% 权重, 在此重复使用会导致双重计算。
+        #       改用 gamma (成长因子) 更合理: 正在扩张的公司护城河有底气
         # ============================================================
 
-        quality_score = verification
+        quality_score = gamma
         components["quality_score"] = quality_score
 
         # ============================================================
@@ -516,10 +527,10 @@ class StructureSolver:
         # 加权计算护城河宽度
         # ============================================================
 
-        # 固定权重: 稳定性30%, 轻资产20%, 质量25%, 可持续25%
+        # 固定权重: 稳定性30%, 资本壁垒20%, 质量25%, 可持续25%
         moat_width = (
             0.30 * stability_score +
-            0.20 * light_asset_factor +
+            0.20 * capital_barrier +
             0.25 * quality_score +
             0.25 * durability_score
         )
@@ -721,6 +732,4 @@ __all__ = [
     # 辅助函数
     "get_factor_score",
     "clamp",
-    "lerp",
-    "smooth_step",
 ]

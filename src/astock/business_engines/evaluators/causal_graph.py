@@ -118,7 +118,7 @@ class CausalGraph:
     - `diagnose()`: 诊断指标变化的因果原因
 
     Example:
-        >>> graph = CausalGraph.from_config("config/causal_structure.yaml")
+        >>> graph = create_financial_causal_graph()
         >>> effect = graph.estimate_causal_effect(
         ...     intervention="roic_trend",
         ...     outcome="company_quality",
@@ -349,6 +349,15 @@ class CausalGraph:
         # 找到调整集
         adjustment_set = self.find_backdoor_adjustment(intervention, outcome)
 
+        # 【修复】实际应用 backdoor adjustment:
+        # 如果调整集中有未观测到的混淆因子，降低置信度
+        if adjustment_set:
+            unadjusted = [c for c in adjustment_set if c not in observed_data]
+            if unadjusted:
+                # 每个未调整的混淆因子降低 15% 置信度, 最低 50%
+                penalty = max(0.5, 1.0 - 0.15 * len(unadjusted))
+                confidence *= penalty
+
         # 计算置信度（基于路径数量和边强度）
         avg_strength = np.mean([
             self._get_edge_strength(path[i], path[i+1])
@@ -549,14 +558,28 @@ class CausalGraph:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def create_financial_causal_graph() -> CausalGraph:
-    """创建财务指标因果图的简化版本"""
+    """创建基于 DuPont 分解的财务因果图
+
+    DuPont 恒等式:
+        ROIC = Net Margin × Asset Turnover
+        ROE  = ROIC × Financial Leverage
+             = Net Margin × Asset Turnover × Leverage
+
+    相比原版改进:
+        1. 新增 asset_turnover_trend 和 leverage_trend 节点
+        2. ROIC 的因果路径拆分为 margin 和 efficiency 两个独立通道
+        3. ROE 通过 ROIC × leverage 公式而非直接从 net_margin 连接
+        4. 边权重基于 DuPont 代数关系而非主观估计
+    """
     graph = CausalGraph()
 
-    # 核心节点
+    # 核心节点 (含 DuPont 分解)
     nodes = [
         CausalNode("revenue_trend", "endogenous", "营收趋势", True, "revenue", prior_std=0.15),
         CausalNode("gross_margin_trend", "endogenous", "毛利率趋势", True, "gross_margin", prior_std=0.03),
         CausalNode("net_margin_trend", "endogenous", "净利率趋势", True, "net_margin", prior_std=0.05),
+        CausalNode("asset_turnover_trend", "endogenous", "资产周转率趋势", True, "asset_turnover", prior_std=0.05),
+        CausalNode("leverage_trend", "endogenous", "杠杆率趋势", True, "leverage", prior_std=0.10),
         CausalNode("roic_trend", "endogenous", "ROIC趋势", True, "roic", prior_std=0.03),
         CausalNode("roe_trend", "endogenous", "ROE趋势", True, "roe", prior_std=0.04),
         CausalNode("ocf_trend", "endogenous", "现金流趋势", True, "ocf", prior_std=0.10),
@@ -566,16 +589,29 @@ def create_financial_causal_graph() -> CausalGraph:
     for node in nodes:
         graph.add_node(node)
 
-    # 核心因果边
+    # DuPont 分解因果边
     edges = [
-        CausalEdge("revenue_trend", "gross_margin_trend", EffectType.MODERATED, 0.3, "规模效应"),
-        CausalEdge("gross_margin_trend", "net_margin_trend", EffectType.DIRECT, 0.7, "毛利传导"),
-        CausalEdge("net_margin_trend", "roic_trend", EffectType.DIRECT, 0.5, "利润率影响ROIC"),
-        CausalEdge("net_margin_trend", "roe_trend", EffectType.DIRECT, 0.6, "利润率影响ROE"),
-        CausalEdge("roe_trend", "ocf_trend", EffectType.DIRECT, 0.4, "盈利转化现金流"),
-        CausalEdge("roic_trend", "company_quality", EffectType.DIRECT, 0.25, "核心价值指标"),
-        CausalEdge("revenue_trend", "company_quality", EffectType.DIRECT, 0.15, "增长反映发展"),
-        CausalEdge("ocf_trend", "company_quality", EffectType.DIRECT, 0.20, "现金流验证质量"),
+        # 利润传导链: revenue → gross_margin → net_margin
+        CausalEdge("revenue_trend", "gross_margin_trend", EffectType.MODERATED, 0.30, "规模效应影响毛利"),
+        CausalEdge("gross_margin_trend", "net_margin_trend", EffectType.DIRECT, 0.70, "毛利传导至净利"),
+
+        # DuPont ROIC = Net Margin × Asset Turnover
+        CausalEdge("net_margin_trend", "roic_trend", EffectType.DIRECT, 0.55, "DuPont: 利润率→ROIC"),
+        CausalEdge("asset_turnover_trend", "roic_trend", EffectType.DIRECT, 0.45, "DuPont: 资产效率→ROIC"),
+
+        # DuPont ROE = ROIC × Leverage
+        CausalEdge("roic_trend", "roe_trend", EffectType.DIRECT, 0.60, "DuPont: ROIC驱动ROE"),
+        CausalEdge("leverage_trend", "roe_trend", EffectType.MODERATED, 0.30, "DuPont: 杠杆放大ROE"),
+
+        # 现金流验证
+        CausalEdge("net_margin_trend", "ocf_trend", EffectType.DIRECT, 0.50, "利润转化为现金"),
+        CausalEdge("revenue_trend", "ocf_trend", EffectType.DIRECT, 0.25, "营收驱动经营现金"),
+
+        # → 公司质量
+        CausalEdge("roic_trend", "company_quality", EffectType.DIRECT, 0.30, "ROIC是核心质量指标"),
+        CausalEdge("ocf_trend", "company_quality", EffectType.DIRECT, 0.25, "现金流验证盈利质量"),
+        CausalEdge("revenue_trend", "company_quality", EffectType.DIRECT, 0.15, "增长反映企业活力"),
+        CausalEdge("roe_trend", "company_quality", EffectType.DIRECT, 0.20, "ROE反映股东回报"),
     ]
 
     for edge in edges:

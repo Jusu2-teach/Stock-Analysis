@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Tuple
 
-from .domain import FactorId
+from .models import FactorId
 
 
 # ============================================================================
@@ -48,12 +48,15 @@ class AlphaFactorConfig:
 
 @dataclass(frozen=True)
 class BetaFactorConfig:
-    """β 因子 (资本密度) - 赚取利润所需的资本投入"""
+    """β 因子 (资本密度) - 赚取利润所需的资本投入
+
+    数据源: financial_context 探针的资产结构比率
+    """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "roic_level": 0.40,
-        "roic_volatility": 0.25,
-        "margin_level": 0.20,
-        "ocf_to_profit_ratio": 0.15,
+        "hard_asset_ratio": 0.45,      # (固定资产+在建工程) / 总资产
+        "nca_ratio": 0.25,             # 非流动资产 / 总资产
+        "intang_ratio": 0.15,          # 无形资产 / 总资产 (反向)
+        "working_capital_ratio": 0.15, # 营运资本 / 总资产 (反向)
     })
 
 
@@ -113,6 +116,18 @@ class VerificationFactorConfig:
 
 
 # ============================================================================
+# 宏观经济参数
+# ============================================================================
+
+@dataclass(frozen=True)
+class MacroConfig:
+    """宏观经济参数 - 可从外部注入，避免硬编码"""
+    gdp_growth_rate: float = 4.5    # GDP 增速 (%)
+    cpi_rate: float = 1.5           # CPI 通胀率 (%)
+    risk_free_rate: float = 2.5     # 无风险利率 (%)
+
+
+# ============================================================================
 # Layer 2: 求解器配置
 # ============================================================================
 
@@ -121,18 +136,16 @@ class GravitySolverConfig:
     """重力求解器 - ROIC 动态阈值计算"""
     base_roic_threshold: float = 8.0
     base_roe_threshold: float = 10.0
-    k_light_asset: float = 0.08
-    k_cycle_tolerance: float = 0.04
-    k_decay_penalty: float = 0.06
-    k_verification_bonus: float = 0.03
+    k_light_asset: float = 0.50        # 轻资产加成 (原 0.08, ×6.25 — 扩大动态范围)
+    k_cycle_tolerance: float = 0.30    # 周期容忍 (原 0.04, ×7.5)
+    k_decay_penalty: float = 0.40      # 衰退惩罚 (原 0.06, ×6.7)
+    k_verification_bonus: float = 0.25  # 真成长加成 (原 0.03, ×8.3)
     fraud_meltdown_enabled: bool = True
 
 
 @dataclass(frozen=True)
 class VelocitySolverConfig:
     """速度求解器 - 增长边界计算"""
-    gdp_growth_rate: float = 5.0
-    cpi_rate: float = 2.0
     k_true_growth: float = 0.15
     k_cycle_tolerance: float = 0.10
     # 增长分类标签: (normalized_score 范围)
@@ -198,18 +211,18 @@ class ScoringConfig:
         "VELOCITY": 0.35,
         "STRUCTURE": 0.25,
     })
-    factor_vs_solver_weight: float = 0.4
+    factor_vs_solver_weight: float = 0.5
     signal_thresholds: Mapping[str, float] = field(default_factory=lambda: {
-        "strong_buy": 0.85,   # 提高: 0.80 -> 0.85
-        "buy": 0.72,          # 提高: 0.65 -> 0.72
-        "hold": 0.55,         # 提高: 0.50 -> 0.55
-        "caution": 0.40,      # 提高: 0.35 -> 0.40
+        "strong_buy": 0.75,
+        "buy": 0.62,
+        "hold": 0.48,
+        "caution": 0.35,
     })
     grade_thresholds: Mapping[str, float] = field(default_factory=lambda: {
-        "A": 0.85,            # 提高: 0.80 -> 0.85
-        "B": 0.72,            # 提高: 0.65 -> 0.72
-        "C": 0.55,            # 提高: 0.50 -> 0.55
-        "D": 0.40,            # 提高: 0.35 -> 0.40
+        "A": 0.75,
+        "B": 0.62,
+        "C": 0.48,
+        "D": 0.35,
     })
 
 
@@ -220,7 +233,7 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "3.0.0"
+    algo_version: str = "3.3.0"
     config_version: str = "default"
 
     # Layer 0
@@ -233,6 +246,9 @@ class TruthConfig:
     delta_fraud_config: DeltaFraudFactorConfig = field(default_factory=DeltaFraudFactorConfig)
     delta_decay_config: DeltaDecayFactorConfig = field(default_factory=DeltaDecayFactorConfig)
     verification_config: VerificationFactorConfig = field(default_factory=VerificationFactorConfig)
+
+    # 宏观参数
+    macro: MacroConfig = field(default_factory=MacroConfig)
 
     # Layer 2
     gravity_solver: GravitySolverConfig = field(default_factory=GravitySolverConfig)
@@ -299,6 +315,8 @@ __all__ = [
     "DeltaFraudFactorConfig",
     "DeltaDecayFactorConfig",
     "VerificationFactorConfig",
+    # 宏观参数
+    "MacroConfig",
     # Layer 2
     "GravitySolverConfig",
     "VelocitySolverConfig",

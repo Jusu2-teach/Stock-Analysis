@@ -51,8 +51,8 @@ veto_rules:
     name: "严重趋势衰退"
     description: "长期趋势严重下滑且统计显著"
     condition:
-      log_slope_lt: -0.10
-      r_squared_gt: 0.40
+      log_slope_lt: -0.15
+      r_squared_gt: 0.50
     exemptions:
       - type: cyclical_bottom
       - type: turnaround
@@ -60,21 +60,21 @@ veto_rules:
 
   - id: consecutive_loss
     name: "连续亏损"
-    description: "连续3年以上亏损"
+    description: "连续4年以上亏损"
     condition:
       latest_value_lt: 0
-      loss_year_count_gte: 3
+      loss_year_count_gte: 4
     exemptions:
       - type: turnaround
     message_template: "连续亏损{loss_year_count}年, 最新值={latest_value:.2f}"
 
   - id: cumulative_collapse
     name: "累计崩塌"
-    description: "从高位崩塌至低位（跌幅超80%）"
+    description: "从高位崩塌至低位（跌幅超85%）"
     condition:
       max_value_gt: 30
       latest_value_lt: 5
-      decline_pct_gt: 0.80
+      decline_pct_gt: 0.85
     message_template: "从{max_value:.1f}崩塌至{latest_value:.1f}"
 
   - id: severe_deterioration
@@ -88,11 +88,11 @@ veto_rules:
 
   - id: peak_decline
     name: "峰值暴跌"
-    description: "从历史峰值下跌超过70%"
+    description: "从历史峰值下跌超过75%"
     condition:
-      peak_decline_pct_gt: 0.70
+      peak_decline_pct_gt: 0.75
     params:
-      cyclical_threshold: 0.80
+      cyclical_threshold: 0.85
     message_template: "从峰值下跌{peak_decline_pct:.1%}"
 
   - id: roiic_capital_destruction
