@@ -22,14 +22,15 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Any
 # ============================================================================
 
 class FactorId(str, Enum):
-    """六维基因因子标识
+    """七维基因因子标识
 
-    T.R.U.T.H. 系统的核心：彻底去标签化，用数据驱动的六维基因描述公司特征
+    T.R.U.T.H. 系统的核心：彻底去标签化，用数据驱动的七维基因描述公司特征
 
     属性基因（描述公司特质）:
         - ALPHA (α): 周期性 - 业绩对宏观经济的敏感弹性
         - BETA (β): 资本密度 - 赚取下一块钱利润所需的"重"度
         - GAMMA (γ): 成长动能 - 业务表面上的扩张加速度
+        - LAMBDA (λ): 杠杆强度 - 偿债安全边际与资本结构健康度
 
     风险基因（识别隐患）:
         - DELTA_FRAUD (δ_fraud): 欺诈熵 - 财务报表的物理真实性 (熔断项)
@@ -41,6 +42,7 @@ class FactorId(str, Enum):
     ALPHA = "alpha"                   # α: 周期性
     BETA = "beta"                     # β: 资本密度
     GAMMA = "gamma"                   # γ: 成长动能
+    LAMBDA = "lambda_leverage"        # λ: 杠杆强度 (v4.1 新增)
     DELTA_FRAUD = "delta_fraud"       # δ_fraud: 欺诈熵 (熔断项)
     DELTA_DECAY = "delta_decay"       # δ_decay: 衰退熵 (惩罚项)
     VERIFICATION = "verification"     # V: 真相验证
@@ -52,6 +54,7 @@ class FactorId(str, Enum):
             "alpha": "α 周期性",
             "beta": "β 资本密度",
             "gamma": "γ 成长动能",
+            "lambda_leverage": "λ 杠杆强度",
             "delta_fraud": "δ_fraud 欺诈熵",
             "delta_decay": "δ_decay 衰退熵",
             "verification": "V 验证因子",
@@ -61,7 +64,7 @@ class FactorId(str, Enum):
     @property
     def category(self) -> str:
         """因子类别"""
-        if self.value in ("alpha", "beta", "gamma"):
+        if self.value in ("alpha", "beta", "gamma", "lambda_leverage"):
             return "attribute"  # 属性基因
         elif self.value in ("delta_fraud", "delta_decay"):
             return "risk"  # 风险基因

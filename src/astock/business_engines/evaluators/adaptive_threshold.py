@@ -143,26 +143,103 @@ class AdaptiveContext:
 
     @staticmethod
     def _map_industry(name: str) -> IndustryCategory:
-        """将行业名称映射到分类"""
-        # 简化映射，实际应使用更完整的映射表
+        """将行业名称映射到分类
+
+        v4.1: 扩展至覆盖全部31个申万一级行业 + 常见别名
+        """
         mapping = {
+            # TECHNOLOGY — 科技
             "信息技术": IndustryCategory.TECHNOLOGY,
             "软件": IndustryCategory.TECHNOLOGY,
             "半导体": IndustryCategory.TECHNOLOGY,
+            "电子": IndustryCategory.TECHNOLOGY,
+            "计算机": IndustryCategory.TECHNOLOGY,
+            "通信设备": IndustryCategory.TECHNOLOGY,
+            "光电": IndustryCategory.TECHNOLOGY,
+            "集成电路": IndustryCategory.TECHNOLOGY,
+            # HEALTHCARE — 医药
             "医药": IndustryCategory.HEALTHCARE,
             "医疗": IndustryCategory.HEALTHCARE,
+            "生物": IndustryCategory.HEALTHCARE,
+            "制药": IndustryCategory.HEALTHCARE,
+            "医疗器械": IndustryCategory.HEALTHCARE,
+            "中药": IndustryCategory.HEALTHCARE,
+            "医疗服务": IndustryCategory.HEALTHCARE,
+            # CONSUMER_STAPLES — 必需消费
             "食品饮料": IndustryCategory.CONSUMER_STAPLES,
+            "食品": IndustryCategory.CONSUMER_STAPLES,
+            "饮料": IndustryCategory.CONSUMER_STAPLES,
+            "白酒": IndustryCategory.CONSUMER_STAPLES,
+            "乳制品": IndustryCategory.CONSUMER_STAPLES,
+            "农林牧渔": IndustryCategory.CONSUMER_STAPLES,
+            "农业": IndustryCategory.CONSUMER_STAPLES,
+            # CONSUMER_DISCRETIONARY — 可选消费
             "家电": IndustryCategory.CONSUMER_DISCRETIONARY,
             "汽车": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "纺织服装": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "纺织": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "服装": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "轻工制造": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "家用电器": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "商贸零售": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "商业贸易": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "零售": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "社会服务": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "休闲服务": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "旅游": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "酒店": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "美容护理": IndustryCategory.CONSUMER_DISCRETIONARY,
+            "传媒": IndustryCategory.CONSUMER_DISCRETIONARY,
+            # FINANCIALS — 金融
             "银行": IndustryCategory.FINANCIALS,
             "保险": IndustryCategory.FINANCIALS,
+            "非银金融": IndustryCategory.FINANCIALS,
+            "证券": IndustryCategory.FINANCIALS,
+            "信托": IndustryCategory.FINANCIALS,
+            "金融": IndustryCategory.FINANCIALS,
+            "多元金融": IndustryCategory.FINANCIALS,
+            # INDUSTRIALS — 工业
             "机械": IndustryCategory.INDUSTRIALS,
+            "机械设备": IndustryCategory.INDUSTRIALS,
+            "国防军工": IndustryCategory.INDUSTRIALS,
+            "军工": IndustryCategory.INDUSTRIALS,
+            "航空航天": IndustryCategory.INDUSTRIALS,
+            "电力设备": IndustryCategory.INDUSTRIALS,
+            "新能源": IndustryCategory.INDUSTRIALS,
+            "交通运输": IndustryCategory.INDUSTRIALS,
+            "航空": IndustryCategory.INDUSTRIALS,
+            "航运": IndustryCategory.INDUSTRIALS,
+            "铁路": IndustryCategory.INDUSTRIALS,
+            "物流": IndustryCategory.INDUSTRIALS,
+            "建筑装饰": IndustryCategory.INDUSTRIALS,
+            "建筑": IndustryCategory.INDUSTRIALS,
+            "装饰": IndustryCategory.INDUSTRIALS,
+            "环保": IndustryCategory.INDUSTRIALS,
+            "公用事业": IndustryCategory.INDUSTRIALS,
+            "综合": IndustryCategory.INDUSTRIALS,
+            # MATERIALS — 材料
             "化工": IndustryCategory.MATERIALS,
             "钢铁": IndustryCategory.MATERIALS,
+            "有色金属": IndustryCategory.MATERIALS,
+            "有色": IndustryCategory.MATERIALS,
+            "建筑材料": IndustryCategory.MATERIALS,
+            "建材": IndustryCategory.MATERIALS,
+            "基础化工": IndustryCategory.MATERIALS,
+            # ENERGY — 能源
             "煤炭": IndustryCategory.ENERGY,
+            "石油": IndustryCategory.ENERGY,
+            "石化": IndustryCategory.ENERGY,
+            "石油石化": IndustryCategory.ENERGY,
+            # UTILITIES — 公用事业
             "电力": IndustryCategory.UTILITIES,
+            "燃气": IndustryCategory.UTILITIES,
+            "水务": IndustryCategory.UTILITIES,
+            # REAL_ESTATE — 房地产
             "房地产": IndustryCategory.REAL_ESTATE,
+            "地产": IndustryCategory.REAL_ESTATE,
+            # TELECOM — 通信
             "通信": IndustryCategory.TELECOM,
+            "电信": IndustryCategory.TELECOM,
         }
 
         for key, category in mapping.items():

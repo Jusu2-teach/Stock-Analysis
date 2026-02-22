@@ -229,7 +229,8 @@ class InflectionProbe:
 
         # 搜索范围：确保每段至少有 min_segment_length 个点
         for k in range(self.min_segment_length - 1, n - self.min_segment_length):
-            # 左段: 0 到 k+1 (包含 k+1 个点)
+            # v4.1 修复: 消除断点处数据重叠 (标准 Bai-Perron 分段不共享边界点)
+            # 左段: 0 到 k (包含 k+1 个点)
             x_l = x[:k+1]
             y_l = values_array[:k+1]
             if len(x_l) < self.min_segment_length:
@@ -238,9 +239,9 @@ class InflectionProbe:
             slope_l, intercept_l, r_l, _, std_l = fast_linregress(x_l, y_l)
             sse_l = np.sum((y_l - (slope_l * x_l + intercept_l)) ** 2)
 
-            # 右段: k 到 n
-            x_r = x[k:]
-            y_r = values_array[k:]
+            # 右段: k+1 到 n (不包含断点, 消除重叠)
+            x_r = x[k+1:]
+            y_r = values_array[k+1:]
             if len(x_r) < self.min_segment_length:
                 continue
 

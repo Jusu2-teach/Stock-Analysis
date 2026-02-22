@@ -574,7 +574,7 @@ class CausalBayesianEvaluator:
         # 获取自适应阈值
         thresholds = {}
         try:
-            for metric_name in ["roic_level", "roe_level", "gross_margin", "net_margin"]:
+            for metric_name in ["roic_level", "roe_level", "gross_margin", "net_margin", "ocf_ratio", "revenue_growth"]:
                 ts = self._threshold_engine.get_thresholds(metric_name, context)
                 thresholds[f"{metric_name}_high"] = ts.excellent
                 thresholds[f"{metric_name}_moat_min"] = ts.good
@@ -585,7 +585,8 @@ class CausalBayesianEvaluator:
         veto_count = 0
         veto_reasons = []
 
-        for metric in ["roic", "roe", "gross_margin", "net_margin"]:
+        # v4.1: 规则引擎扩展至全8个指标 (原仅4个)
+        for metric in ["roic", "roe", "gross_margin", "net_margin", "revenue", "ocf", "profit", "roiic"]:
             metric_features = self._build_metric_features(metric, features)
 
             result = self._rule_engine.evaluate(
@@ -804,14 +805,16 @@ class CausalBayesianEvaluator:
 
         base_score = weighted_sum / total_weight if total_weight > 0 else 50.0
 
-        # 2. 规则引擎调整 (加分递减效应防天花板)
+        # 2. 规则引擎调整 (加分/扣分均有递减效应)
         rule_adjustment = 0.0
         if rule_result and not rule_result.vetoed:
             penalty = rule_result.total_penalty
             bonus = rule_result.total_bonus
 
-            # 扣分直接应用
-            penalty_adj = -penalty
+            # v4.1: 扣分递减——分数越低，扣分效果越小 (防止快速崩塾到0)
+            floor_headroom = max(0, base_score - 10)  # 最低不低于10分
+            effective_penalty = penalty * min(1.0, floor_headroom / 40.0)
+            penalty_adj = -effective_penalty
 
             # 加分递减: 基础分越高、加分效果越小 (headroom 式衰减)
             headroom = max(0, 100 - base_score)

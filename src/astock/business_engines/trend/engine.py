@@ -747,7 +747,8 @@ def _extract_ratios_from_indicators(df_sorted: pd.DataFrame) -> pd.DataFrame:
             features["ratio_debt_to_assets"] = _clamp(debt_pct / 100.0)
 
         ratio_recv = 0.0
-        if not pd.isna(ar_turnover) and ar_turnover > 0 and ar_turnover < 1.0:
+        if not pd.isna(ar_turnover) and ar_turnover > 0 and ar_turnover < 100.0:
+            # v4.1: 阈值从 1.0→100.0, 应收周转率正常值 5-20, 原<1.0 过滤掉几乎所有正常数据
             ratio_recv = _clamp(1.0 / max(ar_turnover, 0.5))
             features["ratio_receivable_to_revenue"] = ratio_recv
 

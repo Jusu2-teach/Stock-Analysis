@@ -175,13 +175,14 @@ def classify_metric(metric_name: str) -> MetricCategory:
     if any(k in name for k in ["turn", "周转"]):
         return MetricCategory.TURNOVER
 
+    # v4.1 修复: 效率类优先于增长类匹配 (避免 netprofit_margin 被 "profit" 误分为增长类)
+    # 效率类 (包含 roe, roic, margin, rate, ratio 等)
+    if any(k in name for k in ["roe", "roic", "margin", "rate", "ratio", "净利率", "毛利率", "efficiency", "效率"]):
+        return MetricCategory.EFFICIENCY
+
     # 增长类
     if any(k in name for k in ["revenue", "profit", "growth", "sales", "income", "营收", "利润", "增长"]):
         return MetricCategory.GROWTH
-
-    # 效率类 (默认兜底，包含 roe, roic, margin, rate, ratio 等)
-    if any(k in name for k in ["roe", "roic", "margin", "rate", "ratio", "净利率", "毛利率", "efficiency", "效率"]):
-        return MetricCategory.EFFICIENCY
 
     # 默认为效率类
     return MetricCategory.EFFICIENCY
@@ -529,12 +530,12 @@ class StructuralBreakDetector:
         t2 = np.arange(n2)
 
         try:
-            slope1, _ = np.polyfit(t1, pre, 1)
-            slope2, _ = np.polyfit(t2, post, 1)
+            slope1, intercept1 = np.polyfit(t1, pre, 1)
+            slope2, intercept2 = np.polyfit(t2, post, 1)
 
-            # 残差
-            res1 = pre - (slope1 * t1 + np.mean(pre))
-            res2 = post - (slope2 * t2 + np.mean(post))
+            # v4.1 修复: 使用回归截距而非均值计算残差 (Chow test 标准实现)
+            res1 = pre - (slope1 * t1 + intercept1)
+            res2 = post - (slope2 * t2 + intercept2)
 
             ssr1 = np.sum(res1**2)
             ssr2 = np.sum(res2**2)
@@ -542,8 +543,8 @@ class StructuralBreakDetector:
             # 全样本拟合
             t_full = np.arange(n1 + n2)
             arr_full = np.concatenate([pre, post])
-            slope_full, _ = np.polyfit(t_full, arr_full, 1)
-            res_full = arr_full - (slope_full * t_full + np.mean(arr_full))
+            slope_full, intercept_full = np.polyfit(t_full, arr_full, 1)
+            res_full = arr_full - (slope_full * t_full + intercept_full)
             ssr_full = np.sum(res_full**2)
 
             # Chow F统计量

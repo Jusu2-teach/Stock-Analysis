@@ -33,6 +33,7 @@ from .config import (
     AlphaFactorConfig,
     BetaFactorConfig,
     GammaFactorConfig,
+    LambdaFactorConfig,
     DeltaFraudFactorConfig,
     DeltaDecayFactorConfig,
     VerificationFactorConfig,
@@ -642,6 +643,201 @@ class GammaFactor:
 
 
 # ============================================================================
+# λ 因子: 杠杆强度 (Leverage Strength) — v4.1 新增
+# ============================================================================
+
+@dataclass
+class LambdaFactor:
+    """λ 因子: 杠杆强度 - 偿债安全边际与资本结构健康度
+
+    填补 Altman Z-Score (3/5 指标涉及杠杆) 和 AQR QMJ Safety 维度的空白。
+    高 λ = 高杠杆 = 高风险 (与 δ_fraud/δ_decay 同为负向因子)
+
+    数据源:
+        - financial_context 探针: ratio_debt_to_assets
+        - 趋势探针: 负债率变动趋势
+        - financial_context 探针: ratio_cash_to_assets (现金覆盖)
+
+    学术参考:
+        - Altman Z-Score (1968): Working Capital/TA, RE/TA, EBIT/TA
+        - AQR Quality Minus Junk: Safety = low leverage + low β + low ROE vol
+    """
+
+    factor_id: FactorId = FactorId.LAMBDA
+
+    def evaluate(self,
+                 ts_code: str,
+                 probes: Sequence[ProbeInput],
+                 config: TruthConfig) -> Tuple[FactorResult, List[TruthWarning]]:
+
+        warnings: List[TruthWarning] = []
+        components: Dict[str, float] = {}
+        conf = config.lambda_config
+        weights = conf.component_weights
+
+        leverage_score = 0.0
+        total_weight = 0.0
+
+        # ================================================================
+        # 数据源: financial_context 探针
+        # ================================================================
+        if not has_financial_context(probes):
+            # 无数据时返回中性低置信度
+            warnings.append(TruthWarning(
+                code="LAMBDA_NO_CONTEXT",
+                level=WarningLevel.WARNING,
+                title="λ因子数据缺失",
+                message="financial_context探针不可用，杠杆强度使用默认值",
+                source="lambda_factor",
+            ))
+            return FactorResult(
+                factor_id=self.factor_id,
+                ts_code=ts_code,
+                score=0.3,  # 默认偏低杠杆 (保守)
+                confidence=0.1,
+                components={},
+                details={"leverage_level": "unknown", "data_available": False},
+            ), warnings
+
+        # 1. 资产负债率 (核心指标 — Altman Z-Score 核心)
+        debt_to_assets = get_financial_context(probes, "ratio_debt_to_assets", -1.0)
+        if debt_to_assets >= 0:
+            # 线性映射: 0% → 0.0, 50% → 0.5, 75% → 0.85, 100% → 1.0
+            # 使用 sigmoid 使高负债区域惩罚更明显
+            if debt_to_assets <= conf.safe_debt_ratio:
+                debt_score = debt_to_assets / conf.safe_debt_ratio * 0.5
+            else:
+                # 超过安全线, 快速上升
+                excess = (debt_to_assets - conf.safe_debt_ratio) / (conf.danger_debt_ratio - conf.safe_debt_ratio)
+                debt_score = 0.5 + 0.5 * min(1.0, excess)
+
+            w = weights.get("debt_to_assets", 0.35)
+            leverage_score += w * debt_score
+            total_weight += w
+            components["debt_to_assets"] = debt_to_assets
+            components["debt_score"] = debt_score
+
+            # 高杠杆警告
+            if debt_to_assets > conf.danger_debt_ratio:
+                warnings.append(TruthWarning(
+                    code="LAMBDA_HIGH_LEVERAGE",
+                    level=WarningLevel.CRITICAL,
+                    title="⚠️ 高杠杆风险",
+                    message=f"资产负债率={debt_to_assets:.1%}，超过{conf.danger_debt_ratio:.0%}警戒线",
+                    source="lambda_factor",
+                    values={"debt_to_assets": debt_to_assets},
+                ))
+
+        # 2. 负债率变动趋势 (杠杆是否在恶化?)
+        # 从趋势探针中近似: 如果多个效率指标恶化 + 负债率本身高, 杠杆趋势恶化
+        decay_score_val = aggregate_feature(probes, "has_deterioration", "mean")
+        negative_slopes = aggregate_feature(probes, "log_slope", "min")
+        if decay_score_val is not None and debt_to_assets >= 0:
+            # 如果基本面恶化+高杠杆 → 趋势更差
+            trend_risk = 0.0
+            if decay_score_val > 0.5:  # 有恶化信号
+                trend_risk += 0.4
+            if negative_slopes is not None and negative_slopes < -0.05:
+                trend_risk += 0.3
+            if debt_to_assets > conf.safe_debt_ratio:
+                trend_risk += 0.3
+            trend_risk = min(1.0, trend_risk)
+
+            w = weights.get("debt_trend", 0.25)
+            leverage_score += w * trend_risk
+            total_weight += w
+            components["debt_trend_risk"] = trend_risk
+
+        # 3. 现金覆盖度 (现金是否足以应对短期债务)
+        cash_to_assets = get_financial_context(probes, "ratio_cash_to_assets", -1.0)
+        if cash_to_assets >= 0 and debt_to_assets > 0:
+            # 现金/负债 比率: 高 = 安全
+            cash_coverage = cash_to_assets / max(debt_to_assets, 0.01)
+            # 反向: 低覆盖 = 高杠杆风险
+            coverage_risk = max(0, 1.0 - cash_coverage)
+            w = weights.get("cash_coverage", 0.20)
+            leverage_score += w * coverage_risk
+            total_weight += w
+            components["cash_coverage_ratio"] = cash_coverage
+            components["coverage_risk"] = coverage_risk
+
+        # 4. 权益乘数 (总资产/股东权益)
+        assets_to_equity = get_financial_context(probes, "ratio_equity_multiplier", -1.0)
+        if assets_to_equity < 0:
+            # 从 debt_to_assets 近似: EM = 1/(1-D/A)
+            if debt_to_assets >= 0 and debt_to_assets < 0.95:
+                assets_to_equity = 1.0 / (1.0 - debt_to_assets)
+                components["equity_multiplier_source"] = "derived"
+
+        if assets_to_equity > 0:
+            # 权益乘数 2 = 50%负债(正常), 4 = 75%负债(危险), 10 = 90%负债(极度)
+            em_score = min(1.0, max(0, (assets_to_equity - 1.0) / 4.0))
+            w = weights.get("equity_multiplier", 0.20)
+            leverage_score += w * em_score
+            total_weight += w
+            components["equity_multiplier"] = assets_to_equity
+
+        # ================================================================
+        # 计算最终分数
+        # ================================================================
+        if total_weight > 0:
+            score = leverage_score / total_weight
+        else:
+            score = 0.3
+
+        score = max(0.0, min(1.0, score))
+
+        # 置信度
+        confidence = min(0.95, 0.4 + total_weight * 0.6)
+
+        # 杠杆等级
+        if score < 0.25:
+            leverage_level = "conservative"   # 保守型 (低杠杆)
+        elif score < 0.45:
+            leverage_level = "moderate"        # 适度杠杆
+        elif score < 0.65:
+            leverage_level = "elevated"        # 偏高杠杆
+        else:
+            leverage_level = "dangerous"       # 危险杠杆
+
+        return FactorResult(
+            factor_id=self.factor_id,
+            ts_code=ts_code,
+            score=score,
+            confidence=confidence,
+            components=components,
+            details={
+                "leverage_level": leverage_level,
+                "data_available": True,
+            },
+        ), warnings
+
+    def explain(self, result: FactorResult) -> str:
+        """生成人类可读的解释文本"""
+        score = result.score or 0.3
+        components = result.components or {}
+        details = result.details or {}
+
+        level = details.get("leverage_level", "unknown")
+        level_label = {
+            "conservative": "低杠杆 (安全)",
+            "moderate": "适度杠杆",
+            "elevated": "偏高杠杆 ⚠️",
+            "dangerous": "危险杠杆 🚨",
+            "unknown": "未知",
+        }.get(level, "未知")
+
+        parts = [f"λ={score:.2f} ({level_label})"]
+
+        if "debt_to_assets" in components:
+            parts.append(f"资产负债率={components['debt_to_assets']:.1%}")
+        if "equity_multiplier" in components:
+            parts.append(f"权益乘数={components['equity_multiplier']:.1f}x")
+
+        return "，".join(parts)
+
+
+# ============================================================================
 # δ_fraud 因子: 欺诈熵 (Fraud Entropy)
 # ============================================================================
 
@@ -751,6 +947,56 @@ class DeltaFraudFactor:
                     source="delta_fraud_factor",
                     values={"receivable_to_revenue": receivable_to_revenue},
                 ))
+
+        # ================================================================
+        # 一级风险+: Beneish M-Score 近似信号 (基于 financial_context)
+        # 原始 M-Score 需要连续两年数据; 这里用可得比率近似
+        # ================================================================
+
+        if has_financial_context(probes):
+            # Beneish-1: DSRI 近似 — 应收周转恶化
+            # 高 ratio_receivable_to_revenue = 应收周转慢 = DSRI 升高
+            recv_to_rev = get_financial_context(probes, "ratio_receivable_to_revenue", 0.0)
+            if recv_to_rev > 0.25:
+                # 正常 ~0.1-0.2, >0.25 开始异常, >0.5 严重
+                dsri_score = min(1.0, (recv_to_rev - 0.25) / 0.35)
+                w = 0.10
+                fraud_signals += w * dsri_score
+                total_weight += w
+                components["beneish_dsri_proxy"] = dsri_score
+
+            # Beneish-2: AQI 近似 — 资产质量恶化
+            # 高无形资产占比 + 低有形资产 = 资产质量差
+            intang_ratio = get_financial_context(probes, "ratio_intang_asset", 0.0)
+            hard_asset = get_financial_context(probes, "ratio_hard_asset", 0.5)
+            if intang_ratio > 0.3 and hard_asset < 0.3:
+                aqi_score = min(1.0, (intang_ratio - 0.3) / 0.4)
+                w = 0.08
+                fraud_signals += w * aqi_score
+                total_weight += w
+                components["beneish_aqi_proxy"] = aqi_score
+
+            # Beneish-3: TATA 近似 — 总应计占总资产
+            # 用 valuation_cash_conversion 的倒数近似:
+            # 低现金转化 = 高应计 = 高操纵概率
+            cash_conv = get_financial_context(probes, "valuation_cash_conversion", float('nan'))
+            if not math.isnan(cash_conv) and cash_conv < 0.5:
+                # cash_conv < 0.5 说明利润中现金占比低 = 高应计
+                tata_score = min(1.0, (0.5 - cash_conv) / 0.5)
+                w = 0.08
+                fraud_signals += w * tata_score
+                total_weight += w
+                components["beneish_tata_proxy"] = tata_score
+
+                if cash_conv < 0.2:
+                    warnings.append(TruthWarning(
+                        code="FRAUD_HIGH_ACCRUALS",
+                        level=WarningLevel.WARNING,
+                        title="高应计异常",
+                        message=f"现金转化率={cash_conv:.2f}，利润现金含量极低",
+                        source="delta_fraud_factor",
+                        values={"cash_conversion": cash_conv},
+                    ))
 
         # ================================================================
         # 二级风险: 趋势探针信号
@@ -1143,6 +1389,42 @@ class VerificationFactor:
             total_weight += w
             components["consistency"] = consistency
 
+        # 4. Sloan Accruals Ratio (Sloan 1996) — 应计质量
+        # Accruals = (ΔCA - ΔCash) - (ΔCL - ΔSTD - ΔTP) - Dep&Amort
+        # 简化版: 用 OCF/净利润 比率的倒数近似
+        # 高应计 (低 OCF/利润) = 盈余质量差, 未来回报低
+        if has_financial_context(probes):
+            # 从 financial_context 取现金转化效率
+            cash_conversion = get_financial_context(probes, "valuation_cash_conversion", float('nan'))
+            if not math.isnan(cash_conversion):
+                # cash_conversion = FCFF / |EPS|, 范围 [-2, 3]
+                # 映射到 [0, 1]: 高现金转化 = 低应计 = 好
+                # cash_conversion > 1.0: 优秀 (现金流超过利润)
+                # cash_conversion 0.5~1.0: 正常
+                # cash_conversion < 0.5: 应计质量差
+                if cash_conversion >= 1.0:
+                    sloan_score = 1.0  # 优秀: 经营现金流超过利润
+                elif cash_conversion >= 0.0:
+                    sloan_score = cash_conversion  # 线性映射
+                else:
+                    sloan_score = 0.0  # 负现金转化 = 最差
+
+                w = weights.get("sloan_accruals", 0.15)
+                score += sloan_score * w
+                total_weight += w
+                components["sloan_accruals"] = sloan_score
+                components["cash_conversion_raw"] = cash_conversion
+
+                if cash_conversion < 0.3:
+                    warnings.append(TruthWarning(
+                        code="V_HIGH_ACCRUALS",
+                        level=WarningLevel.WARNING,
+                        title="高应计比率",
+                        message=f"现金转化率={cash_conversion:.2f}，盈余质量堪忧",
+                        source="verification_factor",
+                        values={"cash_conversion": cash_conversion},
+                    ))
+
         # 归一化
         if total_weight > 0:
             score = score / total_weight
@@ -1217,7 +1499,7 @@ class VerificationFactor:
 # TruthFactor 现在是一个协议类型别名，保持向后兼容
 # 任何实现了 factor_id, evaluate(), explain() 的类都是有效因子
 from typing import Union
-TruthFactor = Union[AlphaFactor, BetaFactor, GammaFactor, DeltaFraudFactor, DeltaDecayFactor, VerificationFactor]
+TruthFactor = Union[AlphaFactor, BetaFactor, GammaFactor, LambdaFactor, DeltaFraudFactor, DeltaDecayFactor, VerificationFactor]
 
 
 # ============================================================================
@@ -1230,6 +1512,7 @@ def get_all_factors() -> List[TruthFactor]:
         AlphaFactor(),
         BetaFactor(),
         GammaFactor(),
+        LambdaFactor(),
         DeltaFraudFactor(),
         DeltaDecayFactor(),
         VerificationFactor(),
@@ -1242,6 +1525,7 @@ def get_factor_by_id(factor_id: FactorId) -> TruthFactor:
         FactorId.ALPHA: AlphaFactor(),
         FactorId.BETA: BetaFactor(),
         FactorId.GAMMA: GammaFactor(),
+        FactorId.LAMBDA: LambdaFactor(),
         FactorId.DELTA_FRAUD: DeltaFraudFactor(),
         FactorId.DELTA_DECAY: DeltaDecayFactor(),
         FactorId.VERIFICATION: VerificationFactor(),
@@ -1260,6 +1544,7 @@ __all__ = [
     "AlphaFactor",
     "BetaFactor",
     "GammaFactor",
+    "LambdaFactor",
     "DeltaFraudFactor",
     "DeltaDecayFactor",
     "VerificationFactor",

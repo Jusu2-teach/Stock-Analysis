@@ -1,14 +1,14 @@
-"""T.R.U.T.H. 配置系统 (v3.2)
+"""T.R.U.T.H. 配置系统 (v4.1)
 
 四层配置体系：
     - Layer 0: 时间衰减参数
-    - Layer 1: 六维因子配置
+    - Layer 1: 七维因子配置 (新增 λ 杠杆因子)
     - Layer 2: 三大求解器参数
     - Layer 3: 校准与评分
 
 设计原则：只保留实际被使用的配置项
 
-版本: 3.2.0
+版本: 4.1.0
 """
 
 from __future__ import annotations
@@ -104,11 +104,32 @@ class DeltaDecayFactorConfig:
 
 
 @dataclass(frozen=True)
-class VerificationFactorConfig:
-    """V 因子 (真相验证) - 成长含金量验证"""
+class LambdaFactorConfig:
+    """λ 因子 (杠杆强度) - 偿债安全边际与资本结构健康度
+
+    v4.1 新增: 填补 Altman Z-Score 和 AQR QMJ Safety 维度的空白
+    数据源: financial_context 探针的负债结构比率
+    """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ocf_revenue_ratio": 0.50,
-        "ocf_profit_ratio": 0.30,
+        "debt_to_assets": 0.35,         # 资产负债率 (核心)
+        "debt_trend": 0.25,             # 负债率变动趋势
+        "cash_coverage": 0.20,          # 现金覆盖度
+        "equity_multiplier": 0.20,      # 权益乘数
+    })
+    safe_debt_ratio: float = 0.50       # 安全负债率上限
+    danger_debt_ratio: float = 0.75     # 危险负债率
+
+
+@dataclass(frozen=True)
+class VerificationFactorConfig:
+    """V 因子 (真相验证) - 成长含金量验证
+
+    v4.1 升级: 新增 Sloan Accruals Ratio (Sloan 1996)
+    """
+    component_weights: Mapping[str, float] = field(default_factory=lambda: {
+        "ocf_revenue_ratio": 0.40,
+        "ocf_profit_ratio": 0.25,
+        "sloan_accruals": 0.15,       # v4.1 新增: Sloan 应计质量比率
         "consistency": 0.20,
     })
     true_growth_threshold: float = 0.8
@@ -142,6 +163,11 @@ class GravitySolverConfig:
     """
     base_roic_threshold: float = 10.0   # 基准ROIC (原8.0)
     base_roe_threshold: float = 12.0
+    # v4.1: WACC 估算参数 (替代固定 base_roic)
+    use_wacc_estimate: bool = True      # 启用 WACC 估算
+    equity_risk_premium: float = 6.0    # A股股权风险溢价 (%)
+    default_debt_cost: float = 4.5      # 默认债务成本 (%)
+    default_tax_rate: float = 0.25      # 企业所得税率
     # 加法模型系数: 每个因子贡献的百分点范围
     k_light_asset: float = 4.0          # 轻资产加成: 最高+4pp (原0.50乘法)
     k_cycle_tolerance: float = 3.0      # 周期惩罚: 最高+3pp (原0.30乘法)
@@ -224,12 +250,13 @@ class ScoringConfig:
       原阈值导致0家A+/A, 现在top 5%能拿到A
     """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ALPHA": 0.10,
-        "BETA": 0.08,
-        "GAMMA": 0.25,
-        "DELTA_FRAUD": 0.18,
-        "DELTA_DECAY": 0.14,
-        "VERIFICATION": 0.25,
+        "ALPHA": 0.08,
+        "BETA": 0.07,
+        "GAMMA": 0.22,
+        "LAMBDA": 0.12,            # v4.1 新增 杠杆因子
+        "DELTA_FRAUD": 0.16,
+        "DELTA_DECAY": 0.12,
+        "VERIFICATION": 0.23,
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
         "GRAVITY": 0.35,
@@ -258,16 +285,17 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "3.3.0"
+    algo_version: str = "4.1.0"
     config_version: str = "default"
 
     # Layer 0
     time_decay: TimeDecayConfig = field(default_factory=TimeDecayConfig)
 
-    # Layer 1
+    # Layer 1 (七维因子)
     alpha_config: AlphaFactorConfig = field(default_factory=AlphaFactorConfig)
     beta_config: BetaFactorConfig = field(default_factory=BetaFactorConfig)
     gamma_config: GammaFactorConfig = field(default_factory=GammaFactorConfig)
+    lambda_config: LambdaFactorConfig = field(default_factory=LambdaFactorConfig)
     delta_fraud_config: DeltaFraudFactorConfig = field(default_factory=DeltaFraudFactorConfig)
     delta_decay_config: DeltaDecayFactorConfig = field(default_factory=DeltaDecayFactorConfig)
     verification_config: VerificationFactorConfig = field(default_factory=VerificationFactorConfig)
@@ -337,6 +365,7 @@ __all__ = [
     "AlphaFactorConfig",
     "BetaFactorConfig",
     "GammaFactorConfig",
+    "LambdaFactorConfig",
     "DeltaFraudFactorConfig",
     "DeltaDecayFactorConfig",
     "VerificationFactorConfig",

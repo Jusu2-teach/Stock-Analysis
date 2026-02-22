@@ -52,6 +52,7 @@ from .factors import (
     AlphaFactor,
     BetaFactor,
     GammaFactor,
+    LambdaFactor,
     DeltaFraudFactor,
     DeltaDecayFactor,
     VerificationFactor,
@@ -240,12 +241,13 @@ def _process_single(ts_code: str, probes: List[ProbeInput], config: TruthConfig)
     # ========== 数据年限估算（用于 CalibrationConfig）==========
     data_years = _estimate_data_years(probes)
 
-    # ========== Layer 1: 计算 6 因子 ==========
+    # ========== Layer 1: 计算 7 因子 ==========
     factors: Dict[FactorId, FactorResult] = {}
     factor_instances = [
         AlphaFactor(),
         BetaFactor(),
         GammaFactor(),
+        LambdaFactor(),
         DeltaFraudFactor(),
         DeltaDecayFactor(),
         VerificationFactor(),
@@ -353,12 +355,13 @@ def _calibrate(
 
     # 因子加权平均（从 ScoringConfig.factor_weights 获取）
     factor_weight_map = {
-        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
-        FactorId.BETA: scoring.factor_weights.get("BETA", 0.10),
-        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.25),
-        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.15),
-        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.15),
-        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.25),
+        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.08),
+        FactorId.BETA: scoring.factor_weights.get("BETA", 0.07),
+        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.22),
+        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
+        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
+        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.12),
+        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.23),
     }
 
     weighted_sum = 0.0
@@ -366,8 +369,8 @@ def _calibrate(
     for fid, weight in factor_weight_map.items():
         result = factors.get(fid)
         if result and result.score is not None:
-            # δ_fraud 和 δ_decay 是负向指标 (越低越好)
-            if fid in (FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY):
+            # δ_fraud、δ_decay、λ 是负向指标 (越低越好)
+            if fid in (FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA):
                 weighted_sum += (1.0 - result.score) * weight
             else:
                 weighted_sum += result.score * weight
@@ -646,10 +649,10 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "3.4.0",
+            "algo_version": "4.1.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
-            "factor_count": 6,
+            "factor_count": 7,
             "solver_count": 3,
             "has_financial_context": has_financial_context,
         },

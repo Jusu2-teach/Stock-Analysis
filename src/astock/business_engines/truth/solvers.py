@@ -123,6 +123,42 @@ class GravitySolver:
         components["verification"] = verification
 
         # ============================================================
+        # v4.1 WACC 估算 (替代固定 base_roic)
+        # WACC = E/(D+E) × Cost_of_Equity + D/(D+E) × Cost_of_Debt × (1-Tax)
+        # Cost_of_Equity = Rf + β_market × ERP
+        # D/(D+E) 由 λ 因子分数近似推导
+        # ============================================================
+        if conf.use_wacc_estimate:
+            # 从 λ 因子获取杠杆信息 (λ 分数高 = 高杠杆风险)
+            lambda_score = get_factor_score(factors, FactorId.LAMBDA, 0.3)
+            components["lambda_leverage"] = lambda_score
+
+            # λ 分数映射到 D/V 比率:
+            # λ=0 (无杠杆) → D/V≈0.0, λ=0.5 (中等) → D/V≈0.35, λ=1.0 (极高) → D/V≈0.70
+            debt_to_value = lambda_score * 0.70
+            equity_to_value = 1.0 - debt_to_value
+
+            # Cost of Equity = Rf + β_market × ERP
+            # 使用 α (周期性) 近似 β_market: 高周期 α→高β
+            beta_market = 0.6 + alpha * 1.2  # 范围 [0.6, 1.8]
+            cost_of_equity = config.macro.risk_free_rate + beta_market * conf.equity_risk_premium
+
+            # Cost of Debt (税后)
+            cost_of_debt_after_tax = conf.default_debt_cost * (1.0 - conf.default_tax_rate)
+
+            # WACC
+            wacc = equity_to_value * cost_of_equity + debt_to_value * cost_of_debt_after_tax
+            wacc = max(4.0, min(20.0, wacc))  # 合理范围
+
+            base_threshold = wacc
+            components["wacc_estimate"] = wacc
+            components["beta_market"] = beta_market
+            components["debt_to_value"] = debt_to_value
+            components["cost_of_equity"] = cost_of_equity
+        else:
+            base_threshold = conf.base_roic_threshold
+
+        # ============================================================
         # v3.4 加法模型 (替代原连乘模型):
         # T_roic = T_base + k1*(1-β) + k2*α - k3*δ_decay - k4*V
         #
@@ -171,8 +207,8 @@ class GravitySolver:
         fraud_adj = 2.0 * delta_fraud  # 最大 +2pp
         components["fraud_adj"] = fraud_adj
 
-        # v3.4 加法模型最终计算
-        roic_threshold = (conf.base_roic_threshold
+        # v3.4 / v4.1 加法模型最终计算
+        roic_threshold = (base_threshold
                          + light_asset_adj    # 轻资产 → 要求更高
                          + cycle_adj          # 高周期 → 要求更高
                          + fraud_adj          # 高欺诈 → 要求更高
@@ -261,6 +297,10 @@ class GravitySolver:
 
         if alpha > 0.6:
             parts.append(f"高周期(α={alpha:.2f})")
+
+        wacc = components.get("wacc_estimate")
+        if wacc is not None:
+            parts.append(f"WACC≈{wacc:.1f}%")
 
         if "interpretation" in details:
             parts.append(details["interpretation"])

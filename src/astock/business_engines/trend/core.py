@@ -560,9 +560,14 @@ class TrendAnalyzer:
         self.reference_stats = self._compute_reference_metrics()
 
         self.latest_value = self.values_list[-1]
-        self.latest_vs_weighted_ratio = (
-            self.latest_value / self.weighted_avg if self.weighted_avg > 0 else 1.0
-        )
+        # v4.1 修复: 处理负数 weighted_avg (ROIIC 场景)
+        if abs(self.weighted_avg) < 1e-10:
+            self.latest_vs_weighted_ratio = 1.0
+        elif self.weighted_avg > 0:
+            self.latest_vs_weighted_ratio = self.latest_value / self.weighted_avg
+        else:
+            # 负数均值: 反转比率方向 (更负=更差)
+            self.latest_vs_weighted_ratio = self.weighted_avg / self.latest_value if abs(self.latest_value) > 1e-10 else 1.0
 
     # ------------------------------------------------------------------
     def _prepare_full_metric_series(self, column: str) -> List[float]:

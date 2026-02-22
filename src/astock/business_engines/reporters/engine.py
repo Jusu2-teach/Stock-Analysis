@@ -1452,6 +1452,76 @@ def report_cross_validation(
         lines.append("")
 
     # ============================================================
+    # 因子-评分矛盾分析 (Phase 8: TRUTH↔Eval 深度交叉)
+    # ============================================================
+
+    lines.append("## 因子-评分矛盾分析")
+    lines.append("")
+    lines.append("> 检测 TRUTH 因子揭示的风险是否被 Evaluator 评分忽略")
+    lines.append("")
+
+    contradiction_list = []
+    for ts_code in common_ts:
+        tp = truth_by_ts[ts_code]
+        ep = eval_by_ts[ts_code]
+        factors = tp.get("factors", {})
+
+        e_score = ep.get("score", 50)
+        e_decision = ep.get("decision", "uncertain")
+
+        contradictions = []
+
+        # 检查 λ (杠杆) vs Evaluator: 高杠杆但评分不低
+        for fid in ("lambda_leverage", "LAMBDA"):
+            fd = factors.get(fid)
+            if isinstance(fd, dict):
+                lam_score = fd.get("score", 0)
+                if lam_score > 0.6 and e_score > 60:
+                    contradictions.append(f"λ={lam_score:.2f}(高杠杆) vs Eval={e_score:.0f}分")
+                break
+
+        # 检查 V (验证) vs Evaluator: 假成长但评分高
+        for fid in ("verification", "VERIFICATION"):
+            fd = factors.get(fid)
+            if isinstance(fd, dict):
+                v_score = fd.get("score", 0.5)
+                details_v = fd.get("details", {})
+                quality = details_v.get("growth_quality", "")
+                if quality in ("fake_growth", "low_quality") and e_score > 60:
+                    contradictions.append(f"V={v_score:.2f}({quality}) vs Eval={e_score:.0f}分")
+                break
+
+        # 检查 δ_fraud vs Evaluator: 高欺诈但评分高
+        for fid in ("delta_fraud", "DELTA_FRAUD"):
+            fd = factors.get(fid)
+            if isinstance(fd, dict):
+                fraud_score = fd.get("score", 0)
+                if fraud_score > 0.4 and e_score > 50:
+                    contradictions.append(f"δ_fraud={fraud_score:.2f} vs Eval={e_score:.0f}分")
+                break
+
+        if contradictions:
+            contradiction_list.append({
+                "ts_code": ts_code,
+                "contradictions": contradictions,
+                "eval_score": e_score,
+                "eval_decision": e_decision,
+            })
+
+    if contradiction_list:
+        contradiction_list.sort(key=lambda x: -len(x["contradictions"]))
+        lines.append(f"> 共发现 {len(contradiction_list)} 家公司存在因子-评分矛盾")
+        lines.append("")
+        lines.append("| 代码 | Eval 决策 | 矛盾点 |")
+        lines.append("|------|-----------|--------|")
+        for c in contradiction_list[:25]:
+            lines.append(f"| {c['ts_code']} | {c['eval_decision']}({c['eval_score']:.0f}) | {'；'.join(c['contradictions'])} |")
+        lines.append("")
+    else:
+        lines.append("> 未发现显著因子-评分矛盾，两引擎结论基本一致")
+        lines.append("")
+
+    # ============================================================
     # 统计验证节 (Phase 5)
     # ============================================================
 
