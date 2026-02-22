@@ -1091,9 +1091,9 @@ class VerificationFactor:
             components["ocf_cagr"] = ocf_cagr
             components["revenue_cagr"] = revenue_cagr
 
-            # 计算 V 比率
-            if abs(revenue_cagr) < 1.0:
-                # 营收几乎不变，看 OCF 绝对值
+            # 计算 V 比率 (CAGR 为小数: 5%=0.05)
+            if abs(revenue_cagr) < 0.01:
+                # 营收几乎不变(<1%)，看 OCF 绝对值
                 v_ratio_revenue = 1.0 if ocf_cagr >= 0 else 0.5
             elif revenue_cagr < 0:
                 # 营收下降
@@ -1121,7 +1121,8 @@ class VerificationFactor:
         if ocf_cagr is not None and profit_cagr is not None:
             components["profit_cagr"] = profit_cagr
 
-            if abs(profit_cagr) < 1.0:
+            if abs(profit_cagr) < 0.01:
+                # 利润几乎不变(<1%)，看 OCF 绝对值
                 v_ratio_profit = 1.0 if ocf_cagr >= 0 else 0.5
             elif profit_cagr < 0:
                 v_ratio_profit = 1.2 if ocf_cagr > profit_cagr else 0.7

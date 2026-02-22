@@ -4,10 +4,10 @@
 
 ## 📋 报告概要
 
-- **生成时间**: 2026-02-22 13:48:55
+- **生成时间**: 2026-02-22 14:15:04
 - **算法版本**: v2.0 (Causal Bayesian)
 - **分析股票数**: 1914
-- **优质公司数**: 97
+- **优质公司数**: 82
 - **否决公司数**: 655
 
 ## 📊 汇总统计
@@ -16,9 +16,9 @@
 
 | 决策 | 数量 | 占比 |
 |------|------|------|
-| ✅ 优质 | 97 | 5.1% |
-| 🟡 一般 | 162 | 8.5% |
-| 🟠 较差 | 1000 | 52.2% |
+| ✅ 优质 | 82 | 4.3% |
+| 🟡 一般 | 152 | 7.9% |
+| 🟠 较差 | 1025 | 53.6% |
 | ❓ 待定 | 0 | 0.0% |
 | ❌ 否决 | 655 | 34.2% |
 
@@ -37,154 +37,99 @@
 
 ## ⭐ 优质公司完整列表 (QUALITY)
 
-> 共 97 家公司通过因果贝叶斯评估（得分≥70）
+> 共 82 家公司通过因果贝叶斯评估（得分≥70）
 
 | 代码 | 名称 | 行业 | 得分 | 置信度 | 生命周期 | 主要驱动因素 |
 |------|------|------|------|--------|----------|-------------|
-| 603676.SH | 卫信康 | 化学制药 | 100.0 | 80% | 📈高增长 | ↑roic_trend:0.27, ↑roe_trend:0.27, ↑revenue_trend:0.13 |
-| 605116.SH | 奥锐特 | 化学制药 | 100.0 | 90% | 📈高增长 | ↑rule_engine:30.00, ↑roe_trend:0.07, ↑revenue_trend:0.17 |
-| 603611.SH | 诺力股份 | 专用机械 | 100.0 | 90% | 📈高增长 | ↑rule_engine:30.00, ↑roic_trend:0.04, ↑roe_trend:0.05 |
-| 688128.SH | 中国电研 | 专用机械 | 100.0 | 90% | 📈高增长 | ↑rule_engine:30.00, ↑roic_trend:0.03, ↑roe_trend:0.04 |
-| 002837.SZ | 英维克 | 专用机械 | 100.0 | 90% | 💰现金牛 | ↑rule_engine:24.00, ↑roic_trend:0.08, ↑roe_trend:0.06 |
-| 001395.SZ | 亚联机械 | 专用机械 | 100.0 | 90% | 📈高增长 | ↑rule_engine:24.00, ↑roic_trend:0.03, ↑revenue_trend:0.20 |
-| 603016.SH | 新宏泰 | 电气设备 | 100.0 | 81% | 🏔️成熟 | ↑roic_trend:0.04, ↑rule_engine:16.00, ↑roe_trend:0.04 |
-| 600582.SH | 天地科技 | 专用机械 | 100.0 | 90% | 📈高增长 | ↑rule_engine:30.00, ↑roic_trend:0.11, ↑roe_trend:0.09 |
-| 603036.SH | 如通股份 | 专用机械 | 100.0 | 84% | 📊放缓 | ↑roic_trend:0.09, ↑rule_engine:16.00, ↑roe_trend:0.08 |
-| 832735.BJ | 德源药业 | 化学制药 | 100.0 | 84% | 🏔️成熟 | ↑rule_engine:30.00, ↑roic_trend:0.03, ↑revenue_trend:0.06 |
-| 002595.SZ | 豪迈科技 | 专用机械 | 100.0 | 90% | 📈高增长 | ↑rule_engine:30.00, ↑roic_trend:0.07, ↑roe_trend:0.05 |
-| 600062.SH | 华润双鹤 | 化学制药 | 100.0 | 84% | 🏔️成熟 | ↑rule_engine:24.00, ↑revenue_trend:0.07, ↑ocf_trend:0.07 |
-| 002533.SZ | 金杯电工 | 电气设备 | 99.6 | 74% | 📊放缓 | ↑roic_trend:0.14, ↑rule_engine:13.02, ↑roe_trend:0.14 |
-| 603277.SH | 银都股份 | 专用机械 | 98.8 | 90% | 💰现金牛 | ↑rule_engine:24.00, ↑ocf_trend:0.23, ↑roiic_trend:0.15 |
-| 600560.SH | 金自天正 | 电气设备 | 97.0 | 86% | 📊放缓 | ↑rule_engine:24.00, ↑roic_trend:0.03, ↑net_margin_trend:0.04 |
-| 002130.SZ | 沃尔核材 | 电气设备 | 96.4 | 90% | 💰现金牛 | ↑rule_engine:29.00, ↑net_margin_trend:0.07, ↑profit_trend:0.08 |
-| 300896.SZ | 爱美客 | 医疗保健 | 95.3 | 80% | 📈高增长 | ↑roic_trend:0.14, ↑roe_trend:0.14, ↑revenue_trend:0.17 |
-| 000915.SZ | 华特达因 | 化学制药 | 94.4 | 76% | 🏔️成熟 | ↑roic_trend:0.05, ↑revenue_trend:0.05, ↑gross_margin_trend:0.09 |
-| 000682.SZ | 东方电子 | 电气设备 | 93.8 | 80% | 📈高增长 | ↑roic_trend:0.11, ↑roe_trend:0.13, ↑revenue_trend:0.17 |
-| 600885.SH | 宏发股份 | 电气设备 | 93.6 | 90% | 💰现金牛 | ↑rule_engine:24.00, ↑revenue_trend:0.04, ↑ocf_trend:0.19 |
-| 000880.SZ | 潍柴重机 | 专用机械 | 93.4 | 81% | 🏔️成熟 | ↑rule_engine:24.86, ↑roe_trend:0.05, ↑ocf_trend:0.11 |
-| 603309.SH | 维力医疗 | 医疗保健 | 93.2 | 79% | 🏔️成熟 | ↑rule_engine:16.00, ↑revenue_trend:0.04, ↑roiic_trend:0.56 |
-| 600262.SH | 北方股份 | 专用机械 | 92.7 | 78% | 📈高增长 | ↑roic_trend:0.20, ↑roe_trend:0.18, ↑revenue_trend:0.19 |
-| 603019.SH | 中科曙光 | IT设备 | 92.7 | 79% | 🏔️成熟 | ↑rule_engine:18.00, ↑revenue_trend:0.07, ↑gross_margin_trend:0.07 |
-| 688338.SH | 赛科希德 | 医疗保健 | 92.7 | 81% | 📊放缓 | ↑rule_engine:24.00, ↑roic_trend:0.01, ↑roiic_trend:0.25 |
-| 600980.SH | 北矿科技 | 专用机械 | 92.5 | 84% | 🏔️成熟 | ↑rule_engine:24.00, ↑revenue_trend:0.06, ↑ocf_trend:0.18 |
-| 002056.SZ | 横店东磁 | 电气设备 | 92.4 | 88% | 📈高增长 | ↑rule_engine:14.00, ↑revenue_trend:0.21, ↑roic_trend:0.02 |
-| 002371.SZ | 北方华创 | 半导体 | 92.2 | 80% | 📈高增长 | ↑roic_trend:0.20, ↑roe_trend:0.24, ↑revenue_trend:0.39 |
-| 600406.SH | 国电南瑞 | 电气设备 | 92.2 | 90% | 💰现金牛 | ↑rule_engine:29.00, ↑roic_trend:0.01, ↑ocf_trend:0.02 |
-| 688389.SH | 普门科技 | 医疗保健 | 91.7 | 88% | 📈高增长 | ↑roic_trend:0.03, ↑roe_trend:0.09, ↑revenue_trend:0.16 |
-| 688589.SH | 力合微 | 半导体 | 91.2 | 77% | 🚀成长 | ↑roic_trend:0.10, ↑roe_trend:0.14, ↑revenue_trend:0.19 |
-| 603829.SH | 洛凯股份 | 电气设备 | 91.0 | 90% | 📈高增长 | ↑roic_trend:0.06, ↑roe_trend:0.09, ↑revenue_trend:0.22 |
-| 300049.SZ | 福瑞股份 | 医疗保健 | 90.7 | 85% | 🚀成长 | ↑roic_trend:0.12, ↑rule_engine:16.00, ↑revenue_trend:0.12 |
-| 688111.SH | 金山办公 | 软件服务 | 90.2 | 88% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.19, ↑roic_trend:0.01 |
-| 000507.SZ | 珠海港 | 新型电力 | 89.6 | 79% | 🏔️成熟 | ↑rule_engine:16.45, ↑roic_trend:0.01, ↑gross_margin_trend:0.12 |
-| 688302.SH |  |  | 89.5 | 69% | 🏔️成熟 | ↑roic_trend:0.10, ↑roe_trend:0.13, ↑ocf_trend:0.12 |
-| 002028.SZ | 思源电气 | 电气设备 | 88.6 | 88% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.18, ↑ocf_trend:0.32 |
-| 688382.SH |  |  | 88.4 | 69% | 🏔️成熟 | ↑roic_trend:0.22, ↑roe_trend:0.24, ↑roiic_trend:0.20 |
-| 688029.SH | 南微医学 | 医疗保健 | 87.8 | 86% | 📊放缓 | ↑roic_trend:0.07, ↑roe_trend:0.09, ↑revenue_trend:0.06 |
-| 920101.BJ | 志高机械 | 专用机械 | 86.9 | 85% | 💰现金牛 | ↑gross_margin_trend:0.10, ↑ocf_trend:0.39, ↑net_margin_trend:0.13 |
-| 002835.SZ | 同为股份 | IT设备 | 86.9 | 80% | 💰现金牛 | ↑roic_trend:0.16, ↑roe_trend:0.15, ↑gross_margin_trend:0.06 |
-| 688019.SH | 安集科技 | 半导体 | 86.0 | 79% | 🏔️成熟 | ↑roic_trend:0.11, ↑roe_trend:0.13, ↑ocf_trend:0.21 |
-| 000400.SZ | 许继电气 | 电气设备 | 85.8 | 88% | 📈高增长 | ↑roic_trend:0.05, ↑roe_trend:0.05, ↑revenue_trend:0.12 |
-| 000963.SZ | 华东医药 | 化学制药 | 85.2 | 79% | 🏔️成熟 | ↑revenue_trend:0.06, ↑roic_trend:0.01, ↑roiic_trend:1.30 |
-| 002484.SZ | 江海股份 | 元器件 | 84.8 | 88% | 📈高增长 | ↑roic_trend:0.05, ↑roe_trend:0.05, ↑revenue_trend:0.14 |
-| 300453.SZ | 三鑫医疗 | 医疗保健 | 84.7 | 89% | 📉衰退 | ↑rule_engine:29.00, ↑net_margin_trend:0.05, ↓roiic_trend:-0.47 |
-| 301678.SZ | 新恒汇 | 半导体 | 84.7 | 80% | 📈高增长 | ↑roic_trend:0.03, ↑revenue_trend:0.18, ↑gross_margin_trend:0.04 |
-| 301479.SZ | 弘景光电 | 元器件 | 84.6 | 80% | 📈高增长 | ↑roic_trend:0.17, ↑roe_trend:0.17, ↑revenue_trend:0.36 |
-| 300760.SZ | 迈瑞医疗 | 医疗保健 | 84.4 | 88% | 📈高增长 | ↑rule_engine:14.00, ↑revenue_trend:0.14, ↑ocf_trend:0.09 |
-| 688566.SH | 吉贝尔 | 化学制药 | 84.2 | 82% | 📈高增长 | ↑rule_engine:16.00, ↑revenue_trend:0.13, ↑profit_trend:0.09 |
-| 000988.SZ | 华工科技 | 专用机械 | 83.1 | 81% | 🏔️成熟 | ↑ocf_trend:0.10, ↑net_margin_trend:0.06, ↑roiic_trend:0.29 |
-| 688596.SH | 正帆科技 | 专用机械 | 83.0 | 82% | 📈高增长 | ↑roic_trend:0.10, ↑roe_trend:0.13, ↑revenue_trend:0.36 |
-| 601126.SH | 四方股份 | 电气设备 | 81.4 | 82% | 📈高增长 | ↑roic_trend:0.16, ↑roe_trend:0.16, ↑revenue_trend:0.14 |
-| 300962.SZ | 中金辐照 | 医疗保健 | 81.4 | 81% | 🏔️成熟 | ↑rule_engine:16.00, ↑net_margin_trend:0.06, ↑roiic_trend:0.74 |
-| 301609.SZ | 山大电力 | 电气设备 | 80.5 | 85% | 📈高增长 | ↑revenue_trend:0.12, ↑ocf_trend:0.11, ↑roiic_trend:0.76 |
-| 603658.SH | 安图生物 | 医疗保健 | 80.5 | 82% | 💰现金牛 | ↑rule_engine:16.00, ↓roic_trend:-0.03, ↑revenue_trend:0.05 |
-| 002850.SZ | 科达利 | 电气设备 | 80.4 | 78% | 📈高增长 | ↑revenue_trend:0.40, ↑ocf_trend:0.24, ↑net_margin_trend:0.06 |
-| 000045.SZ | 深纺织A | 元器件 | 80.2 | 77% | 🚀成长 | ↑roic_trend:0.25, ↑roe_trend:0.17, ↑revenue_trend:0.12 |
-| 688097.SH | 博众精工 | 专用机械 | 80.0 | 76% | 🏔️成熟 | ↑ocf_trend:0.24, ↑roiic_trend:0.26, ↑profit_trend:0.07 |
-| 601717.SH | 中创智领 | 专用机械 | 80.0 | 74% | 📊放缓 | ↑roic_trend:0.14, ↑roe_trend:0.15, ↑revenue_trend:0.08 |
-| 688082.SH | 盛美上海 | 半导体 | 79.6 | 78% | 📈高增长 | ↑revenue_trend:0.40, ↑gross_margin_trend:0.04, ↓ocf_trend:-0.10 |
-| 688617.SH | 惠泰医疗 | 医疗保健 | 79.4 | 80% | 📈高增长 | ↑roic_trend:0.10, ↑roe_trend:0.07, ↑revenue_trend:0.23 |
-| 603259.SH | 药明康德 | 化学制药 | 79.2 | 82% | 📈高增长 | ↑roic_trend:0.10, ↑roe_trend:0.09, ↑revenue_trend:0.19 |
-| 688138.SH | 清溢光电 | 半导体 | 79.1 | 77% | 🚀成长 | ↑roic_trend:0.16, ↑roe_trend:0.22, ↑revenue_trend:0.20 |
-| 300092.SZ | 科新机电 | 专用机械 | 78.9 | 79% | 🏔️成熟 | ↑roic_trend:0.02, ↑ocf_trend:0.06, ↑profit_trend:0.07 |
-| 301602.SZ | 超研股份 | 医疗保健 | 78.8 | 85% | 💰现金牛 | ↑rule_engine:21.00, ↓roic_trend:-0.03, ↑net_margin_trend:0.12 |
-| 688278.SH | 特宝生物 | 生物制药 | 78.4 | 82% | 📈高增长 | ↑roic_trend:0.26, ↓rule_engine:-14.80, ↑roe_trend:0.25 |
-| 000962.SZ | 东方钽业 | 小金属 | 78.1 | 74% | 🚀成长 | ↑roic_trend:0.20, ↑roe_trend:0.17, ↑revenue_trend:0.11 |
-| 300679.SZ | 电连技术 | 元器件 | 78.1 | 75% | 📊放缓 | ↑roic_trend:0.09, ↑roe_trend:0.09, ↑net_margin_trend:0.05 |
-| 688334.SH | 西高院 | 电气设备 | 78.0 | 72% | 🏔️成熟 | ↓roic_trend:-0.05, ↑rule_engine:13.00, ↑gross_margin_trend:0.06 |
-| 300831.SZ | 派瑞股份 | 半导体 | 77.8 | 75% | 📊放缓 | ↑roic_trend:0.05, ↑roiic_trend:1.64, ↑revenue_trend:0.02 |
-| 600320.SH | 振华重工 | 专用机械 | 76.9 | 80% | 🚀成长 | ↑roic_trend:0.02, ↑roe_trend:0.05, ↑revenue_trend:0.11 |
-| 603920.SH | 世运电路 | 元器件 | 76.1 | 68% | 🏔️成熟 | ↑roe_trend:0.11, ↑revenue_trend:0.04, ↓rule_engine:-12.00 |
-| 300406.SZ | 九强生物 | 医疗保健 | 75.9 | 70% | 🏔️成熟 | ↓roic_trend:-0.01, ↑ocf_trend:0.17, ↑roiic_trend:1.25 |
+| 002595.SZ | 豪迈科技 | 专用机械 | 98.0 | 90% | 📈高增长 | ↑roic_trend:0.07, ↑roe_trend:0.05, ↑revenue_trend:0.12 |
+| 688128.SH | 中国电研 | 专用机械 | 96.3 | 90% | 📈高增长 | ↑roic_trend:0.03, ↑roe_trend:0.04, ↑revenue_trend:0.14 |
+| 605116.SH | 奥锐特 | 化学制药 | 95.5 | 90% | 📈高增长 | ↑roe_trend:0.07, ↑revenue_trend:0.17, ↑gross_margin_trend:0.06 |
+| 832735.BJ | 德源药业 | 化学制药 | 95.5 | 84% | 🏔️成熟 | ↑roic_trend:0.03, ↑revenue_trend:0.06, ↑roe_trend:0.02 |
+| 001395.SZ | 亚联机械 | 专用机械 | 94.3 | 90% | 📈高增长 | ↑roic_trend:0.03, ↑revenue_trend:0.20, ↑ocf_trend:0.32 |
+| 603611.SH | 诺力股份 | 专用机械 | 93.6 | 90% | 📈高增长 | ↑roic_trend:0.04, ↑roe_trend:0.05, ↑revenue_trend:0.14 |
+| 600062.SH | 华润双鹤 | 化学制药 | 93.0 | 84% | 🏔️成熟 | ↑revenue_trend:0.07, ↑ocf_trend:0.07, ↑roe_trend:0.03 |
+| 600582.SH | 天地科技 | 专用机械 | 92.4 | 90% | 📈高增长 | ↑roic_trend:0.11, ↑revenue_trend:0.10, ↑rule_engine:11.41 |
+| 603277.SH | 银都股份 | 专用机械 | 91.1 | 90% | 💰现金牛 | ↑ocf_trend:0.23, ↑revenue_trend:0.01, ↑roiic_trend:0.15 |
+| 002130.SZ | 沃尔核材 | 电气设备 | 89.3 | 90% | 💰现金牛 | ↑rule_engine:14.76, ↑net_margin_trend:0.07, ↑profit_trend:0.08 |
+| 603036.SH | 如通股份 | 专用机械 | 88.7 | 84% | 📊放缓 | ↑roic_trend:0.09, ↑revenue_trend:0.09, ↑roiic_trend:0.34 |
+| 603016.SH | 新宏泰 | 电气设备 | 88.6 | 81% | 🏔️成熟 | ↑roic_trend:0.04, ↑revenue_trend:0.08, ↑roiic_trend:0.32 |
+| 600406.SH | 国电南瑞 | 电气设备 | 88.1 | 90% | 💰现金牛 | ↑rule_engine:16.47, ↑roic_trend:0.01, ↑ocf_trend:0.02 |
+| 600885.SH | 宏发股份 | 电气设备 | 87.7 | 90% | 💰现金牛 | ↑revenue_trend:0.04, ↑rule_engine:11.35, ↑ocf_trend:0.19 |
+| 000682.SZ | 东方电子 | 电气设备 | 87.5 | 80% | 📈高增长 | ↑roic_trend:0.11, ↑revenue_trend:0.17, ↑roe_trend:0.13 |
+| 002837.SZ | 英维克 | 专用机械 | 87.0 | 90% | 💰现金牛 | ↑roic_trend:0.08, ↑roe_trend:0.06, ↑roiic_trend:0.24 |
+| 603309.SH | 维力医疗 | 医疗保健 | 86.6 | 79% | 🏔️成熟 | ↑revenue_trend:0.04, ↑roiic_trend:0.56, ↑gross_margin_trend:0.01 |
+| 002028.SZ | 思源电气 | 电气设备 | 86.5 | 88% | 📈高增长 | ↑revenue_trend:0.18, ↑ocf_trend:0.32, ↑profit_trend:0.15 |
+| 688111.SH | 金山办公 | 软件服务 | 86.0 | 88% | 📈高增长 | ↑roic_trend:0.01, ↑revenue_trend:0.19, ↑ocf_trend:0.08 |
+| 688338.SH | 赛科希德 | 医疗保健 | 85.8 | 81% | 📊放缓 | ↑rule_engine:13.14, ↑roiic_trend:0.25, ↑roic_trend:0.01 |
+| 603019.SH | 中科曙光 | IT设备 | 85.7 | 79% | 🏔️成熟 | ↑revenue_trend:0.07, ↑gross_margin_trend:0.07, ↑ocf_trend:0.22 |
+| 000963.SZ | 华东医药 | 化学制药 | 85.1 | 79% | 🏔️成熟 | ↑roic_trend:0.01, ↑revenue_trend:0.06, ↑roe_trend:0.02 |
+| 300453.SZ | 三鑫医疗 | 医疗保健 | 85.0 | 89% | 📉衰退 | ↑rule_engine:20.75, ↑net_margin_trend:0.05, ↑roic_trend:0.01 |
+| 301609.SZ | 山大电力 | 电气设备 | 84.5 | 85% | 📈高增长 | ↑revenue_trend:0.12, ↑ocf_trend:0.11, ↑roiic_trend:0.76 |
+| 300049.SZ | 福瑞股份 | 医疗保健 | 84.2 | 85% | 🚀成长 | ↑roic_trend:0.12, ↑revenue_trend:0.12, ↑roiic_trend:1.24 |
+| 300896.SZ | 爱美客 | 医疗保健 | 83.8 | 80% | 📈高增长 | ↑roic_trend:0.14, ↑roe_trend:0.14, ↑revenue_trend:0.17 |
+| 600560.SH | 金自天正 | 电气设备 | 83.7 | 86% | 📊放缓 | ↑rule_engine:15.01, ↑roic_trend:0.03, ↑revenue_trend:0.01 |
+| 920101.BJ | 志高机械 | 专用机械 | 83.6 | 85% | 💰现金牛 | ↑ocf_trend:0.39, ↑gross_margin_trend:0.10, ↑net_margin_trend:0.13 |
+| 600980.SH | 北矿科技 | 专用机械 | 83.2 | 84% | 🏔️成熟 | ↑rule_engine:15.54, ↑revenue_trend:0.06, ↓roiic_trend:-0.19 |
+| 603676.SH | 卫信康 | 化学制药 | 83.0 | 80% | 📈高增长 | ↑roic_trend:0.27, ↑roe_trend:0.27, ↑revenue_trend:0.13 |
+| 603658.SH | 安图生物 | 医疗保健 | 82.9 | 82% | 💰现金牛 | ↑revenue_trend:0.05, ↑roiic_trend:1.08, ↑profit_trend:0.05 |
+| 000880.SZ | 潍柴重机 | 专用机械 | 82.4 | 81% | 🏔️成熟 | ↑rule_engine:14.40, ↑ocf_trend:0.11, ↑revenue_trend:0.01 |
+| 300962.SZ | 中金辐照 | 医疗保健 | 81.7 | 81% | 🏔️成熟 | ↑net_margin_trend:0.06, ↑roiic_trend:0.74, ↑rule_engine:8.63 |
+| 688566.SH | 吉贝尔 | 化学制药 | 81.6 | 82% | 📈高增长 | ↑revenue_trend:0.13, ↑profit_trend:0.09, ↑rule_engine:8.68 |
+| 688019.SH | 安集科技 | 半导体 | 81.1 | 79% | 🏔️成熟 | ↑roic_trend:0.11, ↑roe_trend:0.13, ↑ocf_trend:0.21 |
+| 300832.SZ | 新产业 | 医疗保健 | 81.1 | 79% | 🏔️成熟 | ↑revenue_trend:0.06, ↑profit_trend:0.04, ↓roe_trend:-0.01 |
+| 002850.SZ | 科达利 | 电气设备 | 80.8 | 78% | 📈高增长 | ↑revenue_trend:0.40, ↑ocf_trend:0.24, ↑net_margin_trend:0.06 |
+| 000507.SZ | 珠海港 | 新型电力 | 80.6 | 79% | 🏔️成熟 | ↑gross_margin_trend:0.12, ↑ocf_trend:0.19, ↑roic_trend:0.01 |
+| 301678.SZ | 新恒汇 | 半导体 | 80.0 | 80% | 📈高增长 | ↑roic_trend:0.03, ↑revenue_trend:0.18, ↓rule_engine:-10.48 |
+| 301602.SZ | 超研股份 | 医疗保健 | 79.8 | 85% | 💰现金牛 | ↑rule_engine:14.62, ↑net_margin_trend:0.12, ↑profit_trend:0.04 |
+| 688097.SH | 博众精工 | 专用机械 | 79.7 | 76% | 🏔️成熟 | ↑revenue_trend:0.02, ↑roiic_trend:0.26, ↑profit_trend:0.07 |
+| 600262.SH | 北方股份 | 专用机械 | 79.7 | 78% | 📈高增长 | ↑roic_trend:0.20, ↑revenue_trend:0.19, ↑roe_trend:0.18 |
+| 688334.SH | 西高院 | 电气设备 | 79.7 | 74% | 🏔️成熟 | ↑gross_margin_trend:0.06, ↑net_margin_trend:0.14, ↑roiic_trend:1.16 |
+| 002056.SZ | 横店东磁 | 电气设备 | 79.6 | 88% | 📈高增长 | ↑roic_trend:0.02, ↑revenue_trend:0.21, ↑ocf_trend:0.26 |
+| 300406.SZ | 九强生物 | 医疗保健 | 79.4 | 74% | 🏔️成熟 | ↑revenue_trend:0.01, ↑ocf_trend:0.17, ↑roiic_trend:1.25 |
+| 601126.SH | 四方股份 | 电气设备 | 79.4 | 82% | 📈高增长 | ↑roic_trend:0.16, ↑roe_trend:0.16, ↑revenue_trend:0.14 |
+| 002533.SZ | 金杯电工 | 电气设备 | 79.2 | 74% | 📊放缓 | ↑roic_trend:0.14, ↑revenue_trend:0.06, ↑roe_trend:0.14 |
+| 688589.SH | 力合微 | 半导体 | 79.2 | 77% | 🚀成长 | ↑revenue_trend:0.19, ↑roic_trend:0.10, ↑roiic_trend:0.89 |
+| 300679.SZ | 电连技术 | 元器件 | 78.5 | 76% | 📊放缓 | ↑roic_trend:0.09, ↑roe_trend:0.09, ↑revenue_trend:0.03 |
+| 300760.SZ | 迈瑞医疗 | 医疗保健 | 78.0 | 86% | 📈高增长 | ↑revenue_trend:0.14, ↑ocf_trend:0.09, ↑roe_trend:0.02 |
+| 600483.SH | 福能股份 | 新型电力 | 77.9 | 75% | 📊放缓 | ↑roic_trend:0.07, ↑ocf_trend:0.08, ↑net_margin_trend:0.13 |
+| 688082.SH | 盛美上海 | 半导体 | 76.6 | 74% | 📈高增长 | ↑revenue_trend:0.40, ↑gross_margin_trend:0.04, ↑net_margin_trend:0.05 |
+| 603920.SH | 世运电路 | 元器件 | 76.2 | 68% | 🏔️成熟 | ↑revenue_trend:0.04, ↓rule_engine:-12.00, ↑roe_trend:0.11 |
+| 301491.SZ | 汉桑科技 | IT设备 | 76.0 | 74% | 💰现金牛 | ↑revenue_trend:0.05, ↑ocf_trend:0.28, ↑net_margin_trend:0.18 |
 | 688013.SH | 天臣医疗 | 医疗保健 | 75.6 | 76% | 🚀成长 | ↑revenue_trend:0.11, ↑roiic_trend:1.09, ↑roe_trend:0.01 |
-| 920112.BJ | 巴兰仕 | 专用机械 | 75.4 | 74% | 🏔️成熟 | ↓rule_engine:-17.78, ↑roic_trend:0.05, ↑roe_trend:0.09 |
-| 600483.SH | 福能股份 | 新型电力 | 75.3 | 72% | 📊放缓 | ↑roic_trend:0.07, ↑ocf_trend:0.08, ↑net_margin_trend:0.13 |
-| 600312.SH | 平高电气 | 电气设备 | 75.0 | 71% | 📊放缓 | ↓rule_engine:-20.00, ↑roic_trend:0.52, ↑roe_trend:0.58 |
-| 603855.SH | 华荣股份 | 专用机械 | 74.9 | 82% | 💰现金牛 | ↑roic_trend:0.06, ↑roe_trend:0.07, ↑ocf_trend:0.09 |
-| 002580.SZ | 圣阳股份 | 电气设备 | 74.9 | 72% | 🚀成长 | ↑roic_trend:0.36, ↓rule_engine:-14.41, ↑roe_trend:0.45 |
-| 300832.SZ | 新产业 | 医疗保健 | 74.8 | 74% | 🏔️成熟 | ↑revenue_trend:0.06, ↑profit_trend:0.04, ↑rule_engine:8.00 |
-| 688358.SH | 祥生医疗 | 医疗保健 | 74.5 | 78% | 🏔️成熟 | ↑rule_engine:14.00, ↑roe_trend:0.05, ↑ocf_trend:0.05 |
-| 300693.SZ | 盛弘股份 | 电气设备 | 74.4 | 72% | 📈高增长 | ↑roic_trend:0.17, ↑roe_trend:0.19, ↑revenue_trend:0.16 |
-| 002252.SZ | 上海莱士 | 生物制药 | 74.2 | 76% | 🚀成长 | ↑revenue_trend:0.17, ↑roic_trend:0.01, ↓gross_margin_trend:-0.11 |
-| 002422.SZ | 科伦药业 | 化学制药 | 74.0 | 68% | 📊放缓 | ↓rule_engine:-16.79, ↑roic_trend:0.24, ↑roe_trend:0.21 |
-| 688516.SH | 奥特维 | 专用机械 | 73.7 | 71% | 📈高增长 | ↑roic_trend:0.09, ↑revenue_trend:0.21, ↓rule_engine:-12.00 |
-| 688198.SH | 佰仁医疗 | 医疗保健 | 73.3 | 69% | 📊放缓 | ↑roic_trend:0.14, ↓rule_engine:-14.00, ↑roe_trend:0.16 |
-| 688248.SH | 南网科技 | 电气设备 | 73.3 | 73% | 📈高增长 | ↑roic_trend:0.09, ↓rule_engine:-16.00, ↑roe_trend:0.09 |
-| 300866.SZ | 安克创新 | 元器件 | 73.3 | 80% | 📈高增长 | ↑revenue_trend:0.17, ↑ocf_trend:0.48, ↑roiic_trend:0.25 |
+| 000400.SZ | 许继电气 | 电气设备 | 75.5 | 83% | 📈高增长 | ↑roic_trend:0.05, ↑revenue_trend:0.12, ↑roe_trend:0.05 |
+| 002484.SZ | 江海股份 | 元器件 | 75.5 | 83% | 📈高增长 | ↑roic_trend:0.05, ↑revenue_trend:0.14, ↑roe_trend:0.05 |
+| 603207.SH | 小方制药 | 化学制药 | 75.4 | 77% | 🏔️成熟 | ↑rule_engine:17.82, ↑gross_margin_trend:0.01, ↓roiic_trend:-0.77 |
+| 000988.SZ | 华工科技 | 专用机械 | 75.2 | 76% | 🏔️成熟 | ↑revenue_trend:0.01, ↑net_margin_trend:0.06, ↑roiic_trend:0.29 |
+| 605118.SH | 力鼎光电 | 元器件 | 75.0 | 71% | 🏔️成熟 | ↑revenue_trend:0.08, ↑roiic_trend:0.77, ↓gross_margin_trend:0.00 |
+| 603829.SH | 洛凯股份 | 电气设备 | 74.8 | 85% | 📈高增长 | ↑roic_trend:0.06, ↑revenue_trend:0.22, ↑roe_trend:0.09 |
+| 000915.SZ | 华特达因 | 化学制药 | 74.1 | 70% | 🏔️成熟 | ↑roic_trend:0.05, ↑revenue_trend:0.05, ↓rule_engine:-11.14 |
+| 002179.SZ | 中航光电 | 元器件 | 73.9 | 84% | 💰现金牛 | ↓roic_trend:0.00, ↓roe_trend:-0.00, ↑revenue_trend:0.01 |
+| 300693.SZ | 盛弘股份 | 电气设备 | 73.0 | 70% | 📈高增长 | ↑roic_trend:0.17, ↑roe_trend:0.19, ↑revenue_trend:0.16 |
+| 002262.SZ | 恩华药业 | 化学制药 | 73.0 | 72% | 📈高增长 | ↑revenue_trend:0.13, ↑profit_trend:0.08, ↑ocf_trend:0.03 |
+| 002371.SZ | 北方华创 | 半导体 | 72.7 | 72% | 📈高增长 | ↓rule_engine:-21.20, ↑roic_trend:0.20, ↑roe_trend:0.24 |
+| 000962.SZ | 东方钽业 | 小金属 | 72.7 | 67% | 🚀成长 | ↑roic_trend:0.20, ↑revenue_trend:0.11, ↑net_margin_trend:0.21 |
+| 300831.SZ | 派瑞股份 | 半导体 | 72.6 | 68% | 📊放缓 | ↑revenue_trend:0.02, ↑roiic_trend:1.64, ↑gross_margin_trend:0.03 |
+| 688138.SH | 清溢光电 | 半导体 | 72.5 | 69% | 🚀成长 | ↑revenue_trend:0.20, ↑roic_trend:0.16, ↑roe_trend:0.22 |
 | 001389.SZ | 广合科技 | 元器件 | 72.3 | 67% | 📈高增长 | ↓rule_engine:-17.22, ↑roic_trend:0.03, ↑roe_trend:0.05 |
-| 832982.BJ | 锦波生物 | 医疗保健 | 71.7 | 73% | 📈高增长 | ↓rule_engine:-20.00, ↑roic_trend:0.39, ↑roe_trend:0.42 |
-| 605118.SH | 力鼎光电 | 元器件 | 71.6 | 67% | 🏔️成熟 | ↓roic_trend:-0.03, ↑revenue_trend:0.08, ↑ocf_trend:0.10 |
-| 002179.SZ | 中航光电 | 元器件 | 71.6 | 81% | 💰现金牛 | ↑rule_engine:14.00, ↓roic_trend:0.00, ↓roe_trend:-0.00 |
-| 300346.SZ | 南大光电 | 半导体 | 71.2 | 73% | 🚀成长 | ↑roe_trend:0.08, ↑revenue_trend:0.22, ↑ocf_trend:0.15 |
-| 603014.SH | 威高血净 | 医疗保健 | 70.6 | 71% | 📊放缓 | ↑roic_trend:0.07, ↑revenue_trend:0.06, ↑net_margin_trend:0.05 |
-| 603050.SH | 科林电气 | 电气设备 | 70.2 | 60% | 🏔️成熟 | ↑roic_trend:0.02, ↑roe_trend:0.05, ↑revenue_trend:0.10 |
-| 300540.SZ | 蜀道装备 | 专用机械 | 70.1 | 68% | 📊放缓 | ↓rule_engine:-20.00, ↑roic_trend:0.59, ↑roe_trend:0.29 |
+| 300415.SZ | 伊之密 | 专用机械 | 72.1 | 68% | 🏔️成熟 | ↑revenue_trend:0.06, ↑profit_trend:0.07, ↓roiic_trend:-0.35 |
+| 688389.SH | 普门科技 | 医疗保健 | 72.0 | 79% | 📈高增长 | ↑roic_trend:0.03, ↓rule_engine:-12.66, ↑roe_trend:0.09 |
+| 600850.SH | 电科数字 | 软件服务 | 72.0 | 75% | 📉衰退 | ↑rule_engine:13.20, ↓ocf_trend:-0.45, ↑roiic_trend:0.62 |
+| 688358.SH | 祥生医疗 | 医疗保健 | 71.8 | 75% | 🏔️成熟 | ↑ocf_trend:0.05, ↑roe_trend:0.05, ↓roiic_trend:-1.35 |
+| 688517.SH | 金冠电气 | 电气设备 | 71.0 | 66% | 📊放缓 | ↑ocf_trend:0.24, ↓roiic_trend:-0.27, ↓revenue_trend:-0.01 |
+| 002463.SZ | 沪电股份 | 元器件 | 70.8 | 71% | 🏔️成熟 | ↑ocf_trend:0.07, ↑revenue_trend:0.02, ↑roiic_trend:0.31 |
+| 002606.SZ | 大连电瓷 | 电气设备 | 70.8 | 58% | 🏔️成熟 | ↑revenue_trend:0.08, ↑roiic_trend:0.06, ↑roe_trend:0.04 |
+| 603855.SH | 华荣股份 | 专用机械 | 70.7 | 77% | 💰现金牛 | ↑roic_trend:0.06, ↑roe_trend:0.07, ↑ocf_trend:0.09 |
+| 688516.SH | 奥特维 | 专用机械 | 70.6 | 67% | 📈高增长 | ↓rule_engine:-18.21, ↑roic_trend:0.09, ↑revenue_trend:0.21 |
+| 688150.SH | 莱特光电 | 元器件 | 70.5 | 63% | 🏔️成熟 | ↑revenue_trend:0.06, ↑net_margin_trend:0.04, ↑gross_margin_trend:0.01 |
+| 688029.SH | 南微医学 | 医疗保健 | 70.4 | 76% | 📊放缓 | ↓rule_engine:-18.84, ↑roic_trend:0.07, ↑revenue_trend:0.06 |
+| 002475.SZ | 立讯精密 | 元器件 | 70.4 | 67% | 📈高增长 | ↑revenue_trend:0.25, ↑ocf_trend:0.35, ↑roiic_trend:0.13 |
 
 ### 🏆 Top 10 详细分析
 
-### 603676.SH 卫信康 ✅ 优质
-*行业: 化学制药*
-
-- **综合评分**: 100.0/100
-- **置信度**: 80.0%
-- **生命周期**: 📈 高增长
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.273 | +0.2 | ↑ |
-| roe_trend | 0.274 | +0.1 | ↑ |
-| revenue_trend | 0.127 | +0.1 | ↑ |
-| gross_margin_trend | 0.007 | +0.0 | ↑ |
-| net_margin_trend | 0.223 | +0.1 | ↑ |
-| ocf_trend | 0.044 | +0.1 | ↑ |
-
----
-
-### 605116.SH 奥锐特 ✅ 优质
-*行业: 化学制药*
-
-- **综合评分**: 100.0/100
-- **置信度**: 90.0%
-- **生命周期**: 📈 高增长
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.005 | +0.0 | ↑ |
-| roe_trend | 0.074 | +0.1 | ↑ |
-| revenue_trend | 0.171 | +0.1 | ↑ |
-| gross_margin_trend | 0.056 | +0.1 | ↑ |
-| net_margin_trend | 0.029 | +0.1 | ↑ |
-| ocf_trend | 0.083 | +0.1 | ↑ |
-
----
-
-### 603611.SH 诺力股份 ✅ 优质
+### 002595.SZ 豪迈科技 ✅ 优质
 *行业: 专用机械*
 
-- **综合评分**: 100.0/100
+- **综合评分**: 98.0/100
 - **置信度**: 90.0%
 - **生命周期**: 📈 高增长
 
@@ -192,19 +137,19 @@
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 0.040 | +0.2 | ↑ |
-| roe_trend | 0.051 | +0.1 | ↑ |
-| revenue_trend | 0.135 | +0.1 | ↑ |
-| gross_margin_trend | 0.011 | +0.1 | ↑ |
-| net_margin_trend | 0.053 | +0.1 | ↑ |
-| ocf_trend | 0.145 | +0.1 | ↑ |
+| roic_trend | 0.068 | +0.2 | ↑ |
+| roe_trend | 0.046 | +0.1 | ↑ |
+| revenue_trend | 0.119 | +0.1 | ↑ |
+| gross_margin_trend | 0.042 | +0.1 | ↑ |
+| net_margin_trend | 0.062 | +0.1 | ↑ |
+| ocf_trend | 0.392 | +0.1 | ↑ |
 
 ---
 
 ### 688128.SH 中国电研 ✅ 优质
 *行业: 专用机械*
 
-- **综合评分**: 100.0/100
+- **综合评分**: 96.3/100
 - **置信度**: 90.0%
 - **生命周期**: 📈 高增长
 
@@ -221,30 +166,10 @@
 
 ---
 
-### 002837.SZ 英维克 ✅ 优质
-*行业: 专用机械*
+### 605116.SH 奥锐特 ✅ 优质
+*行业: 化学制药*
 
-- **综合评分**: 100.0/100
-- **置信度**: 90.0%
-- **生命周期**: 💰 现金牛
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.082 | +0.2 | ↑ |
-| roe_trend | 0.057 | +0.1 | ↑ |
-| revenue_trend | -0.016 | +0.0 | ↓ |
-| gross_margin_trend | -0.014 | +0.0 | ↓ |
-| net_margin_trend | 0.015 | +0.1 | ↑ |
-| ocf_trend | 0.068 | +0.1 | ↑ |
-
----
-
-### 001395.SZ 亚联机械 ✅ 优质
-*行业: 专用机械*
-
-- **综合评分**: 100.0/100
+- **综合评分**: 95.5/100
 - **置信度**: 90.0%
 - **生命周期**: 📈 高增长
 
@@ -252,79 +177,19 @@
 
 | 因素 | 数值 | 贡献 | 方向 |
 |------|------|------|------|
-| roic_trend | 0.032 | +0.2 | ↑ |
-| roe_trend | 0.020 | +0.1 | ↑ |
-| revenue_trend | 0.202 | +0.1 | ↑ |
-| gross_margin_trend | 0.001 | +0.0 | → |
-| net_margin_trend | -0.017 | +0.0 | ↓ |
-| ocf_trend | 0.318 | +0.1 | ↑ |
-
----
-
-### 603016.SH 新宏泰 ✅ 优质
-*行业: 电气设备*
-
-- **综合评分**: 100.0/100
-- **置信度**: 81.2%
-- **生命周期**: 🏔️ 成熟期
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.043 | +0.2 | ↑ |
-| roe_trend | 0.045 | +0.1 | ↑ |
-| revenue_trend | 0.081 | +0.1 | ↑ |
-| gross_margin_trend | -0.004 | +0.0 | → |
-| net_margin_trend | -0.002 | +0.0 | → |
-| ocf_trend | 0.073 | +0.1 | ↑ |
-
----
-
-### 600582.SH 天地科技 ✅ 优质
-*行业: 专用机械*
-
-- **综合评分**: 100.0/100
-- **置信度**: 90.0%
-- **生命周期**: 📈 高增长
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.113 | +0.2 | ↑ |
-| roe_trend | 0.092 | +0.1 | ↑ |
-| revenue_trend | 0.102 | +0.1 | ↑ |
-| gross_margin_trend | 0.004 | +0.0 | → |
-| net_margin_trend | 0.091 | +0.1 | ↑ |
-| ocf_trend | 0.030 | +0.1 | ↑ |
-
----
-
-### 603036.SH 如通股份 ✅ 优质
-*行业: 专用机械*
-
-- **综合评分**: 100.0/100
-- **置信度**: 83.7%
-- **生命周期**: 📊 放缓期
-
-#### 关键因素
-
-| 因素 | 数值 | 贡献 | 方向 |
-|------|------|------|------|
-| roic_trend | 0.092 | +0.2 | ↑ |
-| roe_trend | 0.078 | +0.1 | ↑ |
-| revenue_trend | 0.088 | +0.1 | ↑ |
-| gross_margin_trend | 0.008 | +0.0 | ↑ |
-| net_margin_trend | 0.030 | +0.1 | ↑ |
-| ocf_trend | 0.012 | +0.1 | ↑ |
+| roic_trend | 0.005 | +0.1 | ↑ |
+| roe_trend | 0.074 | +0.1 | ↑ |
+| revenue_trend | 0.171 | +0.1 | ↑ |
+| gross_margin_trend | 0.056 | +0.1 | ↑ |
+| net_margin_trend | 0.029 | +0.1 | ↑ |
+| ocf_trend | 0.083 | +0.1 | ↑ |
 
 ---
 
 ### 832735.BJ 德源药业 ✅ 优质
 *行业: 化学制药*
 
-- **综合评分**: 100.0/100
+- **综合评分**: 95.5/100
 - **置信度**: 83.7%
 - **生命周期**: 🏔️ 成熟期
 
@@ -335,99 +200,219 @@
 | roic_trend | 0.031 | +0.2 | ↑ |
 | roe_trend | 0.020 | +0.1 | ↑ |
 | revenue_trend | 0.063 | +0.1 | ↑ |
-| gross_margin_trend | 0.009 | +0.0 | ↑ |
+| gross_margin_trend | 0.009 | +0.1 | ↑ |
 | net_margin_trend | 0.071 | +0.1 | ↑ |
 | ocf_trend | 0.022 | +0.1 | ↑ |
 
 ---
 
+### 001395.SZ 亚联机械 ✅ 优质
+*行业: 专用机械*
+
+- **综合评分**: 94.3/100
+- **置信度**: 90.0%
+- **生命周期**: 📈 高增长
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.032 | +0.2 | ↑ |
+| roe_trend | 0.020 | +0.1 | ↑ |
+| revenue_trend | 0.202 | +0.1 | ↑ |
+| gross_margin_trend | 0.001 | +0.1 | → |
+| net_margin_trend | -0.017 | +0.0 | ↓ |
+| ocf_trend | 0.318 | +0.1 | ↑ |
+
+---
+
+### 603611.SH 诺力股份 ✅ 优质
+*行业: 专用机械*
+
+- **综合评分**: 93.6/100
+- **置信度**: 90.0%
+- **生命周期**: 📈 高增长
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.040 | +0.2 | ↑ |
+| roe_trend | 0.051 | +0.1 | ↑ |
+| revenue_trend | 0.135 | +0.1 | ↑ |
+| gross_margin_trend | 0.011 | +0.1 | ↑ |
+| net_margin_trend | 0.053 | +0.1 | ↑ |
+| ocf_trend | 0.145 | +0.1 | ↑ |
+
+---
+
+### 600062.SH 华润双鹤 ✅ 优质
+*行业: 化学制药*
+
+- **综合评分**: 93.0/100
+- **置信度**: 83.7%
+- **生命周期**: 🏔️ 成熟期
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.004 | +0.1 | → |
+| roe_trend | 0.030 | +0.1 | ↑ |
+| revenue_trend | 0.068 | +0.1 | ↑ |
+| gross_margin_trend | 0.005 | +0.1 | ↑ |
+| net_margin_trend | 0.027 | +0.1 | ↑ |
+| ocf_trend | 0.066 | +0.1 | ↑ |
+
+---
+
+### 600582.SH 天地科技 ✅ 优质
+*行业: 专用机械*
+
+- **综合评分**: 92.4/100
+- **置信度**: 90.0%
+- **生命周期**: 📈 高增长
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.113 | +0.1 | ↑ |
+| roe_trend | 0.092 | +0.1 | ↑ |
+| revenue_trend | 0.102 | +0.1 | ↑ |
+| gross_margin_trend | 0.004 | +0.1 | → |
+| net_margin_trend | 0.091 | +0.1 | ↑ |
+| ocf_trend | 0.030 | +0.1 | ↑ |
+
+---
+
+### 603277.SH 银都股份 ✅ 优质
+*行业: 专用机械*
+
+- **综合评分**: 91.1/100
+- **置信度**: 90.0%
+- **生命周期**: 💰 现金牛
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | -0.008 | +0.0 | ↓ |
+| roe_trend | 0.010 | +0.1 | ↑ |
+| revenue_trend | 0.012 | +0.1 | ↑ |
+| gross_margin_trend | 0.012 | +0.1 | ↑ |
+| net_margin_trend | 0.018 | +0.1 | ↑ |
+| ocf_trend | 0.234 | +0.1 | ↑ |
+
+---
+
+### 002130.SZ 沃尔核材 ✅ 优质
+*行业: 电气设备*
+
+- **综合评分**: 89.3/100
+- **置信度**: 90.0%
+- **生命周期**: 💰 现金牛
+
+#### 关键因素
+
+| 因素 | 数值 | 贡献 | 方向 |
+|------|------|------|------|
+| roic_trend | 0.004 | +0.1 | → |
+| roe_trend | 0.007 | +0.1 | ↑ |
+| revenue_trend | 0.006 | +0.1 | ↑ |
+| gross_margin_trend | -0.002 | +0.1 | → |
+| net_margin_trend | 0.068 | +0.1 | ↑ |
+| ocf_trend | 0.016 | +0.1 | ↑ |
+
+---
+
 ## 🟡 一般公司 (AVERAGE)
 
-> 共 162 家（得分 50-70）
+> 共 152 家（得分 50-70）
 
 | 代码 | 名称 | 得分 | 置信度 | 生命周期 | 主要因素 |
 |------|------|------|--------|----------|----------|
-| 603283.SH | 赛腾股份 | 69.5 | 78% | 📈 | rule_engine, roic_trend |
-| 600850.SH | 电科数字 | 69.4 | 84% | 📉 | rule_engine, roic_trend |
-| 600686.SH | 金龙汽车 | 69.3 | 82% | 🚀 | rule_engine, roic_trend |
-| 301491.SZ | 汉桑科技 | 68.6 | 78% | 💰 | roic_trend, revenue_trend |
-| 002606.SZ | 大连电瓷 | 68.5 | 69% | 🏔️ | revenue_trend, roiic_trend |
-| 300743.SZ | 天地数码 | 68.3 | 79% | 📊 | rule_engine, roic_trend |
-| 002380.SZ | 科远智慧 | 68.2 | 82% | 📈 | rule_engine, roic_trend |
-| 002826.SZ | 易明医药 | 67.5 | 79% | 📊 | roic_trend, gross_margin_trend |
-| 002270.SZ | 华明装备 | 67.5 | 76% | 📊 | roic_trend, rule_engine |
-| 002463.SZ | 沪电股份 | 67.5 | 81% | 🏔️ | roic_trend, ocf_trend |
-| 300833.SZ | 浩洋股份 | 67.5 | 80% | 📈 | rule_engine, roic_trend |
-| 300752.SZ | 隆利科技 | 67.3 | 81% | 📉 | rule_engine, roic_trend |
-| 688691.SH | 灿芯股份 | 67.1 | 76% | 🏔️ | roic_trend, gross_margin_trend |
-| 601567.SH | 三星医疗 | 67.0 | 80% | 📈 | rule_engine, roic_trend |
-| 688150.SH | 莱特光电 | 67.0 | 74% | 🏔️ | roic_trend, revenue_trend |
-| 002152.SZ | 广电运通 | 67.0 | 80% | 🚀 | revenue_trend, roiic_trend |
-| 300532.SZ | 今天国际 | 67.0 | 78% | 📈 | roic_trend, rule_engine |
-| 603109.SH | 神驰机电 | 66.8 | 76% | 📊 | rule_engine, roe_trend |
-| 839493.BJ | 并行科技 | 66.6 | 80% | 🚀 | rule_engine, roic_trend |
-| 688517.SH | 金冠电气 | 66.6 | 76% | 📊 | rule_engine, ocf_trend |
-| 002351.SZ | 漫步者 | 66.5 | 81% | 🏔️ | rule_engine, roic_trend |
-| 833751.BJ | 惠同新材 | 66.4 | 81% | 📊 | net_margin_trend, roiic_trend |
-| 600456.SH | 宝钛股份 | 66.3 | 76% | 🏔️ | revenue_trend, rule_engine |
-| 002334.SZ | 英威腾 | 66.2 | 80% | 🚀 | rule_engine, roic_trend |
-| 000153.SZ | 丰原药业 | 65.8 | 84% | 📊 | rule_engine, gross_margin_trend |
-| 000756.SZ | 新华制药 | 65.7 | 76% | 🏔️ | revenue_trend, roiic_trend |
-| 600099.SH | 林海股份 | 65.7 | 71% | 🏔️ | rule_engine, roic_trend |
-| 002358.SZ | 森源电气 | 65.0 | 75% | 🚀 | rule_engine, roic_trend |
-| 002716.SZ | 湖南白银 | 64.9 | 80% | 🚀 | rule_engine, roic_trend |
-| 000403.SZ | 派林生物 | 64.9 | 75% | 🚀 | roic_trend, revenue_trend |
-| 002378.SZ | 章源钨业 | 64.5 | 76% | 📊 | roic_trend, net_margin_trend |
-| 300277.SZ | 海联讯 | 64.4 | 74% | 🏔️ | roic_trend, gross_margin_trend |
-| 300415.SZ | 伊之密 | 64.4 | 76% | 🏔️ | roic_trend, revenue_trend |
-| 601179.SH | 中国西电 | 64.3 | 77% | 🚀 | rule_engine, roic_trend |
-| 002475.SZ | 立讯精密 | 64.0 | 78% | 📈 | roic_trend, revenue_trend |
-| 000550.SZ | 江铃汽车 | 63.9 | 79% | 📊 | roic_trend, roe_trend |
-| 601619.SH | 嘉泽新能 | 63.8 | 77% | 🚀 | rule_engine, roic_trend |
-| 300855.SZ | 图南股份 | 63.7 | 85% | 💰 | roic_trend, roiic_trend |
-| 603105.SH | 芯能科技 | 63.5 | 80% | 🚀 | rule_engine, roic_trend |
-| 832491.BJ | 奥迪威 | 63.4 | 74% | 🏔️ | revenue_trend, ocf_trend |
-| 002322.SZ | 理工能科 | 63.4 | 76% | 📊 | roiic_trend, rule_engine |
-| 301581.SZ | 黄山谷捷 | 63.4 | 81% | 🏔️ | roic_trend, rule_engine |
-| 002690.SZ | 美亚光电 | 63.2 | 82% | 💰 | roic_trend, roe_trend |
-| 603367.SH | 辰欣药业 | 62.9 | 76% | 🏔️ | rule_engine, roic_trend |
-| 600241.SH | 时代万恒 | 62.9 | 79% | 📉 | roic_trend, rule_engine |
-| 300143.SZ | 盈康生命 | 62.6 | 76% | 📊 | rule_engine, roic_trend |
-| 600066.SH | 宇通客车 | 62.6 | 81% | 🏔️ | rule_engine, roic_trend |
-| 002192.SZ | 融捷股份 | 62.5 | 76% | 🏔️ | rule_engine, roic_trend |
-| 601633.SH | 长城汽车 | 62.2 | 80% | 📈 | rule_engine, revenue_trend |
-| 831689.BJ | 克莱特 | 62.1 | 81% | 🏔️ | revenue_trend, ocf_trend |
-| 688376.SH | 美埃科技 | 61.8 | 76% | 🏔️ | rule_engine, roic_trend |
-| 002262.SZ | 恩华药业 | 61.8 | 80% | 📈 | roic_trend, revenue_trend |
-| 603618.SH | 杭电股份 | 61.8 | 76% | 🏔️ | roic_trend, ocf_trend |
-| 002530.SZ | 金财互联 | 61.8 | 79% | 🏔️ | rule_engine, roic_trend |
-| 603207.SH | 小方制药 | 61.6 | 81% | 🏔️ | rule_engine, roic_trend |
-| 002937.SZ | 兴瑞科技 | 61.5 | 80% | 📈 | rule_engine, roic_trend |
-| 600161.SH | 天坛生物 | 61.4 | 88% | 💰 | roiic_trend, profit_trend |
-| 688099.SH | 晶晨股份 | 61.4 | 74% | 📊 | rule_engine, roic_trend |
-| 600379.SH | 宝光股份 | 61.2 | 85% | 📈 | rule_engine, roic_trend |
-| 300439.SZ | 美康生物 | 61.2 | 79% | 📉 | roic_trend, revenue_trend |
-| 300279.SZ | 和晶科技 | 61.1 | 81% | 🏔️ | rule_engine, roic_trend |
-| 300017.SZ | 网宿科技 | 61.1 | 81% | 📊 | rule_engine, roic_trend |
-| 600587.SH | 新华医疗 | 60.9 | 74% | 🏔️ | roic_trend, ocf_trend |
-| 002073.SZ | 软控股份 | 60.9 | 76% | 📊 | rule_engine, roic_trend |
-| 301589.SZ | 诺瓦星云 | 60.8 | 80% | 📈 | roic_trend, revenue_trend |
-| 301186.SZ | 超达装备 | 60.8 | 71% | 🏔️ | roe_trend, revenue_trend |
-| 300757.SZ | 罗博特科 | 60.8 | 76% | 🏔️ | rule_engine, roic_trend |
-| 002730.SZ | 电光科技 | 60.5 | 79% | 🏔️ | roic_trend, revenue_trend |
-| 300069.SZ | 金利华电 | 60.5 | 80% | 🚀 | rule_engine, roic_trend |
-| 000931.SZ | 中关村 | 60.4 | 79% | 🏔️ | rule_engine, roe_trend |
-| 000997.SZ | 新大陆 | 60.2 | 78% | 💰 | rule_engine, roic_trend |
-| 300476.SZ | 胜宏科技 | 60.0 | 74% | 🏔️ | roic_trend, ocf_trend |
-| 002655.SZ | 共达电声 | 59.9 | 79% | 🏔️ | roiic_trend, roe_trend |
-| 920682.BJ | 球冠电缆 | 59.8 | 79% | 🏔️ | roe_trend, roiic_trend |
-| 600521.SH | 华海药业 | 59.6 | 71% | 🏔️ | roic_trend, revenue_trend |
-| 002409.SZ | 雅克科技 | 59.5 | 76% | 🏔️ | roic_trend, ocf_trend |
-| 688408.SH | 中信博 | 59.5 | 80% | 📈 | rule_engine, roic_trend |
-| 300750.SZ | 宁德时代 | 59.4 | 78% | 📈 | roic_trend, revenue_trend |
-| 920037.BJ | 广信科技 | 59.3 | 80% | 📈 | rule_engine, roic_trend |
-| 688279.SH | 峰岹科技 | 59.3 | 77% | 🚀 | roic_trend, revenue_trend |
-| ... | | | | | 还有 82 家 |
+| 688596.SH | 正帆科技 | 69.7 | 82% | 📈 | rule_engine, roic_trend |
+| 600521.SH | 华海药业 | 69.6 | 71% | 🏔️ | revenue_trend, ocf_trend |
+| 601717.SH | 中创智领 | 69.5 | 74% | 📊 | rule_engine, roic_trend |
+| 603259.SH | 药明康德 | 69.5 | 82% | 📈 | roic_trend, rule_engine |
+| 300346.SZ | 南大光电 | 69.1 | 82% | 🚀 | revenue_trend, ocf_trend |
+| 600456.SH | 宝钛股份 | 69.0 | 76% | 🏔️ | revenue_trend, rule_engine |
+| 688376.SH | 美埃科技 | 68.6 | 76% | 🏔️ | revenue_trend, rule_engine |
+| 301479.SZ | 弘景光电 | 68.4 | 80% | 📈 | rule_engine, roic_trend |
+| 301598.SZ | 博科测试 | 68.1 | 78% | 💰 | ocf_trend, revenue_trend |
+| 300476.SZ | 胜宏科技 | 68.0 | 74% | 🏔️ | ocf_trend, net_margin_trend |
+| 688198.SH | 佰仁医疗 | 67.7 | 76% | 📊 | rule_engine, roic_trend |
+| 688617.SH | 惠泰医疗 | 67.7 | 80% | 📈 | rule_engine, roic_trend |
+| 688382.SH |  | 67.7 | 69% | 🏔️ | roiic_trend, profit_trend |
+| 002252.SZ | 上海莱士 | 67.6 | 82% | 🚀 | revenue_trend, roiic_trend |
+| 832110.BJ | 雷特科技 | 67.3 | 61% | 🏔️ | roiic_trend, profit_trend |
+| 001277.SZ | 速达股份 | 66.9 | 80% | 📈 | revenue_trend, ocf_trend |
+| 300750.SZ | 宁德时代 | 66.8 | 78% | 📈 | revenue_trend, profit_trend |
+| 301330.SZ | 熵基科技 | 66.7 | 81% | 📉 | rule_engine, roiic_trend |
+| 300866.SZ | 安克创新 | 66.6 | 88% | 📈 | rule_engine, revenue_trend |
+| 301589.SZ | 诺瓦星云 | 66.6 | 80% | 📈 | revenue_trend, ocf_trend |
+| 002322.SZ | 理工能科 | 66.5 | 76% | 📊 | gross_margin_trend, roiic_trend |
+| 300092.SZ | 科新机电 | 66.5 | 79% | 🏔️ | roic_trend, revenue_trend |
+| 688279.SH | 峰岹科技 | 66.2 | 77% | 🚀 | revenue_trend, ocf_trend |
+| 688302.SH |  | 66.2 | 69% | 🏔️ | profit_trend, roic_trend |
+| 688248.SH | 南网科技 | 66.0 | 80% | 📈 | rule_engine, roic_trend |
+| 301186.SZ | 超达装备 | 66.0 | 71% | 🏔️ | revenue_trend, rule_engine |
+| 603050.SH | 科林电气 | 66.0 | 71% | 🏔️ | roic_trend, revenue_trend |
+| 000756.SZ | 新华制药 | 65.8 | 76% | 🏔️ | revenue_trend, roiic_trend |
+| 600587.SH | 新华医疗 | 65.6 | 74% | 🏔️ | roiic_trend, roic_trend |
+| 003816.SZ | 中国广核 | 65.5 | 74% | 🏔️ | roiic_trend, revenue_trend |
+| 600475.SH | 华光环能 | 65.3 | 84% | 📉 | rule_engine, roiic_trend |
+| 688789.SH | 宏华数科 | 64.7 | 79% | 📉 | rule_engine, gross_margin_trend |
+| 605117.SH | 德业股份 | 64.5 | 66% | 📉 | gross_margin_trend, net_margin_trend |
+| 000403.SZ | 派林生物 | 64.4 | 75% | 🚀 | revenue_trend, net_margin_trend |
+| 600320.SH | 振华重工 | 64.4 | 82% | 🚀 | revenue_trend, ocf_trend |
+| 301581.SZ | 黄山谷捷 | 64.3 | 81% | 🏔️ | roic_trend, rule_engine |
+| 603014.SH | 威高血净 | 64.3 | 81% | 📊 | revenue_trend, roic_trend |
+| 000513.SZ | 丽珠集团 | 64.2 | 76% | 🏔️ | ocf_trend, profit_trend |
+| 000153.SZ | 丰原药业 | 64.2 | 84% | 📊 | roiic_trend, rule_engine |
+| 300532.SZ | 今天国际 | 63.8 | 78% | 📈 | roic_trend, rule_engine |
+| 835438.BJ | 戈碧迦 | 63.5 | 76% | 🏔️ | revenue_trend, profit_trend |
+| 002409.SZ | 雅克科技 | 63.5 | 76% | 🏔️ | ocf_trend, revenue_trend |
+| 002432.SZ | 九安医疗 | 63.0 | 74% | 🏔️ | revenue_trend, gross_margin_trend |
+| 600821.SH | 金开新能 | 63.0 | 73% | 🚀 | revenue_trend, ocf_trend |
+| 688188.SH | 柏楚电子 | 62.6 | 76% | 🏔️ | rule_engine, revenue_trend |
+| 002422.SZ | 科伦药业 | 62.4 | 74% | 📊 | rule_engine, roic_trend |
+| 000045.SZ | 深纺织A | 62.0 | 77% | 🚀 | revenue_trend, roic_trend |
+| 002378.SZ | 章源钨业 | 61.9 | 76% | 📊 | roic_trend, roiic_trend |
+| 002690.SZ | 美亚光电 | 61.9 | 82% | 💰 | rule_engine, roic_trend |
+| 300820.SZ | 英杰电气 | 61.8 | 81% | 🏔️ | rule_engine, roic_trend |
+| 920682.BJ | 球冠电缆 | 61.6 | 79% | 🏔️ | roe_trend, roiic_trend |
+| 002334.SZ | 英威腾 | 61.4 | 80% | 🚀 | rule_engine, revenue_trend |
+| 600529.SH | 山东药玻 | 61.4 | 71% | 🏔️ | revenue_trend, rule_engine |
+| 002835.SZ | 同为股份 | 61.2 | 80% | 💰 | rule_engine, roic_trend |
+| 301277.SZ | 新天地 | 61.1 | 81% | 📉 | rule_engine, roiic_trend |
+| 831689.BJ | 克莱特 | 61.0 | 81% | 🏔️ | revenue_trend, rule_engine |
+| 300705.SZ | 九典制药 | 60.9 | 76% | 🏔️ | rule_engine, roic_trend |
+| 300452.SZ | 山河药辅 | 60.9 | 81% | 📉 | revenue_trend, roiic_trend |
+| 002655.SZ | 共达电声 | 60.8 | 79% | 🏔️ | roiic_trend, roe_trend |
+| 832491.BJ | 奥迪威 | 60.8 | 74% | 🏔️ | revenue_trend, rule_engine |
+| 833751.BJ | 惠同新材 | 60.7 | 81% | 📊 | rule_engine, net_margin_trend |
+| 688099.SH | 晶晨股份 | 60.7 | 74% | 📊 | rule_engine, roic_trend |
+| 601089.SH | 福元医药 | 60.5 | 80% | 💰 | net_margin_trend, profit_trend |
+| 603693.SH | 江苏新能 | 60.3 | 79% | 📉 | rule_engine, net_margin_trend |
+| 300277.SZ | 海联讯 | 60.3 | 74% | 🏔️ | roic_trend, roiic_trend |
+| 601633.SH | 长城汽车 | 60.2 | 80% | 📈 | rule_engine, revenue_trend |
+| 001289.SZ | 龙源电力 | 60.2 | 79% | 🏔️ | roiic_trend, ocf_trend |
+| 920112.BJ | 巴兰仕 | 60.1 | 79% | 🏔️ | rule_engine, roic_trend |
+| 688721.SH | 龙图光罩 | 60.1 | 81% | 📉 | rule_engine, roiic_trend |
+| 300791.SZ | 仙乐健康 | 59.9 | 74% | 🏔️ | revenue_trend, rule_engine |
+| 300855.SZ | 图南股份 | 59.8 | 85% | 💰 | rule_engine, roic_trend |
+| 603283.SH | 赛腾股份 | 59.8 | 78% | 📈 | rule_engine, roic_trend |
+| 601567.SH | 三星医疗 | 59.8 | 80% | 📈 | rule_engine, roic_trend |
+| 600161.SH | 天坛生物 | 59.8 | 88% | 💰 | rule_engine, revenue_trend |
+| 300439.SZ | 美康生物 | 59.8 | 79% | 📉 | rule_engine, roic_trend |
+| 002729.SZ | 好利科技 | 59.1 | 74% | 📉 | roic_trend, ocf_trend |
+| 002270.SZ | 华明装备 | 58.9 | 76% | 📊 | rule_engine, roic_trend |
+| 002826.SZ | 易明医药 | 58.7 | 78% | 📊 | rule_engine, gross_margin_trend |
+| 603367.SH | 辰欣药业 | 58.7 | 76% | 🏔️ | rule_engine, roic_trend |
+| 301028.SZ | 东亚机械 | 58.6 | 77% | 💰 | revenue_trend, gross_margin_trend |
+| ... | | | | | 还有 72 家 |
 
 ## 📊 按生命周期分组（非否决）
 
@@ -435,217 +420,217 @@
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 002837.SZ | 英维克 | ⭐quality | 100.0 | 90% |
-| 603277.SH | 银都股份 | ⭐quality | 98.8 | 90% |
-| 002130.SZ | 沃尔核材 | ⭐quality | 96.4 | 90% |
-| 600885.SH | 宏发股份 | ⭐quality | 93.6 | 90% |
-| 600406.SH | 国电南瑞 | ⭐quality | 92.2 | 90% |
-| 920101.BJ | 志高机械 | ⭐quality | 86.9 | 85% |
-| 002835.SZ | 同为股份 | ⭐quality | 86.9 | 80% |
-| 603658.SH | 安图生物 | ⭐quality | 80.5 | 82% |
-| 301602.SZ | 超研股份 | ⭐quality | 78.8 | 85% |
-| 603855.SH | 华荣股份 | ⭐quality | 74.9 | 82% |
-| 002179.SZ | 中航光电 | ⭐quality | 71.6 | 81% |
-| 301491.SZ | 汉桑科技 | 🟡average | 68.6 | 78% |
-| 300855.SZ | 图南股份 | 🟡average | 63.7 | 85% |
-| 002690.SZ | 美亚光电 | 🟡average | 63.2 | 82% |
-| 600161.SH | 天坛生物 | 🟡average | 61.4 | 88% |
-| 000997.SZ | 新大陆 | 🟡average | 60.2 | 78% |
-| 600268.SH | 国电南自 | 🟡average | 56.2 | 74% |
-| 873576.BJ | 天力复合 | 🟡average | 55.8 | 76% |
-| 301598.SZ | 博科测试 | 🟡average | 55.1 | 73% |
-| 600276.SH | 恒瑞医药 | 🟡average | 53.3 | 73% |
+| 603277.SH | 银都股份 | ⭐quality | 91.1 | 90% |
+| 002130.SZ | 沃尔核材 | ⭐quality | 89.3 | 90% |
+| 600406.SH | 国电南瑞 | ⭐quality | 88.1 | 90% |
+| 600885.SH | 宏发股份 | ⭐quality | 87.7 | 90% |
+| 002837.SZ | 英维克 | ⭐quality | 87.0 | 90% |
+| 920101.BJ | 志高机械 | ⭐quality | 83.6 | 85% |
+| 603658.SH | 安图生物 | ⭐quality | 82.9 | 82% |
+| 301602.SZ | 超研股份 | ⭐quality | 79.8 | 85% |
+| 301491.SZ | 汉桑科技 | ⭐quality | 76.0 | 74% |
+| 002179.SZ | 中航光电 | ⭐quality | 73.9 | 84% |
+| 603855.SH | 华荣股份 | ⭐quality | 70.7 | 77% |
+| 301598.SZ | 博科测试 | 🟡average | 68.1 | 78% |
+| 002690.SZ | 美亚光电 | 🟡average | 61.9 | 82% |
+| 002835.SZ | 同为股份 | 🟡average | 61.2 | 80% |
+| 601089.SH | 福元医药 | 🟡average | 60.5 | 80% |
+| 300855.SZ | 图南股份 | 🟡average | 59.8 | 85% |
+| 600161.SH | 天坛生物 | 🟡average | 59.8 | 88% |
+| 301028.SZ | 东亚机械 | 🟡average | 58.6 | 77% |
+| 002222.SZ | 福晶科技 | 🟡average | 58.4 | 79% |
+| 600276.SH | 恒瑞医药 | 🟡average | 55.7 | 76% |
 | ... | | | | 还有 26 家 |
 
 ### 🏔️ 成熟期 (421 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 603016.SH | 新宏泰 | ⭐quality | 100.0 | 81% |
-| 832735.BJ | 德源药业 | ⭐quality | 100.0 | 84% |
-| 600062.SH | 华润双鹤 | ⭐quality | 100.0 | 84% |
-| 000915.SZ | 华特达因 | ⭐quality | 94.4 | 76% |
-| 000880.SZ | 潍柴重机 | ⭐quality | 93.4 | 81% |
-| 603309.SH | 维力医疗 | ⭐quality | 93.2 | 79% |
-| 603019.SH | 中科曙光 | ⭐quality | 92.7 | 79% |
-| 600980.SH | 北矿科技 | ⭐quality | 92.5 | 84% |
-| 000507.SZ | 珠海港 | ⭐quality | 89.6 | 79% |
-| 688302.SH |  | ⭐quality | 89.5 | 69% |
-| 688382.SH |  | ⭐quality | 88.4 | 69% |
-| 688019.SH | 安集科技 | ⭐quality | 86.0 | 79% |
-| 000963.SZ | 华东医药 | ⭐quality | 85.2 | 79% |
-| 000988.SZ | 华工科技 | ⭐quality | 83.1 | 81% |
-| 300962.SZ | 中金辐照 | ⭐quality | 81.4 | 81% |
-| 688097.SH | 博众精工 | ⭐quality | 80.0 | 76% |
-| 300092.SZ | 科新机电 | ⭐quality | 78.9 | 79% |
-| 688334.SH | 西高院 | ⭐quality | 78.0 | 72% |
-| 603920.SH | 世运电路 | ⭐quality | 76.1 | 68% |
-| 300406.SZ | 九强生物 | ⭐quality | 75.9 | 70% |
+| 832735.BJ | 德源药业 | ⭐quality | 95.5 | 84% |
+| 600062.SH | 华润双鹤 | ⭐quality | 93.0 | 84% |
+| 603016.SH | 新宏泰 | ⭐quality | 88.6 | 81% |
+| 603309.SH | 维力医疗 | ⭐quality | 86.6 | 79% |
+| 603019.SH | 中科曙光 | ⭐quality | 85.7 | 79% |
+| 000963.SZ | 华东医药 | ⭐quality | 85.1 | 79% |
+| 600980.SH | 北矿科技 | ⭐quality | 83.2 | 84% |
+| 000880.SZ | 潍柴重机 | ⭐quality | 82.4 | 81% |
+| 300962.SZ | 中金辐照 | ⭐quality | 81.7 | 81% |
+| 688019.SH | 安集科技 | ⭐quality | 81.1 | 79% |
+| 300832.SZ | 新产业 | ⭐quality | 81.1 | 79% |
+| 000507.SZ | 珠海港 | ⭐quality | 80.6 | 79% |
+| 688097.SH | 博众精工 | ⭐quality | 79.7 | 76% |
+| 688334.SH | 西高院 | ⭐quality | 79.7 | 74% |
+| 300406.SZ | 九强生物 | ⭐quality | 79.4 | 74% |
+| 603920.SH | 世运电路 | ⭐quality | 76.2 | 68% |
+| 603207.SH | 小方制药 | ⭐quality | 75.4 | 77% |
+| 000988.SZ | 华工科技 | ⭐quality | 75.2 | 76% |
+| 605118.SH | 力鼎光电 | ⭐quality | 75.0 | 71% |
+| 000915.SZ | 华特达因 | ⭐quality | 74.1 | 70% |
 | ... | | | | 还有 401 家 |
 
 ### 🚀 成长期 (159 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 688589.SH | 力合微 | ⭐quality | 91.2 | 77% |
-| 300049.SZ | 福瑞股份 | ⭐quality | 90.7 | 85% |
-| 000045.SZ | 深纺织A | ⭐quality | 80.2 | 77% |
-| 688138.SH | 清溢光电 | ⭐quality | 79.1 | 77% |
-| 000962.SZ | 东方钽业 | ⭐quality | 78.1 | 74% |
-| 600320.SH | 振华重工 | ⭐quality | 76.9 | 80% |
+| 300049.SZ | 福瑞股份 | ⭐quality | 84.2 | 85% |
+| 688589.SH | 力合微 | ⭐quality | 79.2 | 77% |
 | 688013.SH | 天臣医疗 | ⭐quality | 75.6 | 76% |
-| 002580.SZ | 圣阳股份 | ⭐quality | 74.9 | 72% |
-| 002252.SZ | 上海莱士 | ⭐quality | 74.2 | 76% |
-| 300346.SZ | 南大光电 | ⭐quality | 71.2 | 73% |
-| 600686.SH | 金龙汽车 | 🟡average | 69.3 | 82% |
-| 002152.SZ | 广电运通 | 🟡average | 67.0 | 80% |
-| 839493.BJ | 并行科技 | 🟡average | 66.6 | 80% |
-| 002334.SZ | 英威腾 | 🟡average | 66.2 | 80% |
-| 002358.SZ | 森源电气 | 🟡average | 65.0 | 75% |
-| 002716.SZ | 湖南白银 | 🟡average | 64.9 | 80% |
-| 000403.SZ | 派林生物 | 🟡average | 64.9 | 75% |
-| 601179.SH | 中国西电 | 🟡average | 64.3 | 77% |
-| 601619.SH | 嘉泽新能 | 🟡average | 63.8 | 77% |
-| 603105.SH | 芯能科技 | 🟡average | 63.5 | 80% |
+| 000962.SZ | 东方钽业 | ⭐quality | 72.7 | 67% |
+| 688138.SH | 清溢光电 | ⭐quality | 72.5 | 69% |
+| 300346.SZ | 南大光电 | 🟡average | 69.1 | 82% |
+| 002252.SZ | 上海莱士 | 🟡average | 67.6 | 82% |
+| 688279.SH | 峰岹科技 | 🟡average | 66.2 | 77% |
+| 000403.SZ | 派林生物 | 🟡average | 64.4 | 75% |
+| 600320.SH | 振华重工 | 🟡average | 64.4 | 82% |
+| 600821.SH | 金开新能 | 🟡average | 63.0 | 73% |
+| 000045.SZ | 深纺织A | 🟡average | 62.0 | 77% |
+| 002334.SZ | 英威腾 | 🟡average | 61.4 | 80% |
+| 002152.SZ | 广电运通 | 🟡average | 58.6 | 79% |
+| 002139.SZ | 拓邦股份 | 🟡average | 57.7 | 73% |
+| 688623.SH | 双元科技 | 🟡average | 57.3 | 73% |
+| 601619.SH | 嘉泽新能 | 🟡average | 57.3 | 75% |
+| 688576.SH | 西山科技 | 🟡average | 56.7 | 75% |
+| 603105.SH | 芯能科技 | 🟡average | 55.5 | 76% |
+| 002580.SZ | 圣阳股份 | 🟡average | 55.3 | 73% |
 | ... | | | | 还有 139 家 |
 
 ### 📈 高增长 (110 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 603676.SH | 卫信康 | ⭐quality | 100.0 | 80% |
-| 605116.SH | 奥锐特 | ⭐quality | 100.0 | 90% |
-| 603611.SH | 诺力股份 | ⭐quality | 100.0 | 90% |
-| 688128.SH | 中国电研 | ⭐quality | 100.0 | 90% |
-| 001395.SZ | 亚联机械 | ⭐quality | 100.0 | 90% |
-| 600582.SH | 天地科技 | ⭐quality | 100.0 | 90% |
-| 002595.SZ | 豪迈科技 | ⭐quality | 100.0 | 90% |
-| 300896.SZ | 爱美客 | ⭐quality | 95.3 | 80% |
-| 000682.SZ | 东方电子 | ⭐quality | 93.8 | 80% |
-| 600262.SH | 北方股份 | ⭐quality | 92.7 | 78% |
-| 002056.SZ | 横店东磁 | ⭐quality | 92.4 | 88% |
-| 002371.SZ | 北方华创 | ⭐quality | 92.2 | 80% |
-| 688389.SH | 普门科技 | ⭐quality | 91.7 | 88% |
-| 603829.SH | 洛凯股份 | ⭐quality | 91.0 | 90% |
-| 688111.SH | 金山办公 | ⭐quality | 90.2 | 88% |
-| 002028.SZ | 思源电气 | ⭐quality | 88.6 | 88% |
-| 000400.SZ | 许继电气 | ⭐quality | 85.8 | 88% |
-| 002484.SZ | 江海股份 | ⭐quality | 84.8 | 88% |
-| 301678.SZ | 新恒汇 | ⭐quality | 84.7 | 80% |
-| 301479.SZ | 弘景光电 | ⭐quality | 84.6 | 80% |
+| 002595.SZ | 豪迈科技 | ⭐quality | 98.0 | 90% |
+| 688128.SH | 中国电研 | ⭐quality | 96.3 | 90% |
+| 605116.SH | 奥锐特 | ⭐quality | 95.5 | 90% |
+| 001395.SZ | 亚联机械 | ⭐quality | 94.3 | 90% |
+| 603611.SH | 诺力股份 | ⭐quality | 93.6 | 90% |
+| 600582.SH | 天地科技 | ⭐quality | 92.4 | 90% |
+| 000682.SZ | 东方电子 | ⭐quality | 87.5 | 80% |
+| 002028.SZ | 思源电气 | ⭐quality | 86.5 | 88% |
+| 688111.SH | 金山办公 | ⭐quality | 86.0 | 88% |
+| 301609.SZ | 山大电力 | ⭐quality | 84.5 | 85% |
+| 300896.SZ | 爱美客 | ⭐quality | 83.8 | 80% |
+| 603676.SH | 卫信康 | ⭐quality | 83.0 | 80% |
+| 688566.SH | 吉贝尔 | ⭐quality | 81.6 | 82% |
+| 002850.SZ | 科达利 | ⭐quality | 80.8 | 78% |
+| 301678.SZ | 新恒汇 | ⭐quality | 80.0 | 80% |
+| 600262.SH | 北方股份 | ⭐quality | 79.7 | 78% |
+| 002056.SZ | 横店东磁 | ⭐quality | 79.6 | 88% |
+| 601126.SH | 四方股份 | ⭐quality | 79.4 | 82% |
+| 300760.SZ | 迈瑞医疗 | ⭐quality | 78.0 | 86% |
+| 688082.SH | 盛美上海 | ⭐quality | 76.6 | 74% |
 | ... | | | | 还有 90 家 |
 
 ### 🔄 反转期 (11 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 688484.SH | 南芯科技 | 🟠poor | 37.3 | 76% |
-| 002167.SZ | 东方锆业 | 🟠poor | 32.1 | 81% |
-| 301571.SZ | 国科天成 | 🟠poor | 25.8 | 81% |
-| 301606.SZ | 绿联科技 | 🟠poor | 16.4 | 79% |
-| 600930.SH | 华电新能 | 🟠poor | 14.1 | 76% |
-| 002452.SZ | 长高电新 | 🟠poor | 3.5 | 79% |
-| 002817.SZ | 黄山胶囊 | 🟠poor | 1.0 | 81% |
-| 920005.BJ | 鼎佳精密 | 🟠poor | 0.0 | 81% |
+| 301571.SZ | 国科天成 | 🟠poor | 31.7 | 81% |
+| 688484.SH | 南芯科技 | 🟠poor | 31.6 | 76% |
+| 002167.SZ | 东方锆业 | 🟠poor | 29.9 | 81% |
+| 301606.SZ | 绿联科技 | 🟠poor | 27.0 | 79% |
+| 600930.SH | 华电新能 | 🟠poor | 21.4 | 76% |
+| 002452.SZ | 长高电新 | 🟠poor | 15.8 | 79% |
+| 920005.BJ | 鼎佳精密 | 🟠poor | 9.9 | 81% |
+| 603297.SH | 永新光学 | 🟠poor | 9.7 | 81% |
+| 002817.SZ | 黄山胶囊 | 🟠poor | 7.0 | 81% |
 | 301013.SZ | 利和兴 | 🟠poor | 0.0 | 81% |
 | 834475.BJ | 三友科技 | 🟠poor | 0.0 | 81% |
-| 603297.SH | 永新光学 | 🟠poor | 0.0 | 81% |
 
 ### 📊 放缓期 (69 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 603036.SH | 如通股份 | ⭐quality | 100.0 | 84% |
-| 002533.SZ | 金杯电工 | ⭐quality | 99.6 | 74% |
-| 600560.SH | 金自天正 | ⭐quality | 97.0 | 86% |
-| 688338.SH | 赛科希德 | ⭐quality | 92.7 | 81% |
-| 688029.SH | 南微医学 | ⭐quality | 87.8 | 86% |
-| 601717.SH | 中创智领 | ⭐quality | 80.0 | 74% |
-| 300679.SZ | 电连技术 | ⭐quality | 78.1 | 75% |
-| 300831.SZ | 派瑞股份 | ⭐quality | 77.8 | 75% |
-| 600483.SH | 福能股份 | ⭐quality | 75.3 | 72% |
-| 600312.SH | 平高电气 | ⭐quality | 75.0 | 71% |
-| 002422.SZ | 科伦药业 | ⭐quality | 74.0 | 68% |
-| 688198.SH | 佰仁医疗 | ⭐quality | 73.3 | 69% |
-| 603014.SH | 威高血净 | ⭐quality | 70.6 | 71% |
-| 300540.SZ | 蜀道装备 | ⭐quality | 70.1 | 68% |
-| 300743.SZ | 天地数码 | 🟡average | 68.3 | 79% |
-| 002826.SZ | 易明医药 | 🟡average | 67.5 | 79% |
-| 002270.SZ | 华明装备 | 🟡average | 67.5 | 76% |
-| 603109.SH | 神驰机电 | 🟡average | 66.8 | 76% |
-| 688517.SH | 金冠电气 | 🟡average | 66.6 | 76% |
-| 833751.BJ | 惠同新材 | 🟡average | 66.4 | 81% |
+| 603036.SH | 如通股份 | ⭐quality | 88.7 | 84% |
+| 688338.SH | 赛科希德 | ⭐quality | 85.8 | 81% |
+| 600560.SH | 金自天正 | ⭐quality | 83.7 | 86% |
+| 002533.SZ | 金杯电工 | ⭐quality | 79.2 | 74% |
+| 300679.SZ | 电连技术 | ⭐quality | 78.5 | 76% |
+| 600483.SH | 福能股份 | ⭐quality | 77.9 | 75% |
+| 300831.SZ | 派瑞股份 | ⭐quality | 72.6 | 68% |
+| 688517.SH | 金冠电气 | ⭐quality | 71.0 | 66% |
+| 688029.SH | 南微医学 | ⭐quality | 70.4 | 76% |
+| 601717.SH | 中创智领 | 🟡average | 69.5 | 74% |
+| 688198.SH | 佰仁医疗 | 🟡average | 67.7 | 76% |
+| 002322.SZ | 理工能科 | 🟡average | 66.5 | 76% |
+| 603014.SH | 威高血净 | 🟡average | 64.3 | 81% |
+| 000153.SZ | 丰原药业 | 🟡average | 64.2 | 84% |
+| 002422.SZ | 科伦药业 | 🟡average | 62.4 | 74% |
+| 002378.SZ | 章源钨业 | 🟡average | 61.9 | 76% |
+| 833751.BJ | 惠同新材 | 🟡average | 60.7 | 81% |
+| 688099.SH | 晶晨股份 | 🟡average | 60.7 | 74% |
+| 002270.SZ | 华明装备 | 🟡average | 58.9 | 76% |
+| 002826.SZ | 易明医药 | 🟡average | 58.7 | 78% |
 | ... | | | | 还有 49 家 |
 
 ### 📉 衰退期 (405 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 300453.SZ | 三鑫医疗 | ⭐quality | 84.7 | 89% |
-| 600850.SH | 电科数字 | 🟡average | 69.4 | 84% |
-| 300752.SZ | 隆利科技 | 🟡average | 67.3 | 81% |
-| 600241.SH | 时代万恒 | 🟡average | 62.9 | 79% |
-| 300439.SZ | 美康生物 | 🟡average | 61.2 | 79% |
-| 603693.SH | 江苏新能 | 🟡average | 58.4 | 78% |
-| 003031.SZ | 中瓷电子 | 🟡average | 56.6 | 78% |
-| 300254.SZ | 仟源医药 | 🟡average | 56.5 | 81% |
-| 600475.SH | 华光环能 | 🟡average | 55.6 | 80% |
-| 002729.SZ | 好利科技 | 🟡average | 55.6 | 69% |
-| 300452.SZ | 山河药辅 | 🟡average | 55.4 | 77% |
-| 600601.SH | 方正科技 | 🟡average | 54.7 | 78% |
-| 836961.BJ | 西磁科技 | 🟡average | 53.9 | 70% |
-| 301330.SZ | 熵基科技 | 🟡average | 53.9 | 75% |
-| 603881.SH | 数据港 | 🟡average | 51.8 | 70% |
-| 430017.BJ | 星昊医药 | 🟡average | 50.3 | 73% |
-| 000960.SZ | 锡业股份 | 🟡average | 50.2 | 65% |
-| 605117.SH | 德业股份 | 🟠poor | 49.8 | 55% |
-| 688789.SH | 宏华数科 | 🟠poor | 48.6 | 69% |
-| 300963.SZ | 中洲特材 | 🟠poor | 48.5 | 57% |
+| 300453.SZ | 三鑫医疗 | ⭐quality | 85.0 | 89% |
+| 600850.SH | 电科数字 | ⭐quality | 72.0 | 75% |
+| 301330.SZ | 熵基科技 | 🟡average | 66.7 | 81% |
+| 600475.SH | 华光环能 | 🟡average | 65.3 | 84% |
+| 688789.SH | 宏华数科 | 🟡average | 64.7 | 79% |
+| 605117.SH | 德业股份 | 🟡average | 64.5 | 66% |
+| 301277.SZ | 新天地 | 🟡average | 61.1 | 81% |
+| 300452.SZ | 山河药辅 | 🟡average | 60.9 | 81% |
+| 603693.SH | 江苏新能 | 🟡average | 60.3 | 79% |
+| 688721.SH | 龙图光罩 | 🟡average | 60.1 | 81% |
+| 300439.SZ | 美康生物 | 🟡average | 59.8 | 79% |
+| 002729.SZ | 好利科技 | 🟡average | 59.1 | 74% |
+| 836961.BJ | 西磁科技 | 🟡average | 58.5 | 76% |
+| 300400.SZ | 劲拓股份 | 🟡average | 55.7 | 75% |
+| 300963.SZ | 中洲特材 | 🟡average | 55.5 | 62% |
+| 688475.SH | 萤石网络 | 🟡average | 54.9 | 74% |
+| 003031.SZ | 中瓷电子 | 🟡average | 54.7 | 76% |
+| 688439.SH | 振华风光 | 🟡average | 54.5 | 71% |
+| 603881.SH | 数据港 | 🟡average | 54.3 | 73% |
+| 000960.SZ | 锡业股份 | 🟡average | 53.8 | 70% |
 | ... | | | | 还有 385 家 |
 
 ### ⚠️ 困境期 (38 家)
 
 | 代码 | 名称 | 决策 | 得分 | 置信度 |
 |------|------|------|------|--------|
-| 300235.SZ | 方直科技 | 🟠poor | 33.1 | 81% |
-| 300046.SZ | 台基股份 | 🟠poor | 31.6 | 79% |
-| 688507.SH | 索辰科技 | 🟠poor | 23.4 | 79% |
-| 301095.SZ | 广立微 | 🟠poor | 19.7 | 84% |
-| 688505.SH | 复旦张江 | 🟠poor | 19.2 | 79% |
-| 301093.SZ | 华兰股份 | 🟠poor | 18.7 | 84% |
-| 300253.SZ | 卫宁健康 | 🟠poor | 17.8 | 79% |
-| 002609.SZ | 捷顺科技 | 🟠poor | 15.4 | 84% |
-| 002523.SZ | 天桥起重 | 🟠poor | 14.6 | 81% |
-| 002560.SZ | 通达股份 | 🟠poor | 13.6 | 84% |
-| 001258.SZ | 立新能源 | 🟠poor | 10.0 | 79% |
-| 300232.SZ | 洲明科技 | 🟠poor | 9.9 | 81% |
-| 688212.SH | 澳华内镜 | 🟠poor | 9.5 | 79% |
-| 301418.SZ | 协昌科技 | 🟠poor | 8.6 | 79% |
-| 605398.SH | 新炬网络 | 🟠poor | 6.7 | 79% |
-| 600682.SH | 南京新百 | 🟠poor | 5.8 | 84% |
-| 301163.SZ | 宏德股份 | 🟠poor | 5.0 | 84% |
-| 300691.SZ | 联合光电 | 🟠poor | 4.9 | 81% |
-| 601700.SH | 风范股份 | 🟠poor | 4.0 | 84% |
-| 300559.SZ | 佳发教育 | 🟠poor | 3.3 | 81% |
+| 300235.SZ | 方直科技 | 🟠poor | 36.9 | 81% |
+| 300046.SZ | 台基股份 | 🟠poor | 31.0 | 79% |
+| 688507.SH | 索辰科技 | 🟠poor | 24.9 | 79% |
+| 688505.SH | 复旦张江 | 🟠poor | 24.5 | 79% |
+| 301093.SZ | 华兰股份 | 🟠poor | 23.4 | 84% |
+| 301095.SZ | 广立微 | 🟠poor | 22.0 | 84% |
+| 300253.SZ | 卫宁健康 | 🟠poor | 18.4 | 79% |
+| 301418.SZ | 协昌科技 | 🟠poor | 16.7 | 79% |
+| 002609.SZ | 捷顺科技 | 🟠poor | 16.0 | 84% |
+| 001258.SZ | 立新能源 | 🟠poor | 14.2 | 79% |
+| 600682.SH | 南京新百 | 🟠poor | 13.7 | 84% |
+| 002523.SZ | 天桥起重 | 🟠poor | 12.6 | 81% |
+| 605398.SH | 新炬网络 | 🟠poor | 12.4 | 79% |
+| 688212.SH | 澳华内镜 | 🟠poor | 12.4 | 79% |
+| 301163.SZ | 宏德股份 | 🟠poor | 10.7 | 84% |
+| 300232.SZ | 洲明科技 | 🟠poor | 10.5 | 81% |
+| 002560.SZ | 通达股份 | 🟠poor | 8.3 | 84% |
+| 300559.SZ | 佳发教育 | 🟠poor | 6.5 | 81% |
+| 301172.SZ | 君逸数码 | 🟠poor | 5.5 | 79% |
+| 300691.SZ | 联合光电 | 🟠poor | 4.6 | 81% |
 | ... | | | | 还有 18 家 |
 
 ## 🏭 行业分析
 
 | 行业 | 总数 | 优质 | 否决 | 优质率 | 平均分 |
 |------|------|------|------|--------|--------|
-| 专用机械 | 270 | 22 | 80 | 8% | 19.9 |
-| 电气设备 | 329 | 20 | 101 | 6% | 19.9 |
-| 医疗保健 | 170 | 19 | 56 | 11% | 18.0 |
-| 化学制药 | 145 | 9 | 40 | 6% | 20.7 |
-| 元器件 | 293 | 9 | 80 | 3% | 14.9 |
-| 半导体 | 180 | 8 | 65 | 4% | 14.4 |
-| 生物制药 | 71 | 2 | 35 | 3% | 11.9 |
-| IT设备 | 74 | 2 | 30 | 3% | 16.9 |
-| 新型电力 | 27 | 2 | 5 | 7% | 25.6 |
-| 未知 | 3 | 2 | 0 | 67% | 76.0 |
-| 软件服务 | 267 | 1 | 140 | 0% | 9.0 |
-| 小金属 | 63 | 1 | 16 | 2% | 23.5 |
-| 汽车整车 | 22 | 0 | 7 | 0% | 24.7 |
+| 电气设备 | 329 | 18 | 101 | 5% | 20.2 |
+| 专用机械 | 270 | 17 | 80 | 6% | 20.9 |
+| 医疗保健 | 170 | 15 | 56 | 9% | 20.0 |
+| 元器件 | 293 | 9 | 80 | 3% | 16.5 |
+| 化学制药 | 145 | 9 | 40 | 6% | 22.4 |
+| 半导体 | 180 | 7 | 65 | 4% | 15.4 |
+| IT设备 | 74 | 2 | 30 | 3% | 17.7 |
+| 软件服务 | 267 | 2 | 140 | 1% | 9.8 |
+| 新型电力 | 27 | 2 | 5 | 7% | 28.3 |
+| 小金属 | 63 | 1 | 16 | 2% | 22.4 |
+| 生物制药 | 71 | 0 | 35 | 0% | 13.0 |
+| 汽车整车 | 22 | 0 | 7 | 0% | 20.9 |
+| 未知 | 3 | 0 | 0 | 0% | 61.3 |
 
 ## ❌ 否决公司 (VETO)
 
@@ -653,56 +638,56 @@
 
 | 代码 | 名称 | 行业 | 得分 | 置信度 | 否决原因 |
 |------|------|------|------|--------|--------|
-| 300443.SZ | 金雷股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 002793.SZ | 罗欣药业 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300753.SZ | 爱朋医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 603489.SH | 八方股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300569.SZ | 天能重工 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 603912.SH | 佳力图 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 002195.SZ | 岩山科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 301082.SZ | 久盛电气 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300042.SZ | 朗科科技 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 600732.SH | 爱旭股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 连续亏损5年, 最新 |
-| 688137.SH | 近岸蛋白 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 从49.3崩塌至-4 |
-| 688655.SH | 迅捷兴 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 688329.SH | 艾隆科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 688172.SH | 燕东微 | 半导体 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 688383.SH | 新益昌 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 603703.SH | 盛洋科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 300607.SZ | 拓斯达 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 300340.SZ | 科恒股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 837092.BJ | 汉鑫科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 688420.SH | 美腾科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 002227.SZ | 奥特迅 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 300074.SZ | 华平股份 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 301051.SZ | 信濠光电 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 600288.SH | 大恒科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300902.SZ | 国安达 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 600481.SH | 双良节能 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 恶化等级: seve |
+| 301325.SZ | 曼恩斯特 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688426.SH | 康为世纪 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300624.SZ | 万兴科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 430300.BJ | 辰光医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 001298.SZ | 好上好 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688141.SH | 杰华特 | 半导体 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 600438.SH | 通威股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 恶化等级: seve |
+| 002261.SZ | 拓维信息 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 300490.SZ | 华自科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300212.SZ | 易华录 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 趋势严重恶化: sl |
+| 688728.SH | 格科微 | 半导体 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 002845.SZ | 同兴达 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 300045.SZ | 华力创通 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 300040.SZ | 九洲集团 | 新型电力 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 833284.BJ | 灵鸽科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
 | 300830.SZ | 金现代 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 002218.SZ | 拓日新能 | 新型电力 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 688091.SH | 上海谊众 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 603081.SH | 大丰实业 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300474.SZ | 景嘉微 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300204.SZ | 舒泰神 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 688051.SH | 佳华科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 688707.SH | 振华新材 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 恶化等级: seve |
-| 301085.SZ | 亚康股份 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 301516.SZ | 中远通 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 600536.SH | 中国软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 603138.SH | 海量数据 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 603392.SH | 万泰生物 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 600537.SH | 亿晶光电 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 连续亏损5年, 最新 |
-| 300024.SZ | 机器人 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 688217.SH | 睿昂基因 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 002579.SZ | 中京电子 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300450.SZ | 先导智能 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 300456.SZ | 赛微电子 | 半导体 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 600807.SH | 济高发展 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
-| 688201.SH | 信安世纪 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 688499.SH | 利元亨 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 趋势严重恶化: sl |
-| 301270.SZ | 汉仪股份 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
-| 300793.SZ | 佳禾智能 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 002912.SZ | 中新赛克 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
-| 300210.SZ | 森远股份 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 002426.SZ | 胜利精密 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 301123.SZ | 奕东电子 | 元器件 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 002866.SZ | 传艺科技 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300188.SZ | 国投智能 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300340.SZ | 科恒股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 300753.SZ | 爱朋医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688228.SH | 开普云 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300003.SZ | 乐普医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 301117.SZ | 佳缘科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688489.SH | 三未信安 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300270.SZ | 中威电子 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 600589.SH | 大位科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 300078.SZ | 思创医惠 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688573.SH | 信宇人 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 301302.SZ | 华如科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 趋势严重恶化: sl |
+| 301509.SZ | 金凯生科 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 603626.SH | 科森科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 连续亏损5年, 最新 |
+| 300730.SZ | 科创信息 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 002645.SZ | 华宏科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 002129.SZ | TCL中环 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 恶化等级: seve |
+| 301391.SZ | 卡莱特 | IT设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 301266.SZ | 宇邦新材 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 恶化等级: seve |
+| 603191.SH | 望变电气 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 002793.SZ | 罗欣药业 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688343.SH | 云天励飞-U | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 002932.SZ | 明德生物 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 688246.SH | 嘉和美康 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 000536.SZ | 华映科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 趋势严重恶化: sl |
+| 688266.SH | 泽璟制药-U | 生物制药 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 连续亏损5年, 最新 |
+| 430139.BJ | 华岭股份 | 半导体 | 0.0 | 95.0% | 多指标共识否决(3个): [roic] 趋势严重恶化: sl |
+| 300663.SZ | 科蓝软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 连续亏损5年, 最新 |
+| 300365.SZ | 恒华科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(4个): [roic] 连续亏损5年, 最新 |
 | ... | | | | | 还有 605 家 |
 
 ## 📖 方法论说明

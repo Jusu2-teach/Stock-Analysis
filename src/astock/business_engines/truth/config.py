@@ -85,8 +85,8 @@ class DeltaFraudFactorConfig:
         "cross_validation": 0.15,
     })
     meltdown_threshold: float = 0.58  # δ_fraud > 0.58 触发熔断
-    too_smooth_cv_threshold: float = 0.01
-    too_perfect_r2_threshold: float = 0.99
+    too_smooth_cv_threshold: float = 0.03  # A股毛利率CV中位数~0.20, <3%为异常平滑
+    too_perfect_r2_threshold: float = 0.95  # A股R²中位数~0.6, >95%为异常完美
 
 
 @dataclass(frozen=True)

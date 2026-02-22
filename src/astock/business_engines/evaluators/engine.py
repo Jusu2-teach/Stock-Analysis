@@ -740,20 +740,32 @@ class CausalBayesianEvaluator:
         """
         计算综合评分
 
-        v3.0: 去掉了 Copula/DS/因果/状态机调整 (合计影响 <8%)
-              保留: 趋势基础分 + 规则引擎扣分/加分
+        v3.1: 趋势 60% + 绝对水平 40% 融合评分
+              加分递减效应防天花板压缩
         """
+        # 趋势指标 → 绝对水平指标的映射
+        LEVEL_THRESHOLD_KEYS = {
+            "roic_trend": "roic_level",
+            "roe_trend": "roe_level",
+            "revenue_trend": "revenue_growth",
+            "gross_margin_trend": "gross_margin",
+            "net_margin_trend": "net_margin",
+            "ocf_trend": "ocf_ratio",
+            "roiic_trend": None,
+            "profit_trend": None,
+        }
+
         factors = []
         weighted_sum = 0.0
         total_weight = 0.0
 
-        # 1. 基于趋势特征的基础分数
+        # 1. 趋势 + 绝对水平 融合评分
         for metric_score_key, weight in self.config.score_weights.items():
             if metric_score_key not in features:
                 continue
 
             value = features[metric_score_key]
-            grade = self._get_adaptive_grade(metric_score_key, value, context)
+            trend_grade = self._get_adaptive_grade(metric_score_key, value, context)
 
             grade_scores = {
                 "excellent": 95,
@@ -762,7 +774,19 @@ class CausalBayesianEvaluator:
                 "poor": 40,
                 "veto": 10,
             }
-            metric_score = grade_scores.get(grade, 50)
+            trend_score = grade_scores.get(trend_grade, 50)
+
+            # 绝对水平补充 (40%)
+            level_key = LEVEL_THRESHOLD_KEYS.get(metric_score_key)
+            level_feature = metric_score_key.replace("_trend", "_level")
+            level_value = features.get(level_feature)
+
+            if level_key and level_value is not None:
+                level_grade = self._get_adaptive_grade(level_key, level_value, context)
+                level_score = grade_scores.get(level_grade, 50)
+                metric_score = 0.60 * trend_score + 0.40 * level_score
+            else:
+                metric_score = trend_score
 
             direction = "positive" if value > 0.005 else ("negative" if value < -0.005 else "neutral")
             contribution = (metric_score - 50) / 50 * weight
@@ -780,10 +804,20 @@ class CausalBayesianEvaluator:
 
         base_score = weighted_sum / total_weight if total_weight > 0 else 50.0
 
-        # 2. 规则引擎调整
+        # 2. 规则引擎调整 (加分递减效应防天花板)
         rule_adjustment = 0.0
         if rule_result and not rule_result.vetoed:
-            rule_adjustment = -rule_result.total_penalty + rule_result.total_bonus
+            penalty = rule_result.total_penalty
+            bonus = rule_result.total_bonus
+
+            # 扣分直接应用
+            penalty_adj = -penalty
+
+            # 加分递减: 基础分越高、加分效果越小 (headroom 式衰减)
+            headroom = max(0, 100 - base_score)
+            effective_bonus = bonus * min(1.0, headroom / 50.0)
+
+            rule_adjustment = penalty_adj + effective_bonus
             if abs(rule_adjustment) > 0.1:
                 factors.append(Factor(
                     name="rule_engine",
