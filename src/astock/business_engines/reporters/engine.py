@@ -856,30 +856,64 @@ def _get_top_warning(profile: Dict[str, Any]) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
-    """从 TRUTH 的 grade/signal 映射到可比较的决策类别.
+    """从 TRUTH 的 grade/signal + 因子细节映射到可比较的决策类别.
 
     映射逻辑:
         quality  ← A+, A     (真正优质)
         average  ← B+, B     (良好)
         poor     ← C, D      (一般/较差)
-        veto     ← F / fraud_alert / meltdown  (否决)
+        veto     ← F / fraud / 结构性崩溃  (否决)
+
+    v4.3: 新增因子驱动的否决条件，缩小与 Evaluator 的 veto 差距
     """
     grade = (profile.get("grade") or "").upper()
     signal = (profile.get("signal") or "").lower()
+    factors = profile.get("factors", {})
 
-    # 熔断/欺诈信号直接否决
+    # 1. 熔断/欺诈信号直接否决
     if signal in ("fraud_alert", "meltdown", "strong_sell"):
         return "veto"
 
-    # 按评级映射
+    # 2. F 评级直接否决
+    if grade == "F":
+        return "veto"
+
+    # 3. 因子驱动的否决  (v4.3 新增)
+    #    用因子细节判断结构性崩溃，弥补纯评级映射的盲区
+    decay_fd = factors.get("delta_decay") or factors.get("DELTA_DECAY", {})
+    decay_score = decay_fd.get("score", 0) if isinstance(decay_fd, dict) else 0
+    fraud_fd = factors.get("delta_fraud") or factors.get("DELTA_FRAUD", {})
+    fraud_score = fraud_fd.get("score", 0) if isinstance(fraud_fd, dict) else 0
+    gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
+    gamma_score = gamma_fd.get("score", 0.5) if isinstance(gamma_fd, dict) else 0.5
+
+    consec_decline = _get_factor_detail(factors, "delta_decay", "consecutive_decline_years", 0) or 0
+    decay_severity = _get_factor_detail(factors, "delta_decay", "decay_severity", "none")
+    growth_type = _get_factor_detail(factors, "gamma", "growth_type", "")
+
+    # 3a. D 评级 + 严重衰退 + 低成长 → 结构性崩溃
+    if grade == "D" and decay_severity == "severe" and gamma_score < 0.30:
+        return "veto"
+
+    # 3b. δ_fraud 高分 (>0.40) + C/D 评级 → 欺诈风险否决
+    if grade in ("C", "D") and fraud_score > 0.40:
+        return "veto"
+
+    # 3c. 连续衰退≥5年 + 低评级 → 长期结构性失败
+    if consec_decline >= 5 and grade in ("C", "D"):
+        return "veto"
+
+    # 3d. C 评级 + 同时满足 severe 衰退 + decline 增长 + γ低 → 全面恶化
+    if grade == "C" and decay_severity == "severe" and growth_type == "decline" and gamma_score < 0.40:
+        return "veto"
+
+    # 4. 标准评级映射
     if grade in ("A+", "A"):
         return "quality"
     elif grade in ("B+", "B"):
         return "average"
     elif grade in ("C", "D"):
         return "poor"
-    elif grade == "F":
-        return "veto"
 
     # 兜底: 用信号补判
     if signal in ("strong_buy", "buy"):
@@ -971,21 +1005,33 @@ def _infer_lifecycle_from_truth(profile: Dict[str, Any]) -> Tuple[str, float]:
     if growth_type in ("moderate_growth", "low_growth") and alpha_score <= 0.35 and decay_severity in ("none", "mild"):
         return "cash_cow", 0.75
 
-    # 6. 成熟: 非衰退增长 + 衰退≤moderate（A股中very common，放宽至moderate）
+    # 6. 成熟: 非衰退增长 + 衰退≤moderate
     if growth_type in ("moderate_growth", "low_growth") and decay_severity in ("none", "mild", "moderate"):
         return "mature", 0.70
 
-    # 7. 增速放缓: 有衰退迹象但增长尚可，或decline增长但衰退不严重
+    # 7. 增速放缓 vs 成熟边界: moderate/low增长 + severe衰退
+    #    γ>0.50 说明成长动能仍在 → 成熟(带风险); γ≤0.50 → 真正放缓
     if growth_type in ("moderate_growth", "low_growth") and decay_severity == "severe":
-        return "slowing", 0.60
-    if growth_type == "decline" and decay_severity in ("none", "mild", "moderate"):
+        if gamma_score > 0.50:
+            return "mature", 0.55  # 成熟但有结构性风险
         return "slowing", 0.60
 
-    # 8. 明确衰退: growth=decline + severe decay（双重确认）
+    # 8. 早期衰退信号: 增长转负但结构性衰退不严重
+    #    decay=none → 可能只是短期波动，归为成熟; mild → 温和放缓
+    if growth_type == "decline" and decay_severity == "none":
+        return "mature", 0.50  # 增长略负但无结构性衰退 → 成熟(保守)
+    if growth_type == "decline" and decay_severity == "mild":
+        return "slowing", 0.55
+
+    # 9. 明确衰退: 增长转负 + 中度结构衰退 → declining (已确认)
+    if growth_type == "decline" and decay_severity == "moderate":
+        return "declining", 0.65
+
+    # 10. 深度衰退: 增长转负 + 严重衰退 + γ≥0.3 → declining (严重但未至困境)
     if growth_type == "decline" and decay_severity == "severe":
-        return "declining", 0.70
+        return "declining", 0.75
 
-    # 9. 默认成熟（兜底: growth_type=unknown 等边缘情况）
+    # 11. 默认成熟（兜底: growth_type=unknown 等边缘情况）
     return "mature", 0.50
 
 
@@ -1059,64 +1105,6 @@ def report_truth(
     lines.append("")
 
     # ============================================================
-    # 元数据
-    # ============================================================
-
-    lines.append("## 📋 报告概要")
-    lines.append("")
-    lines.append(f"- **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"- **算法版本**: {metadata.get('algo_version', '3.0.0')}")
-    lines.append(f"- **配置版本**: {metadata.get('config_version', '3.0.0')}")
-    lines.append(f"- **分析股票数**: {metadata.get('universe_size', len(profiles))}")
-    lines.append(f"- **因子数量**: {metadata.get('factor_count', 6)} (α/β/γ/δ_fraud/δ_decay/V)")
-    lines.append(f"- **求解器数量**: {metadata.get('solver_count', 3)} (Gravity/Velocity/Structure)")
-    lines.append("")
-
-    # ============================================================
-    # 汇总统计
-    # ============================================================
-
-    if summary:
-        lines.append("## 📊 汇总统计")
-        lines.append("")
-
-        # 信号分布
-        signal_dist = summary.get("signal_distribution", {})
-        if signal_dist:
-            lines.append("### 信号分布")
-            lines.append("")
-            lines.append("| 信号 | 数量 | 占比 |")
-            lines.append("|------|------|------|")
-            total = sum(signal_dist.values())
-            for sig, count in sorted(signal_dist.items(), key=lambda x: -x[1]):
-                emoji = SIGNAL_EMOJI.get(sig, "")
-                pct = count / total * 100 if total > 0 else 0
-                lines.append(f"| {emoji} {sig} | {count} | {pct:.1f}% |")
-            lines.append("")
-
-        # 评级分布
-        grade_dist = summary.get("grade_distribution", {})
-        if grade_dist:
-            lines.append("### 评级分布")
-            lines.append("")
-            lines.append("| 评级 | 数量 | 占比 |")
-            lines.append("|------|------|------|")
-            total = sum(grade_dist.values())
-            for grade, count in sorted(grade_dist.items()):
-                emoji = GRADE_EMOJI.get(grade, "")
-                pct = count / total * 100 if total > 0 else 0
-                lines.append(f"| {emoji} {grade} | {count} | {pct:.1f}% |")
-            lines.append("")
-
-        # 关键数字
-        lines.append("### 关键指标")
-        lines.append("")
-        lines.append(f"- **平均分数**: {summary.get('average_score', 0):.2%}")
-        lines.append(f"- **精选数量** (A+/A/B+): {summary.get('top_picks_count', 0)}")
-        lines.append(f"- **熔断警报**: {summary.get('meltdown_count', 0)}")
-        lines.append("")
-
-    # ============================================================
     # 为每个 profile 注入 决策 + 生命周期（供后续所有表格使用）
     # ============================================================
 
@@ -1126,258 +1114,188 @@ def report_truth(
         p["_lifecycle"] = lifecycle
         p["_life_confidence"] = life_conf
 
-    # ============================================================
-    # 决策分布（对齐 Evaluator 报告格式）
-    # ============================================================
+    # 按评分排序
+    sorted_profiles = sorted(
+        profiles,
+        key=lambda p: p.get("final_score", 0) or 0,
+        reverse=True,
+    )
 
-    lines.append("## 🎯 决策分布")
-    lines.append("")
-    lines.append("> 从 TRUTH 评级/信号映射到标准化决策，可与 Evaluator 直接对比")
-    lines.append("")
-
-    decision_dist: Dict[str, int] = {}
-    for p in profiles:
-        dec = p.get("_decision", "poor")
-        decision_dist[dec] = decision_dist.get(dec, 0) + 1
-
+    # 按决策分类 (对齐 Evaluator)
+    quality_profiles = [p for p in sorted_profiles if p.get("_decision") == "quality"]
+    average_profiles = [p for p in sorted_profiles if p.get("_decision") == "average"]
+    poor_profiles = [p for p in sorted_profiles if p.get("_decision") == "poor"]
+    veto_profiles = [p for p in sorted_profiles if p.get("_decision") == "veto"]
     total_prof = len(profiles) or 1
-    lines.append("| 决策 | 数量 | 占比 | 映射规则 |")
-    lines.append("|------|------|------|----------|")
-    decision_order = ["quality", "average", "poor", "veto"]
-    rule_desc = {
-        "quality": "A+ / A 评级",
-        "average": "B+ / B 评级",
-        "poor": "C / D 评级",
-        "veto": "F 评级 / fraud_alert / meltdown",
-    }
-    for dec in decision_order:
-        count = decision_dist.get(dec, 0)
-        pct = count / total_prof * 100
-        emoji = DECISION_LABELS.get(dec, dec)
-        rule = rule_desc.get(dec, "")
-        lines.append(f"| {emoji} | {count} | {pct:.1f}% | {rule} |")
+
+    # ============================================================
+    # 元数据 (对齐 Evaluator: 优质/否决数)
+    # ============================================================
+
+    lines.append("## 📋 报告概要")
+    lines.append("")
+    lines.append(f"- **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"- **算法版本**: {metadata.get('algo_version', '4.1.0')} (T.R.U.T.H.)")
+    lines.append(f"- **分析股票数**: {metadata.get('universe_size', len(profiles))}")
+    lines.append(f"- **优质公司数**: {len(quality_profiles)}")
+    lines.append(f"- **否决公司数**: {len(veto_profiles)}")
     lines.append("")
 
     # ============================================================
-    # 生命周期分布（对齐 Evaluator 报告格式）
+    # 汇总统计 (对齐 Evaluator: 决策→生命周期→评级信号)
     # ============================================================
 
-    lines.append("## 🔄 生命周期分布")
-    lines.append("")
-    lines.append("> 从 γ(成长) + δ_decay(衰退) + α(稳定性) + V(验证) 因子推断")
+    lines.append("## 📊 汇总统计")
     lines.append("")
 
+    # --- 决策分布 (主, 与 Evaluator 一致) ---
+    lines.append("### 决策分布")
+    lines.append("")
+    lines.append("| 决策 | 数量 | 占比 |")
+    lines.append("|------|------|------|")
+    for dec, label in [("quality", "✅ 优质"), ("average", "🟡 一般"),
+                       ("poor", "🟠 较差"), ("veto", "❌ 否决")]:
+        cnt = sum(1 for p in profiles if p.get("_decision") == dec)
+        lines.append(f"| {label} | {cnt} | {cnt / total_prof * 100:.1f}% |")
+    lines.append("")
+
+    # --- 生命周期分布 (与 Evaluator 一致) ---
     lifecycle_dist: Dict[str, int] = {}
     for p in profiles:
         lc = p.get("_lifecycle", "mature")
         lifecycle_dist[lc] = lifecycle_dist.get(lc, 0) + 1
 
-    lines.append("| 生命周期 | 数量 | 占比 | 推断依据 |")
-    lines.append("|----------|------|------|----------|")
+    lines.append("### 生命周期分布")
+    lines.append("")
+    lines.append("| 状态 | 数量 |")
+    lines.append("|------|------|")
     lifecycle_order = ["growth", "emerging", "cash_cow", "mature", "slowing", "declining", "turnaround", "distressed"]
-    lifecycle_basis = {
-        "growth": "γ=high_growth + V=true/moderate_quality",
-        "emerging": "γ=high_growth (质量未验证)",
-        "cash_cow": "γ=moderate/low + α≤0.35 + δ_decay=none",
-        "mature": "γ=moderate/low + δ_decay≤mild",
-        "slowing": "δ_decay=mild 或 短期衰退",
-        "declining": "γ=decline 或 δ_decay=moderate",
-        "turnaround": "has_deterioration + 近期改善",
-        "distressed": "δ_decay=severe 或 连跌≥4年 或 meltdown",
-    }
-    for lc in lifecycle_order:
-        count = lifecycle_dist.get(lc, 0)
-        pct = count / total_prof * 100
+    for lc in sorted(lifecycle_dist.keys(), key=lambda x: -lifecycle_dist[x]):
         label = LIFECYCLE_LABELS.get(lc, lc)
-        basis = lifecycle_basis.get(lc, "")
-        lines.append(f"| {label} | {count} | {pct:.1f}% | {basis} |")
+        lines.append(f"| {label} | {lifecycle_dist[lc]} |")
     lines.append("")
 
-    # ============================================================
-    # 按评分排序所有股票
-    # ============================================================
-
-    sorted_profiles = sorted(
-        profiles,
-        key=lambda p: p.get("final_score", 0) or 0,
-        reverse=True
-    )
-
-    # 分类
-    top_picks = [p for p in sorted_profiles if p.get("grade") in ("A+", "A", "B+")]
-    good_stocks = [p for p in sorted_profiles if p.get("grade") in ("B",)]
-    average_stocks = [p for p in sorted_profiles if p.get("grade") in ("C",)]
-    poor_stocks = [p for p in sorted_profiles if p.get("grade") in ("D",)]
-    reject_stocks = [p for p in sorted_profiles if p.get("grade") in ("F",)]
-    meltdowns = [p for p in sorted_profiles if p.get("signal") in ("meltdown", "MELTDOWN")]
-
-    # ============================================================
-    # 完整股票列表（表格形式，按评分排序）
-    # ============================================================
-
-    lines.append("## ⭐ 完整股票排名")
-    lines.append("")
-    lines.append(f"> 共 {len(sorted_profiles)} 家公司，按综合评分排序")
-    lines.append("")
-    lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 决策 | 生命周期 | 关键因子 |")
-    lines.append("|------|------|------|------|------|------|------|----------|----------|")
-
-    # 显示前100名
-    for profile in sorted_profiles[:100]:
-        lines.append(_generate_compact_row_v2(profile))
-
-    if len(sorted_profiles) > 100:
-        lines.append(f"| ... | | | | | | | | 还有 {len(sorted_profiles) - 100} 家 |")
-    lines.append("")
-
-    # ============================================================
-    # 精选股票详细分析 (A+/A/B+ 评级)
-    # ============================================================
-
-    if top_picks:
-        lines.append("## 🏆 精选股票详细分析 (A+/A/B+ 评级)")
-        lines.append("")
-        lines.append(f"> 共 {len(top_picks)} 家公司达到精选标准")
-        lines.append("")
-
-        # 先显示完整列表
-        lines.append("### 精选列表")
-        lines.append("")
-        lines.append("| 代码 | 名称 | 行业 | 评分 | 评级 | 信号 | 决策 | 生命周期 | 关键因子 |")
-        lines.append("|------|------|------|------|------|------|------|----------|----------|")
-        for profile in top_picks:
-            lines.append(_generate_compact_row_v2(profile))
-        lines.append("")
-
-        # 仅展开 Top 10 详细
-        lines.append("### 🔍 Top 10 详细基因分析")
-        lines.append("")
-        for profile in top_picks[:10]:
-            lines.extend(_generate_profile_section(profile))
-    else:
-        lines.append("## 🏆 精选股票 (A+/A/B+ 评级)")
-        lines.append("")
-        lines.append("> ⚠️ 本次分析暂无达到精选标准的股票")
-        lines.append("")
-
-    # ============================================================
-    # 良好股票 (B 评级) - 表格展示
-    # ============================================================
-
-    if good_stocks:
-        lines.append("## ✅ 良好股票 (B 评级)")
-        lines.append("")
-        lines.append(f"> 共 {len(good_stocks)} 家")
-        lines.append("")
-        lines.append("| 代码 | 评分 | 信号 | 置信度 | 关键因子 |")
-        lines.append("|------|------|------|--------|----------|")
-        for p in good_stocks[:50]:
-            ts_code = p.get("ts_code", "")
-            score = p.get("final_score", 0) or 0
-            signal = p.get("signal", "-")
-            conf = p.get("confidence", 0) or 0
-            factors = p.get("factors", {})
-            gamma = factors.get("gamma", {}).get("score", 0) if isinstance(factors.get("gamma"), dict) else 0
-            lines.append(f"| {ts_code} | {score:.1%} | {signal} | {conf:.0%} | γ:{gamma:.2f} |")
-        if len(good_stocks) > 50:
-            lines.append(f"| ... | | | | 还有 {len(good_stocks) - 50} 家 |")
-        lines.append("")
-
-    # ============================================================
-    # 一般股票 (C 评级) - 紧凑表格
-    # ============================================================
-
-    if average_stocks:
-        lines.append("## ➖ 一般股票 (C 评级)")
-        lines.append("")
-        lines.append(f"> 共 {len(average_stocks)} 家（表格展示前50家）")
-        lines.append("")
-        lines.append("| 代码 | 名称 | 评分 | 信号 | 代码 | 名称 | 评分 | 信号 |")
-        lines.append("|------|------|------|------|------|------|------|------|")
-        # 两列显示
-        for i in range(0, min(50, len(average_stocks)), 2):
-            p1 = average_stocks[i]
-            n1 = (p1.get('name') or '')[:6]
-            row = f"| {p1.get('ts_code', '')} | {n1} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
-            if i + 1 < len(average_stocks):
-                p2 = average_stocks[i + 1]
-                n2 = (p2.get('name') or '')[:6]
-                row += f"| {p2.get('ts_code', '')} | {n2} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
-            else:
-                row += "| | | | |"
-            lines.append(row)
-        if len(average_stocks) > 50:
-            lines.append(f"| ... | | | | | | | 还有 {len(average_stocks) - 50} 家 |")
-        lines.append("")
-
-    # ============================================================
-    # 较差股票 (D 评级) - 仅统计
-    # ============================================================
-
-    if poor_stocks:
-        lines.append("## ⚠️ 较差股票 (D 评级)")
-        lines.append("")
-        lines.append(f"> 共 {len(poor_stocks)} 家，建议谨慎")
-        lines.append("")
-        lines.append("| 代码 | 名称 | 评分 | 信号 | 代码 | 名称 | 评分 | 信号 |")
-        lines.append("|------|------|------|------|------|------|------|------|")
-        # 两列显示，最多30行
-        for i in range(0, min(60, len(poor_stocks)), 2):
-            p1 = poor_stocks[i]
-            n1 = (p1.get('name') or '')[:6]
-            row = f"| {p1.get('ts_code', '')} | {n1} | {(p1.get('final_score', 0) or 0):.1%} | {p1.get('signal', '')} "
-            if i + 1 < len(poor_stocks):
-                p2 = poor_stocks[i + 1]
-                n2 = (p2.get('name') or '')[:6]
-                row += f"| {p2.get('ts_code', '')} | {n2} | {(p2.get('final_score', 0) or 0):.1%} | {p2.get('signal', '')} |"
-            else:
-                row += "| | | | |"
-            lines.append(row)
-        if len(poor_stocks) > 60:
-            lines.append(f"| ... | | | | | | | 还有 {len(poor_stocks) - 60} 家 |")
-        lines.append("")
-
-    # ============================================================
-    # 否决股票 (F 评级) - 仅列出代码
-    # ============================================================
-
-    if reject_stocks:
-        lines.append("## ❌ 否决股票 (F 评级)")
-        lines.append("")
-        lines.append(f"> 共 {len(reject_stocks)} 家，建议回避")
-        lines.append("")
-        # 带名称的紧凑表格
-        lines.append("| 代码 | 名称 | 代码 | 名称 | 代码 | 名称 |")
-        lines.append("|------|------|------|------|------|------|")
-        for i in range(0, len(reject_stocks), 3):
-            parts = []
-            for j in range(3):
-                if i + j < len(reject_stocks):
-                    p = reject_stocks[i + j]
-                    parts.append(f"{p.get('ts_code', '')} | {(p.get('name') or '')[:6]}")
-                else:
-                    parts.append(" | ")
-            lines.append("| " + " | ".join(parts) + " |")
-        lines.append("")
-
-    # ============================================================
-    # 熔断警报 - 详细展示
-    # ============================================================
-
-    if meltdowns:
-        lines.append("## 🚨 熔断警报")
-        lines.append("")
-        lines.append(f"> {len(meltdowns)} 家股票触发欺诈熵熔断，**强烈建议回避**")
-        lines.append("")
-        # 展示熔断股票详情（这些需要详细分析原因）
-        for profile in meltdowns[:5]:  # 最多5个详细
-            lines.extend(_generate_profile_section(profile))
-        if len(meltdowns) > 5:
-            lines.append(f"*还有 {len(meltdowns) - 5} 家熔断股票，此处省略*")
+    # --- 评级 & 信号 (TRUTH 独有, 折叠为子标题) ---
+    if summary:
+        grade_dist = summary.get("grade_distribution", {})
+        signal_dist = summary.get("signal_distribution", {})
+        if grade_dist or signal_dist:
+            lines.append("### 评级 & 信号详情")
+            lines.append("")
+            if grade_dist:
+                total_g = sum(grade_dist.values())
+                grade_parts = []
+                for g in ["A+", "A", "B+", "B", "C", "D", "F"]:
+                    cnt = grade_dist.get(g, 0)
+                    if cnt > 0:
+                        grade_parts.append(f"{GRADE_EMOJI.get(g, '')}{g}:{cnt}")
+                lines.append(f"- **评级**: {' | '.join(grade_parts)}")
+            if signal_dist:
+                sig_parts = []
+                for sig, cnt in sorted(signal_dist.items(), key=lambda x: -x[1]):
+                    if cnt > 0:
+                        sig_parts.append(f"{SIGNAL_EMOJI.get(sig, '')}{sig}:{cnt}")
+                lines.append(f"- **信号**: {' | '.join(sig_parts)}")
+            lines.append(f"- **平均分数**: {summary.get('average_score', 0):.2%}")
+            lines.append(f"- **熔断警报**: {summary.get('meltdown_count', 0)}")
             lines.append("")
 
     # ============================================================
-    # 按生命周期分组的非否决公司（对齐 Evaluator 报告）
+    # helper: 从TRUTH因子构建 Evaluator 风格的 "主要驱动因素" 字符串
+    # ============================================================
+
+    def _truth_driver_str(p: Dict) -> str:
+        """从 TRUTH 六维因子选取 top3 构建 ↑γ成长:0.84 格式"""
+        factors = p.get("factors", {})
+        items = []
+        factor_display = {
+            "gamma": ("γ成长", True),   "GAMMA": ("γ成长", True),
+            "verification": ("V验证", True), "VERIFICATION": ("V验证", True),
+            "alpha": ("α周期", False),  "ALPHA": ("α周期", False),
+            "beta": ("β资本", False),   "BETA": ("β资本", False),
+            "delta_fraud": ("δ欺诈", False), "DELTA_FRAUD": ("δ欺诈", False),
+            "delta_decay": ("δ衰退", False), "DELTA_DECAY": ("δ衰退", False),
+            "lambda_leverage": ("λ杠杆", False), "LAMBDA": ("λ杠杆", False),
+        }
+        seen_names = set()
+        for fid, fd in factors.items():
+            if not isinstance(fd, dict):
+                continue
+            display_info = factor_display.get(fid)
+            if not display_info:
+                continue
+            name, is_positive = display_info
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            score = fd.get("score", 0)
+            # 正向因子: 分高=好(↑), 负向因子: 分低=好(↑分低), 分高=差(↓)
+            if is_positive:
+                arrow = "↑" if score > 0.5 else "↓"
+            else:
+                arrow = "↑" if score < 0.3 else "↓"
+            importance = abs(score - 0.5) if is_positive else score
+            items.append((importance, f"{arrow}{name}:{score:.2f}"))
+        items.sort(key=lambda x: -x[0])
+        return ", ".join(x[1] for x in items[:3])
+
+    # ============================================================
+    # ⭐ 优质公司完整列表 (QUALITY) — 对齐 Evaluator
+    # ============================================================
+
+    if quality_profiles:
+        lines.append("## ⭐ 优质公司完整列表 (QUALITY)")
+        lines.append("")
+        lines.append(f"> 共 {len(quality_profiles)} 家公司通过 T.R.U.T.H. 评估（A+ / A 评级）")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 行业 | 得分 | 置信度 | 生命周期 | 主要驱动因素 |")
+        lines.append("|------|------|------|------|--------|----------|-------------|")
+
+        for p in quality_profiles:
+            ts_code = p.get("ts_code", "")
+            name = (p.get("name") or "")[:6]
+            industry = (p.get("industry") or "")[:6]
+            score = p.get("final_score", 0) or 0
+            conf = p.get("confidence", 0) or 0
+            lc = p.get("_lifecycle", "")
+            lc_label = LIFECYCLE_LABELS.get(lc, lc)
+            driver = _truth_driver_str(p)
+            lines.append(f"| {ts_code} | {name} | {industry} | {score:.1%} | {conf:.0%} | {lc_label} | {driver} |")
+        lines.append("")
+
+        # Top 10 详细基因分析
+        lines.append("### 🏆 Top 10 详细分析")
+        lines.append("")
+        for profile in quality_profiles[:10]:
+            lines.extend(_generate_profile_section(profile))
+
+    # ============================================================
+    # 🟡 一般公司 (AVERAGE) — 对齐 Evaluator
+    # ============================================================
+
+    if average_profiles:
+        lines.append("## 🟡 一般公司 (AVERAGE)")
+        lines.append("")
+        lines.append(f"> 共 {len(average_profiles)} 家（B+ / B 评级）")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 得分 | 置信度 | 生命周期 | 主要因素 |")
+        lines.append("|------|------|------|--------|----------|----------|")
+        for p in average_profiles[:80]:
+            name = (p.get("name") or "")[:6]
+            score = p.get("final_score", 0) or 0
+            conf = p.get("confidence", 0) or 0
+            lc = p.get("_lifecycle", "")
+            lc_short = {"growth": "📈", "emerging": "🚀", "mature": "🏔️",
+                        "declining": "📉", "slowing": "📊", "turnaround": "🔄",
+                        "distressed": "⚠️", "cash_cow": "💰"}.get(lc, "")
+            driver = _truth_driver_str(p)
+            lines.append(f"| {p.get('ts_code', '')} | {name} | {score:.1%} | {conf:.0%} | {lc_short} | {driver} |")
+        if len(average_profiles) > 80:
+            lines.append(f"| ... | | | | | 还有 {len(average_profiles) - 80} 家 |")
+        lines.append("")
+
+    # ============================================================
+    # 📊 按生命周期分组的非否决公司（对齐 Evaluator）
     # ============================================================
 
     lines.append("## 📊 按生命周期分组（非否决）")
@@ -1399,24 +1317,75 @@ def report_truth(
             label = LIFECYCLE_LABELS.get(lc, lc)
             lines.append(f"### {label} ({len(group)} 家)")
             lines.append("")
-            lines.append("| 代码 | 名称 | 决策 | 评分 | 评级 | 关键因子 |")
-            lines.append("|------|------|------|------|------|----------|")
+            lines.append("| 代码 | 名称 | 决策 | 得分 | 置信度 |")
+            lines.append("|------|------|------|------|--------|")
             for p in sorted(group, key=lambda x: -(x.get("final_score", 0) or 0))[:20]:
                 dec = p.get("_decision", "")
                 dec_str = DECISION_EMOJI.get(dec, "") + dec
                 name = (p.get("name") or "")[:6]
-                grade = p.get("grade", "-")
                 score = p.get("final_score", 0) or 0
-                factors = p.get("factors", {})
-                gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
-                gamma_s = gamma_fd.get("score", 0) if isinstance(gamma_fd, dict) else 0
-                lines.append(f"| {p.get('ts_code', '')} | {name} | {dec_str} | {score:.1%} | {grade} | γ:{gamma_s:.2f} |")
+                conf = p.get("confidence", 0) or 0
+                lines.append(f"| {p.get('ts_code', '')} | {name} | {dec_str} | {score:.1%} | {conf:.0%} |")
             if len(group) > 20:
-                lines.append(f"| ... | | | | | 还有 {len(group) - 20} 家 |")
+                lines.append(f"| ... | | | | 还有 {len(group) - 20} 家 |")
             lines.append("")
 
     # ============================================================
-    # 🔬 双引擎交叉验证摘要 (v4.2 新增)
+    # 🏭 行业分析 (对齐 Evaluator, TRUTH 新增)
+    # ============================================================
+
+    industry_stats: Dict[str, Dict] = {}
+    for p in profiles:
+        ind = p.get("industry") or "未知"
+        if ind not in industry_stats:
+            industry_stats[ind] = {"count": 0, "quality": 0, "veto": 0, "total_score": 0.0}
+        industry_stats[ind]["count"] += 1
+        industry_stats[ind]["total_score"] += (p.get("final_score", 0) or 0)
+        if p.get("_decision") == "quality":
+            industry_stats[ind]["quality"] += 1
+        elif p.get("_decision") == "veto":
+            industry_stats[ind]["veto"] += 1
+
+    if len(industry_stats) > 1:
+        lines.append("## 🏭 行业分析")
+        lines.append("")
+        lines.append("| 行业 | 总数 | 优质 | 否决 | 优质率 | 平均分 |")
+        lines.append("|------|------|------|------|--------|--------|")
+        for ind, stats in sorted(industry_stats.items(), key=lambda x: -x[1]["quality"]):
+            avg = stats["total_score"] / stats["count"] * 100 if stats["count"] > 0 else 0
+            qr = stats["quality"] / stats["count"] * 100 if stats["count"] > 0 else 0
+            lines.append(f"| {ind[:8]} | {stats['count']} | {stats['quality']} | {stats['veto']} | {qr:.0f}% | {avg:.1f} |")
+        lines.append("")
+
+    # ============================================================
+    # ❌ 否决公司 (VETO) — 合并 F评级+熔断 (对齐 Evaluator)
+    # ============================================================
+
+    if veto_profiles:
+        lines.append("## ❌ 否决公司 (VETO)")
+        lines.append("")
+        lines.append(f"> 共 {len(veto_profiles)} 家公司被否决（F 评级 / 欺诈熵熔断）")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 行业 | 得分 | 置信度 | 否决原因 |")
+        lines.append("|------|------|------|------|--------|--------|")
+        for p in veto_profiles[:50]:
+            ts_code = p.get("ts_code", "")
+            name = (p.get("name") or "")[:6]
+            industry = (p.get("industry") or "")[:6]
+            score = p.get("final_score", 0) or 0
+            conf = p.get("confidence", 0) or 0
+            signal = (p.get("signal") or "").lower()
+            if signal in ("fraud_alert", "meltdown"):
+                reason = "欺诈熵熔断"
+            else:
+                reason = "评分极低(F级)"
+            lines.append(f"| {ts_code} | {name} | {industry} | {score:.1%} | {conf:.0%} | {reason} |")
+        if len(veto_profiles) > 50:
+            lines.append(f"| ... | | | | | 还有 {len(veto_profiles) - 50} 家 |")
+        lines.append("")
+
+    # ============================================================
+    # 🔬 双引擎交叉验证摘要 (v4.2)
     # ============================================================
 
     if evaluator_result:
@@ -1428,7 +1397,6 @@ def report_truth(
         lines.append("> 对比 T.R.U.T.H. (数据驱动) vs Evaluator (规则驱动) 的选股结论")
         lines.append("")
 
-        # 共识优质
         consensus_quality = []
         t_quality_e_poor = []
         for p in sorted_profiles:
@@ -1459,7 +1427,7 @@ def report_truth(
                     "e_score": e.get("score", 0),
                 })
 
-        t_q_count = sum(1 for p in sorted_profiles if p.get("_decision") == "quality")
+        t_q_count = len(quality_profiles)
         e_q_count = sum(1 for e in eval_list if e.get("decision") == "quality")
 
         lines.append(f"- T.R.U.T.H. 优质: **{t_q_count}** 家")
