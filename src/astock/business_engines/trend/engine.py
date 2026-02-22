@@ -680,8 +680,230 @@ def analyze_multiple_metrics(
     return merged
 
 
+# ============================================================================
+# 财务结构比率提取 — 通用数据上下文
+# ============================================================================
+# 与 8 个趋势探针并列，输出通用的财务结构比率到 PDDA。
+# 下游 truth / evaluators 各取所需。
+
+_BALANCE_SHEET_MARKERS = {"total_assets", "fix_assets", "goodwill", "total_liab"}
+_INDICATOR_MARKERS = {"nca_to_assets", "debt_to_assets", "tbassets_to_totalassets", "ar_turn"}
+
+
+def _clamp(val: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, val))
+
+
+def _extract_ratios_from_indicators(df_sorted: pd.DataFrame) -> pd.DataFrame:
+    """从 fina_indicator 提取通用财务结构比率
+
+    指标数据均为百分比 0~100，需 ÷100 转为比率。
+    输出每个 ts_code 一行，包含所有可提取的资产结构比率、风险标志和估值特征。
+    """
+    rows = []
+
+    for ts_code, group in df_sorted.groupby("ts_code"):
+        ts_code = str(ts_code)
+        row = group.iloc[0]
+
+        def _get(col: str, default: float = float('nan')) -> float:
+            v = row.get(col)
+            if v is not None and pd.notna(v):
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    pass
+            return default
+
+        nca_pct = _get("nca_to_assets")
+        ca_pct = _get("ca_to_assets")
+        tba_pct = _get("tbassets_to_totalassets")
+        debt_pct = _get("debt_to_assets")
+        ar_turnover = _get("ar_turn")
+        assets_to_eqt = _get("assets_to_eqt")
+
+        features: Dict[str, Any] = {"ts_code": ts_code}
+
+        # ── 资产结构比率 ──
+        if not pd.isna(nca_pct):
+            ratio_nca = _clamp(nca_pct / 100.0)
+            features["ratio_nca"] = ratio_nca
+        else:
+            ratio_nca = float('nan')
+
+        ratio_intang = 0.0
+        if not pd.isna(tba_pct):
+            ratio_intang = _clamp(1.0 - tba_pct / 100.0)
+            features["ratio_intang_asset"] = ratio_intang
+
+        if not pd.isna(ratio_nca):
+            features["ratio_hard_asset"] = _clamp(ratio_nca - ratio_intang)
+
+        if not pd.isna(ca_pct):
+            features["ratio_working_capital"] = _clamp(ca_pct / 100.0)
+
+        # ── 负债 & 应收比率 ──
+        if not pd.isna(debt_pct):
+            features["ratio_debt_to_assets"] = _clamp(debt_pct / 100.0)
+
+        ratio_recv = 0.0
+        if not pd.isna(ar_turnover) and ar_turnover > 0 and ar_turnover < 1.0:
+            ratio_recv = _clamp(1.0 / max(ar_turnover, 0.5))
+            features["ratio_receivable_to_revenue"] = ratio_recv
+
+        if not pd.isna(assets_to_eqt) and assets_to_eqt > 0:
+            features["ratio_goodwill_to_equity"] = _clamp(
+                ratio_intang * (assets_to_eqt / 100.0) * 0.15
+            )
+        elif ratio_intang > 0.5:
+            features["ratio_goodwill_to_equity"] = ratio_intang * 0.25
+
+        # ── 风险标志 ──
+        features["flag_goodwill_risk"] = 1.0 if ratio_intang > 0.85 else 0.0
+        features["flag_cash_loan_anomaly"] = 0.0
+        features["flag_high_receivable"] = 1.0 if ratio_recv > 1.0 else 0.0
+
+        # ── 估值特征 ──
+        bps = _get("bps")
+        roe_val = _get("roe")
+        eps_val = _get("eps")
+        fcff = _get("fcff_ps")
+        roic_val = _get("roic")
+
+        if not pd.isna(bps) and bps > 0 and not pd.isna(roe_val):
+            features["valuation_earnings_power"] = abs(roe_val / 100.0 * bps)
+        if not pd.isna(eps_val) and not pd.isna(fcff) and abs(eps_val) > 0.01:
+            features["valuation_cash_conversion"] = _clamp(fcff / abs(eps_val), -2.0, 3.0)
+        if not pd.isna(roic_val):
+            features["valuation_spread"] = roic_val / 100.0 - 0.08
+
+        # 数据完整度
+        expected_fields = 11
+        actual_fields = sum(1 for k in features if k.startswith(("ratio_", "flag_")))
+        features["data_completeness"] = min(0.85, actual_fields / expected_fields)
+
+        # 保留 name/industry
+        for meta_col in ["name", "industry"]:
+            v = row.get(meta_col)
+            if v is not None and pd.notna(v):
+                features[meta_col] = str(v)
+
+        rows.append(features)
+
+    return pd.DataFrame(rows)
+
+
+def _extract_ratios_from_balance_sheet(df_sorted: pd.DataFrame) -> pd.DataFrame:
+    """从资产负债表提取通用财务结构比率"""
+    from .probes.financial_context_probe import FinancialContextProbe
+
+    probe = FinancialContextProbe()
+    rows = []
+
+    for ts_code, group in df_sorted.groupby("ts_code"):
+        ts_code = str(ts_code)
+        latest_row = group.iloc[0]
+
+        financial_data: Dict[str, Any] = {}
+        for col in latest_row.index:
+            if col == "ts_code":
+                continue
+            val = latest_row[col]
+            if pd.notna(val):
+                try:
+                    financial_data[col] = float(val)
+                except (ValueError, TypeError):
+                    pass
+
+        if not financial_data:
+            continue
+
+        try:
+            ctx_result = probe.compute(financial_data)
+            features = ctx_result.to_features_dict()
+            clean = {
+                k: v for k, v in features.items()
+                if isinstance(v, (int, float)) and v == v and abs(v) != float('inf')
+            }
+            if clean:
+                clean["ts_code"] = ts_code
+                rows.append(clean)
+        except Exception as e:
+            logger.warning(f"FinancialContextProbe failed for {ts_code}: {e}")
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+@register_method(
+    engine_name="build_financial_context",
+    component_type="business_engine",
+    engine_type="duckdb",
+    description="从原始财务数据提取通用财务结构比率",
+)
+def build_financial_context(
+    data: Union[str, Path, pd.DataFrame],
+) -> AggregatableResult[str, pd.DataFrame]:
+    """提取通用财务结构比率
+
+    与 8 个趋势探针并列，从同一份原始数据提取资产结构、
+    负债比率、风险标志、估值特征等通用比率数据。
+    通过 PDDA 聚合到 aggregated_trends["financial_context"]，
+    下游 truth / evaluators 各取所需。
+
+    Args:
+        data: 原始财务数据 (pd.DataFrame 或文件路径)
+
+    Returns:
+        AggregatableResult(key="financial_context", namespace="trends")
+    """
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        df = pd.read_parquet(path) if path.suffix == '.parquet' else pd.read_csv(path)
+    else:
+        df = data
+
+    if df is None or df.empty or "ts_code" not in df.columns:
+        logger.warning("build_financial_context: 空数据或缺少 ts_code 列")
+        return AggregatableResult(
+            key="financial_context",
+            value=pd.DataFrame(),
+            namespace="trends",
+            metadata=AggregationMetadata(producer_method="build_financial_context"),
+        )
+
+    sort_cols = [c for c in ["end_date", "ann_date"] if c in df.columns]
+    df_sorted = df.sort_values(sort_cols, ascending=False) if sort_cols else df
+
+    data_cols = set(df.columns)
+    bs_score = len(data_cols & _BALANCE_SHEET_MARKERS)
+    ind_score = len(data_cols & _INDICATOR_MARKERS)
+
+    if ind_score > bs_score:
+        logger.info(f"Financial Context: 指标数据模式 (indicator={ind_score} vs balance_sheet={bs_score})")
+        context_df = _extract_ratios_from_indicators(df_sorted)
+    else:
+        logger.info(f"Financial Context: 资产负债表模式 (balance_sheet={bs_score} vs indicator={ind_score})")
+        context_df = _extract_ratios_from_balance_sheet(df_sorted)
+
+    logger.info(f"✅ Financial Context: 为 {len(context_df)} 只股票提取财务结构比率")
+
+    return AggregatableResult(
+        key="financial_context",
+        value=context_df,
+        namespace="trends",
+        metadata=AggregationMetadata(
+            producer_method="build_financial_context",
+            tags={
+                "data_mode": "indicator" if ind_score > bs_score else "balance_sheet",
+                "stock_count": str(len(context_df)),
+            }
+        ),
+    )
+
+
 __all__ = [
     'compute_derived_metrics',
     'analyze_metric_trend',
     'analyze_multiple_metrics',
+    'build_financial_context',
 ]
