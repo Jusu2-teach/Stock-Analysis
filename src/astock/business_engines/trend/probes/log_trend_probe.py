@@ -518,11 +518,11 @@ class LogTrendProbe:
                 "median": trend_metrics.get('bootstrap_slope_median'),
                 "low": trend_metrics.get('bootstrap_ci_low'),
                 "high": trend_metrics.get('bootstrap_ci_high'),
-            },
+            }, 
         }
 
         return LogTrendResult(
-            log_slope=trend_metrics['log_slope'],
+            log_slope=trend_metrics['fused_slope'],  # v4.3: 使用 OLS+WLS 融合斜率
             slope=trend_metrics['linear_slope'],
             intercept=trend_metrics['log_intercept'],
             r_squared=trend_metrics['r_squared'],

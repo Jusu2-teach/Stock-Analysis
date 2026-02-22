@@ -909,6 +909,15 @@ def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
 
     # 4. 标准评级映射
     if grade in ("A+", "A"):
+        # v4.4: δ_decay 衰退否决门 — 高评级但衰退严重的公司不应判为 quality
+        # 审计发现: V factor (0.23 权重) 系统性给出 1.00，cover 住 δ_decay
+        # 导致衰退公司也能获得 A/A+ 评级 → 需后置修正
+        if decay_score >= 0.50 and gamma_score < 0.45:
+            # 严重衰退 + 低成长力 → 不给 quality，降级为 average
+            return "average"
+        if decay_score >= 0.60:
+            # 极度衰退 (无论 γ) → 降级为 average
+            return "average"
         return "quality"
     elif grade in ("B+", "B"):
         return "average"

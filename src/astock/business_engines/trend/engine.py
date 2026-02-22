@@ -97,12 +97,15 @@ def _snapshot_to_row(
     # 核心趋势指标
     trend = snapshot.trend
     row[f'{prefix}_slope'] = trend.slope
-    row[f'{prefix}_log_slope'] = trend.log_slope
+    row[f'{prefix}_log_slope'] = trend.log_slope  # v4.3: 现在是 fused_slope (OLS+WLS)
     row[f'{prefix}_r_squared'] = trend.r_squared
     row[f'{prefix}_p_value'] = trend.p_value
     row[f'{prefix}_cagr_approx'] = trend.cagr_approx
     row[f'{prefix}_cagr'] = trend.cagr_approx  # 🌟 标准别名，保持与 FieldRegistry 一致
     row[f'{prefix}_trend_direction'] = "up" if trend.log_slope > 0 else ("down" if trend.log_slope < 0 else "flat")
+    # v4.3: Mann-Kendall tau (非参数趋势显著性)
+    robust = snapshot.robust
+    row[f'{prefix}_robust_slope'] = robust.robust_slope if robust else None
 
     # 波动性指标
     vol = snapshot.volatility
@@ -121,6 +124,7 @@ def _snapshot_to_row(
     infl = snapshot.inflection
     row[f'{prefix}_has_inflection'] = infl.has_inflection
     row[f'{prefix}_inflection_type'] = infl.inflection_type
+    row[f'{prefix}_slope_change'] = infl.slope_change  # v4.3: 拐点前后斜率差
 
     # 周期性
     cyc = snapshot.cyclical

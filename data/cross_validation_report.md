@@ -2,7 +2,7 @@
 
 > T.R.U.T.H. (数据驱动基因分析) × Evaluators (因果贝叶斯规则) 交叉验证
 
-- **生成时间**: 2026-02-22 18:48:57
+- **生成时间**: 2026-02-22 19:57:09
 - **T.R.U.T.H. 股票数**: 1914
 - **Evaluators 股票数**: 1914
 - **共同覆盖**: 1914
@@ -11,10 +11,10 @@
 
 ### 相关性指标
 
-- **Spearman 秩相关系数**: 0.322
+- **Spearman 秩相关系数**: 0.321
   - 低度一致 — 两引擎存在较大分歧，需审慎参考
-- **信号方向一致率**: 40.3%
-- **严重分歧数**: 176
+- **信号方向一致率**: 40.8%
+- **严重分歧数**: 175
 
 ### 严重分歧列表
 
@@ -22,181 +22,180 @@
 
 | 代码 | T.R.U.T.H. 信号 | T.R.U.T.H. 分 | Eval 决策 | Eval 分 |
 |------|------------------|---------------|-----------|---------|
-| 688302.SH | 🟢🟢strong_buy | 78.8% | veto | 0.0 |
-| 688520.SH | fraud_alert | 0.0% | quality | 76.6 |
-| 600686.SH | fraud_alert | 0.0% | quality | 75.4 |
+| 688302.SH | 🟢🟢strong_buy | 78.9% | veto | 0.0 |
+| 688520.SH | fraud_alert | 0.0% | quality | 77.3 |
+| 600686.SH | fraud_alert | 0.0% | quality | 75.0 |
+| 300254.SZ | fraud_alert | 0.0% | quality | 75.0 |
 | 688322.SH | 🟢🟢strong_buy | 74.9% | veto | 0.0 |
-| 300254.SZ | fraud_alert | 0.0% | quality | 74.6 |
 | 688235.SH | 🟢🟢strong_buy | 73.3% | veto | 0.0 |
+| 688277.SH | 🟢🟢strong_buy | 72.8% | veto | 0.0 |
 | 688266.SH | 🟢🟢strong_buy | 72.7% | veto | 0.0 |
-| 688277.SH | 🟢🟢strong_buy | 72.7% | veto | 0.0 |
 | 688382.SH | 🟢🟢strong_buy | 71.4% | veto | 0.0 |
 | 688567.SH | 🟢🟢strong_buy | 71.2% | veto | 0.0 |
-| 688180.SH | 🟢🟢strong_buy | 70.3% | veto | 0.0 |
+| 688180.SH | 🟢🟢strong_buy | 70.4% | veto | 0.0 |
 | 300333.SZ | 🟢🟢strong_buy | 70.1% | veto | 0.0 |
 | 688221.SH | 🟢🟢strong_buy | 70.1% | veto | 0.0 |
 | 002173.SZ | 🟢🟢strong_buy | 69.3% | veto | 0.0 |
 | 300204.SZ | 🟢🟢strong_buy | 68.5% | veto | 0.0 |
 | 603778.SH | 🟢🟢strong_buy | 68.3% | veto | 0.0 |
 | 300521.SZ | 🟢buy | 67.7% | veto | 0.0 |
-| 688286.SH | 🟢buy | 67.3% | veto | 0.0 |
-| 688331.SH | 🟢buy | 67.2% | veto | 0.0 |
+| 688286.SH | 🟢buy | 67.4% | veto | 0.0 |
 | 430047.BJ | 🟢buy | 67.2% | veto | 0.0 |
 | 688428.SH | 🟢buy | 67.1% | veto | 0.0 |
+| 688331.SH | 🟢buy | 67.1% | veto | 0.0 |
 | 688343.SH | 🟢buy | 66.7% | veto | 0.0 |
-| 688256.SH | 🟢buy | 66.6% | veto | 0.0 |
-| 002657.SZ | 🟢buy | 66.5% | veto | 0.0 |
+| 002657.SZ | 🟢buy | 66.6% | veto | 0.0 |
 | 688538.SH | 🟢buy | 66.5% | veto | 0.0 |
-| 002992.SZ | 🟢buy | 65.9% | veto | 0.0 |
-| 688512.SH | 🟢buy | 65.9% | veto | 0.0 |
-| 600847.SH | 🟢buy | 65.7% | veto | 0.0 |
-| 603068.SH | 🟢buy | 65.6% | veto | 0.0 |
-| 688177.SH | 🟢buy | 65.6% | veto | 0.0 |
-| 688062.SH | 🟢buy | 65.3% | veto | 0.0 |
-| 301096.SZ | 🟢buy | 65.2% | veto | 0.0 |
-| 300609.SZ | 🟢buy | 65.2% | veto | 0.0 |
+| 002992.SZ | 🟢buy | 66.2% | veto | 0.0 |
+| 688256.SH | 🟢buy | 66.2% | veto | 0.0 |
+| 600847.SH | 🟢buy | 65.8% | veto | 0.0 |
+| 603068.SH | 🟢buy | 65.8% | veto | 0.0 |
+| 688512.SH | 🟢buy | 65.7% | veto | 0.0 |
+| 688177.SH | 🟢buy | 65.4% | veto | 0.0 |
+| 688062.SH | 🟢buy | 65.4% | veto | 0.0 |
+| 300609.SZ | 🟢buy | 65.3% | veto | 0.0 |
 | 002912.SZ | 🟢buy | 65.2% | veto | 0.0 |
 | 000503.SZ | 🟢buy | 65.1% | veto | 0.0 |
-| 688176.SH | 🟢buy | 64.9% | veto | 0.0 |
-| 688361.SH | 🟢buy | 64.8% | veto | 0.0 |
+| 000572.SZ | 🟢buy | 64.9% | veto | 0.0 |
+| 688176.SH | 🟢buy | 64.8% | veto | 0.0 |
 | 603685.SH | 🟢buy | 64.8% | veto | 0.0 |
-| 688090.SH | 🟢buy | 64.7% | veto | 0.0 |
+| 688361.SH | 🟢buy | 64.8% | veto | 0.0 |
+| 301096.SZ | 🟢buy | 64.8% | veto | 0.0 |
 | 002261.SZ | 🟢buy | 64.6% | veto | 0.0 |
+| 688090.SH | 🟢buy | 64.6% | veto | 0.0 |
 | 301266.SZ | 🟢buy | 64.3% | veto | 0.0 |
 | 688197.SH | 🟢buy | 64.2% | veto | 0.0 |
-| 002227.SZ | 🟢buy | 64.2% | veto | 0.0 |
-| 300706.SZ | 🟢buy | 64.2% | veto | 0.0 |
-| 300323.SZ | 🟢buy | 64.1% | veto | 0.0 |
+| 300323.SZ | 🟢buy | 64.2% | veto | 0.0 |
+| 300210.SZ | 🟢buy | 64.1% | veto | 0.0 |
+| 300706.SZ | 🟢buy | 64.1% | veto | 0.0 |
 | 300386.SZ | 🟢buy | 64.1% | veto | 0.0 |
-| 300210.SZ | 🟢buy | 64.0% | veto | 0.0 |
-| 300683.SZ | 🟢buy | 63.9% | veto | 0.0 |
-| 002362.SZ | 🟢buy | 63.8% | veto | 0.0 |
-| 688185.SH | 🟢buy | 63.7% | veto | 0.0 |
+| 002227.SZ | 🟢buy | 64.0% | veto | 0.0 |
+| 002362.SZ | 🟢buy | 63.9% | veto | 0.0 |
+| 688185.SH | 🟢buy | 63.8% | veto | 0.0 |
+| 300683.SZ | 🟢buy | 63.8% | veto | 0.0 |
 | 002405.SZ | 🟢buy | 63.7% | veto | 0.0 |
-| 688620.SH | 🟢buy | 63.6% | veto | 0.0 |
-| 301246.SZ | 🟢buy | 63.6% | veto | 0.0 |
-| 301217.SZ | 🟢buy | 63.5% | veto | 0.0 |
+| 688051.SH | 🟢buy | 63.5% | veto | 0.0 |
 | 688373.SH | 🟢buy | 63.5% | veto | 0.0 |
+| 688620.SH | 🟢buy | 63.5% | veto | 0.0 |
 | 603773.SH | 🟢buy | 63.4% | veto | 0.0 |
-| 300471.SZ | 🟢buy | 63.4% | veto | 0.0 |
-| 688051.SH | 🟢buy | 63.4% | veto | 0.0 |
-| 600152.SH | 🟢buy | 63.3% | veto | 0.0 |
-| 605177.SH | 🟢buy | 63.3% | veto | 0.0 |
-| 000831.SZ | 🟢buy | 63.3% | veto | 0.0 |
-| 688031.SH | 🟢buy | 63.3% | veto | 0.0 |
-| 000572.SZ | 🟢buy | 63.2% | veto | 0.0 |
-| 603496.SH | 🟢buy | 63.1% | veto | 0.0 |
-| 688368.SH | 🟢buy | 63.1% | veto | 0.0 |
-| 688023.SH | 🟢buy | 63.0% | veto | 0.0 |
-| 603669.SH | 🟢buy | 63.0% | veto | 0.0 |
-| 600666.SH | 🟢buy | 63.0% | veto | 0.0 |
+| 301217.SZ | 🟢buy | 63.4% | veto | 0.0 |
+| 301246.SZ | 🟢buy | 63.4% | veto | 0.0 |
+| 600152.SH | 🟢buy | 63.4% | veto | 0.0 |
+| 605177.SH | 🟢buy | 63.4% | veto | 0.0 |
+| 300471.SZ | 🟢buy | 63.3% | veto | 0.0 |
+| 688368.SH | 🟢buy | 63.3% | veto | 0.0 |
+| 688031.SH | 🟢buy | 63.2% | veto | 0.0 |
+| 000831.SZ | 🟢buy | 63.2% | veto | 0.0 |
+| 688023.SH | 🟢buy | 63.2% | veto | 0.0 |
+| 603669.SH | 🟢buy | 63.2% | veto | 0.0 |
+| 603496.SH | 🟢buy | 63.0% | veto | 0.0 |
+| 600666.SH | 🟢buy | 62.9% | veto | 0.0 |
 | 000516.SZ | 🟢buy | 62.7% | veto | 0.0 |
-| 301325.SZ | 🟢buy | 62.6% | veto | 0.0 |
+| 300322.SZ | 🟢buy | 62.6% | veto | 0.0 |
 | 300283.SZ | 🟢buy | 62.6% | veto | 0.0 |
-| 300322.SZ | 🟢buy | 62.5% | veto | 0.0 |
-| 688711.SH | 🟢buy | 62.5% | veto | 0.0 |
-| 688126.SH | 🟢buy | 62.4% | veto | 0.0 |
-| 688091.SH | 🟢buy | 62.4% | veto | 0.0 |
-| 832876.BJ | 🟢buy | 62.4% | veto | 0.0 |
+| 002153.SZ | 🟢buy | 62.5% | veto | 0.0 |
+| 688699.SH | 🟢buy | 62.5% | veto | 0.0 |
+| 688126.SH | 🟢buy | 62.5% | veto | 0.0 |
+| 301325.SZ | 🟢buy | 62.5% | veto | 0.0 |
+| 688711.SH | 🟢buy | 62.4% | veto | 0.0 |
 | 301285.SZ | 🟢buy | 62.4% | veto | 0.0 |
+| 832876.BJ | 🟢buy | 62.4% | veto | 0.0 |
 | 688238.SH | 🟢buy | 62.3% | veto | 0.0 |
-| 002153.SZ | 🟢buy | 62.3% | veto | 0.0 |
-| 688699.SH | 🟢buy | 62.3% | veto | 0.0 |
-| 300024.SZ | 🟢buy | 62.3% | veto | 0.0 |
-| 688488.SH | 🟢buy | 62.1% | veto | 0.0 |
-| 688717.SH | 🟢buy | 62.1% | veto | 0.0 |
-| 600259.SH | 🟢buy | 62.1% | veto | 0.0 |
-| 601238.SH | 🟢buy | 62.0% | veto | 0.0 |
-| 301176.SZ | 🟢buy | 61.9% | veto | 0.0 |
+| 300024.SZ | 🟢buy | 62.2% | veto | 0.0 |
+| 688091.SH | 🟢buy | 62.2% | veto | 0.0 |
+| 688488.SH | 🟢buy | 62.2% | veto | 0.0 |
+| 600259.SH | 🟢buy | 61.9% | veto | 0.0 |
+| 688661.SH | 🟢buy | 61.9% | veto | 0.0 |
+| 601238.SH | 🟢buy | 61.9% | veto | 0.0 |
+| 688717.SH | 🟢buy | 61.9% | veto | 0.0 |
 | 300076.SZ | 🟢buy | 61.9% | veto | 0.0 |
-| 688661.SH | 🟢buy | 61.8% | veto | 0.0 |
 | 688045.SH | 🟢buy | 61.8% | veto | 0.0 |
-| 688496.SH | 🟢buy | 61.7% | veto | 0.0 |
+| 301176.SZ | 🟢buy | 61.8% | veto | 0.0 |
+| 688288.SH | 🟢buy | 61.8% | veto | 0.0 |
 | 688653.SH | 🟢buy | 61.7% | veto | 0.0 |
 | 688165.SH | 🟢buy | 61.7% | veto | 0.0 |
-| 300118.SZ | 🟢buy | 61.6% | veto | 0.0 |
-| 002240.SZ | 🟢buy | 61.6% | veto | 0.0 |
-| 688288.SH | 🟢buy | 61.6% | veto | 0.0 |
+| 688496.SH | 🟢buy | 61.7% | veto | 0.0 |
 | 300250.SZ | 🟢buy | 61.5% | veto | 0.0 |
-| 300324.SZ | 🟢buy | 61.4% | veto | 0.0 |
+| 300324.SZ | 🟢buy | 61.3% | veto | 0.0 |
 | 002256.SZ | 🟢buy | 61.3% | veto | 0.0 |
 | 300287.SZ | 🟢buy | 61.3% | veto | 0.0 |
-| 688223.SH | 🟢buy | 61.3% | veto | 0.0 |
 | 002279.SZ | 🟢buy | 61.3% | veto | 0.0 |
-| 688153.SH | 🟢buy | 61.2% | veto | 0.0 |
-| 600110.SH | 🟢buy | 61.1% | veto | 0.0 |
+| 688223.SH | 🟢buy | 61.2% | veto | 0.0 |
+| 002240.SZ | 🟢buy | 61.2% | veto | 0.0 |
+| 688153.SH | 🟢buy | 61.1% | veto | 0.0 |
 | 688004.SH | 🟢buy | 61.0% | veto | 0.0 |
-| 300270.SZ | 🟢buy | 61.0% | veto | 0.0 |
-| 300520.SZ | 🟢buy | 61.0% | veto | 0.0 |
-| 002178.SZ | 🟢buy | 60.9% | veto | 0.0 |
+| 600110.SH | 🟢buy | 61.0% | veto | 0.0 |
+| 300520.SZ | 🟢buy | 60.9% | veto | 0.0 |
+| 300118.SZ | 🟢buy | 60.9% | veto | 0.0 |
+| 300270.SZ | 🟢buy | 60.9% | veto | 0.0 |
 | 601519.SH | 🟢buy | 60.8% | veto | 0.0 |
-| 600756.SH | 🟢buy | 60.8% | veto | 0.0 |
-| 603690.SH | 🟢buy | 60.7% | veto | 0.0 |
 | 300865.SZ | 🟢buy | 60.7% | veto | 0.0 |
+| 603690.SH | 🟢buy | 60.7% | veto | 0.0 |
 | 688613.SH | 🟢buy | 60.7% | veto | 0.0 |
+| 002178.SZ | 🟢buy | 60.6% | veto | 0.0 |
+| 600756.SH | 🟢buy | 60.6% | veto | 0.0 |
 | 300245.SZ | 🟢buy | 60.6% | veto | 0.0 |
-| 300162.SZ | 🟢buy | 60.6% | veto | 0.0 |
-| 002426.SZ | 🟢buy | 60.6% | veto | 0.0 |
+| 688030.SH | 🟢buy | 60.6% | veto | 0.0 |
 | 300077.SZ | 🟢buy | 60.5% | veto | 0.0 |
-| 688030.SH | 🟢buy | 60.5% | veto | 0.0 |
+| 002426.SZ | 🟢buy | 60.5% | veto | 0.0 |
+| 300162.SZ | 🟢buy | 60.5% | veto | 0.0 |
 | 688629.SH | 🟢buy | 60.5% | veto | 0.0 |
 | 688327.SH | 🟢buy | 60.5% | veto | 0.0 |
-| 300382.SZ | 🟢buy | 60.5% | veto | 0.0 |
-| 688303.SH | 🟢buy | 60.4% | veto | 0.0 |
-| 603978.SH | 🟢buy | 60.4% | veto | 0.0 |
+| 300382.SZ | 🟢buy | 60.4% | veto | 0.0 |
 | 688206.SH | 🟢buy | 60.4% | veto | 0.0 |
-| 300793.SZ | 🟢buy | 60.3% | veto | 0.0 |
+| 603978.SH | 🟢buy | 60.4% | veto | 0.0 |
 | 300460.SZ | 🟢buy | 60.3% | veto | 0.0 |
-| 300902.SZ | 🟢buy | 60.2% | veto | 0.0 |
+| 300793.SZ | 🟢buy | 60.2% | veto | 0.0 |
+| 300686.SZ | 🟢buy | 60.2% | veto | 0.0 |
 | 688590.SH | 🟢buy | 60.2% | veto | 0.0 |
-| 600728.SH | 🟢buy | 60.2% | veto | 0.0 |
+| 600728.SH | 🟢buy | 60.1% | veto | 0.0 |
 | 688651.SH | 🟢buy | 60.1% | veto | 0.0 |
-| 300686.SZ | 🟢buy | 60.1% | veto | 0.0 |
 | 002471.SZ | 🟢buy | 60.1% | veto | 0.0 |
-| 600207.SH | 🟢buy | 60.0% | veto | 0.0 |
 | 300352.SZ | 🟢buy | 60.0% | veto | 0.0 |
+| 600207.SH | 🟢buy | 60.0% | veto | 0.0 |
 | 688167.SH | 🟢buy | 59.9% | veto | 0.0 |
+| 300902.SZ | 🟢buy | 59.9% | veto | 0.0 |
+| 688303.SH | 🟢buy | 59.9% | veto | 0.0 |
 | 300365.SZ | 🟢buy | 59.8% | veto | 0.0 |
 | 300598.SZ | 🟢buy | 59.7% | veto | 0.0 |
-| 688173.SH | 🟢buy | 59.7% | veto | 0.0 |
-| 603901.SH | 🟢buy | 59.7% | veto | 0.0 |
 | 300678.SZ | 🟢buy | 59.7% | veto | 0.0 |
-| 600202.SH | 🟢buy | 59.6% | veto | 0.0 |
-| 300032.SZ | 🟢buy | 59.6% | veto | 0.0 |
+| 603901.SH | 🟢buy | 59.6% | veto | 0.0 |
 | 603660.SH | 🟢buy | 59.6% | veto | 0.0 |
-| 002382.SZ | 🟢buy | 59.5% | veto | 0.0 |
-| 688081.SH | 🟢buy | 59.5% | veto | 0.0 |
-| 300469.SZ | 🟢buy | 59.5% | veto | 0.0 |
-| 688211.SH | 🟢buy | 59.4% | veto | 0.0 |
-| 300659.SZ | 🟢buy | 59.4% | veto | 0.0 |
+| 600202.SH | 🟢buy | 59.6% | veto | 0.0 |
+| 002382.SZ | 🟢buy | 59.6% | veto | 0.0 |
+| 300469.SZ | 🟢buy | 59.6% | veto | 0.0 |
+| 688173.SH | 🟢buy | 59.6% | veto | 0.0 |
+| 300659.SZ | 🟢buy | 59.5% | veto | 0.0 |
+| 688211.SH | 🟢buy | 59.5% | veto | 0.0 |
+| 688081.SH | 🟢buy | 59.4% | veto | 0.0 |
+| 300542.SZ | 🟢buy | 59.4% | veto | 0.0 |
 | 688655.SH | 🟢buy | 59.4% | veto | 0.0 |
-| 688388.SH | 🟢buy | 59.4% | veto | 0.0 |
-| 300542.SZ | 🟢buy | 59.3% | veto | 0.0 |
-| 600303.SH | 🟢buy | 59.3% | veto | 0.0 |
 | 300449.SZ | 🟢buy | 59.3% | veto | 0.0 |
-| 688559.SH | 🟢buy | 59.1% | veto | 0.0 |
-| 000536.SZ | 🟢buy | 59.1% | veto | 0.0 |
+| 600303.SH | 🟢buy | 59.3% | veto | 0.0 |
+| 300032.SZ | 🟢buy | 59.3% | veto | 0.0 |
+| 000536.SZ | 🟢buy | 59.2% | veto | 0.0 |
+| 688388.SH | 🟢buy | 59.1% | veto | 0.0 |
 | 300438.SZ | 🟢buy | 59.1% | veto | 0.0 |
 | 002102.SZ | 🟢buy | 59.1% | veto | 0.0 |
+| 688020.SH | 🟢buy | 59.0% | veto | 0.0 |
 | 688007.SH | 🟢buy | 59.0% | veto | 0.0 |
-| 688020.SH | 🟢buy | 58.9% | veto | 0.0 |
-| 688110.SH | 🟢buy | 58.8% | veto | 0.0 |
-| 688390.SH | 🟢buy | 58.8% | veto | 0.0 |
 | 300085.SZ | 🟢buy | 58.7% | veto | 0.0 |
+| 688110.SH | 🟢buy | 58.7% | veto | 0.0 |
+| 688390.SH | 🟢buy | 58.7% | veto | 0.0 |
 | 300036.SZ | 🟢buy | 58.6% | veto | 0.0 |
-| 002587.SZ | 🟢buy | 58.6% | veto | 0.0 |
-| 688779.SH | 🟢buy | 58.6% | veto | 0.0 |
+| 688559.SH | 🟢buy | 58.6% | veto | 0.0 |
+| 688529.SH | 🟢buy | 58.6% | veto | 0.0 |
 | 688107.SH | 🟢buy | 58.5% | veto | 0.0 |
+| 002587.SZ | 🟢buy | 58.5% | veto | 0.0 |
 | 430139.BJ | 🟢buy | 58.5% | veto | 0.0 |
-| 300302.SZ | 🟢buy | 58.5% | veto | 0.0 |
-| 300447.SZ | 🟢buy | 58.5% | veto | 0.0 |
-| 301511.SZ | 🟢buy | 58.4% | veto | 0.0 |
-| 300080.SZ | 🟢buy | 58.4% | veto | 0.0 |
-| 688529.SH | 🟢buy | 58.4% | veto | 0.0 |
+| 300302.SZ | 🟢buy | 58.4% | veto | 0.0 |
+| 300447.SZ | 🟢buy | 58.4% | veto | 0.0 |
+| 300423.SZ | 🟢buy | 58.3% | veto | 0.0 |
 | 300966.SZ | 🟢buy | 58.3% | veto | 0.0 |
-| 688560.SH | 🟢buy | 58.3% | veto | 0.0 |
-| 300423.SZ | 🟢buy | 58.1% | veto | 0.0 |
-| 002466.SZ | 🟢buy | 58.0% | veto | 0.0 |
+| 688779.SH | 🟢buy | 58.2% | veto | 0.0 |
+| 688560.SH | 🟢buy | 58.2% | veto | 0.0 |
+| 301511.SZ | 🟢buy | 58.1% | veto | 0.0 |
+| 300080.SZ | 🟢buy | 58.1% | veto | 0.0 |
 | 688039.SH | 🟢buy | 58.0% | veto | 0.0 |
 
 ## 双引擎共识精选 (Top 20)
@@ -205,30 +204,30 @@
 
 | # | 代码 | 共识分 | T.R.U.T.H. | Eval | 基因特征 | 生命周期 |
 |---|------|--------|------------|------|----------|----------|
-| 1 | 301479.SZ | 79.4% | 🟢🟢A+ | quality(82) | γ:0.79 α:0.34 V:1.00 | 🔄turnaround |
-| 2 | 688578.SH | 79.2% | 🟢🟢A+ | quality(81) | γ:0.84 α:0.64 V:1.00 | 📈growth |
-| 3 | 832735.BJ | 78.9% | 🟢B+ | quality(91) | γ:0.63 α:0.24 V:0.53 | 🏔️mature |
-| 4 | 920037.BJ | 77.6% | 🟢🟢A+ | quality(79) | γ:0.72 α:0.63 V:1.00 | 📈growth |
-| 5 | 688029.SH | 77.5% | 🟢🟢A+ | quality(80) | γ:0.66 α:0.50 V:0.99 | 📊slowing |
-| 6 | 603016.SH | 77.4% | 🟢B | quality(93) | γ:0.56 α:0.32 V:0.57 | 🏔️mature |
-| 7 | 002595.SZ | 77.2% | 🟢🟢A+ | quality(77) | γ:0.69 α:0.24 V:1.00 | 📈growth |
-| 8 | 001395.SZ | 76.7% | 🟢🟢A+ | quality(79) | γ:0.71 α:0.36 V:1.00 | 📈growth |
-| 9 | 003816.SZ | 76.7% | 🟢B+ | quality(86) | γ:0.52 α:0.30 V:0.82 | 🏔️mature |
-| 10 | 002371.SZ | 76.6% | 🟢🟢A | quality(81) | γ:0.79 α:0.59 V:1.00 | 📈growth |
-| 11 | 600406.SH | 76.6% | 🟢B | quality(90) | γ:0.42 α:0.18 V:0.83 | 🔄turnaround |
-| 12 | 000513.SZ | 76.5% | 🟢🟢A | quality(84) | γ:0.57 α:0.35 V:0.95 | 🏔️mature |
-| 13 | 688338.SH | 76.3% | 🟢B | quality(91) | γ:0.47 α:0.79 V:0.82 | 📊slowing |
-| 14 | 300866.SZ | 76.3% | 🟢🟢A+ | quality(79) | γ:0.70 α:0.35 V:0.96 | 📈growth |
-| 15 | 002380.SZ | 76.1% | 🟢🟢A | quality(80) | γ:0.74 α:0.75 V:1.00 | 📈growth |
-| 16 | 300545.SZ | 76.0% | 🟢🟢A+ | quality(77) | γ:0.71 α:0.46 V:1.00 | 📈growth |
-| 17 | 688596.SH | 75.8% | 🟢🟢A | quality(80) | γ:0.76 α:0.53 V:1.00 | 📈growth |
-| 18 | 002850.SZ | 75.6% | 🟢🟢A+ | quality(78) | γ:0.74 α:0.35 V:0.89 | 📈growth |
-| 19 | 002773.SZ | 75.2% | 🟢🟢A+ | quality(76) | γ:0.68 α:0.60 V:1.00 | 📊slowing |
-| 20 | 301678.SZ | 75.0% | 🟢🟢A | quality(77) | γ:0.68 α:0.30 V:0.75 | 📈growth |
+| 1 | 301479.SZ | 79.8% | 🟢🟢A+ | quality(83) | γ:0.79 α:0.34 V:1.00 | 🔄turnaround |
+| 2 | 688578.SH | 79.5% | 🟢🟢A+ | quality(81) | γ:0.84 α:0.64 V:1.00 | 📈growth |
+| 3 | 832735.BJ | 79.1% | 🟢B+ | quality(91) | γ:0.63 α:0.24 V:0.53 | 🏔️mature |
+| 4 | 920037.BJ | 78.6% | 🟢🟢A+ | quality(81) | γ:0.72 α:0.63 V:1.00 | 📈growth |
+| 5 | 688029.SH | 78.1% | 🟢🟢A+ | quality(81) | γ:0.67 α:0.50 V:0.99 | 📊slowing |
+| 6 | 002595.SZ | 77.8% | 🟢🟢A+ | quality(78) | γ:0.69 α:0.24 V:1.00 | 📈growth |
+| 7 | 603016.SH | 77.6% | 🟢B | quality(93) | γ:0.56 α:0.32 V:0.57 | 🏔️mature |
+| 8 | 000513.SZ | 77.5% | 🟢🟢A | quality(86) | γ:0.57 α:0.35 V:0.95 | 🏔️mature |
+| 9 | 003816.SZ | 77.0% | 🟢B+ | quality(86) | γ:0.52 α:0.30 V:0.82 | 🏔️mature |
+| 10 | 002371.SZ | 76.9% | 🟢🟢A | quality(82) | γ:0.79 α:0.59 V:1.00 | 📈growth |
+| 11 | 300866.SZ | 76.9% | 🟢🟢A+ | quality(80) | γ:0.69 α:0.35 V:0.96 | 📈growth |
+| 12 | 001395.SZ | 76.9% | 🟢🟢A+ | quality(80) | γ:0.71 α:0.36 V:1.00 | 📈growth |
+| 13 | 600406.SH | 76.8% | 🟢B | quality(91) | γ:0.42 α:0.18 V:0.83 | 🔄turnaround |
+| 14 | 300545.SZ | 76.6% | 🟢🟢A+ | quality(78) | γ:0.71 α:0.46 V:1.00 | 📈growth |
+| 15 | 688338.SH | 76.4% | 🟢B | quality(91) | γ:0.47 α:0.79 V:0.82 | 📊slowing |
+| 16 | 002380.SZ | 76.3% | 🟢🟢A | quality(80) | γ:0.74 α:0.75 V:1.00 | 📈growth |
+| 17 | 688596.SH | 76.1% | 🟢🟢A | quality(81) | γ:0.76 α:0.53 V:1.00 | 📈growth |
+| 18 | 301678.SZ | 76.0% | 🟢🟢A | quality(79) | γ:0.68 α:0.30 V:0.75 | 📈growth |
+| 19 | 002850.SZ | 75.9% | 🟢🟢A+ | quality(78) | γ:0.74 α:0.35 V:0.89 | 📈growth |
+| 20 | 300907.SZ | 75.7% | 🟢🟢A | quality(80) | γ:0.62 α:0.55 V:1.00 | 📊slowing |
 
 ### Top 5 详细分析
 
-#### 301479.SZ (共识分: 79.4%)
+#### 301479.SZ (共识分: 79.8%)
 
 **六维基因图谱:**
 
@@ -250,13 +249,13 @@
 - 结构场 (护城河): 宽护城河：明显竞争优势，可持续多年
 
 **关键驱动因素:**
-- ↑ roic_trend: 0.171
-- ↓ rule_engine: -13.250
-- ↑ roe_trend: 0.170
+- ↑ roic_trend: 0.176
+- ↓ rule_engine: -14.448
+- ↑ roe_trend: 0.174
 
 ---
 
-#### 688578.SH (共识分: 79.2%)
+#### 688578.SH (共识分: 79.5%)
 
 **六维基因图谱:**
 
@@ -278,13 +277,13 @@
 - 结构场 (护城河): 宽护城河：明显竞争优势，可持续多年
 
 **关键驱动因素:**
-- ↑ roic_trend: 1.827
-- ↑ roe_trend: 1.808
-- ↑ revenue_trend: 0.673
+- ↑ roic_trend: 1.790
+- ↑ roe_trend: 1.735
+- ↑ revenue_trend: 0.670
 
 ---
 
-#### 832735.BJ (共识分: 78.9%)
+#### 832735.BJ (共识分: 79.1%)
 
 **六维基因图谱:**
 
@@ -306,13 +305,13 @@
 - 结构场 (护城河): 宽护城河：明显竞争优势，可持续多年
 
 **关键驱动因素:**
-- ↑ roic_trend: 0.031
-- ↑ revenue_trend: 0.063
-- ↑ roe_trend: 0.020
+- ↑ roic_trend: 0.032
+- ↑ revenue_trend: 0.065
+- ↑ roe_trend: 0.021
 
 ---
 
-#### 920037.BJ (共识分: 77.6%)
+#### 920037.BJ (共识分: 78.6%)
 
 **六维基因图谱:**
 
@@ -329,18 +328,18 @@
 **物理求解器:**
 
 - 重力场 (ROIC阈值): 安全边际: ROIC 应 > 12.1% 才具备投资价值
-- 速度场 (增长边界): 可持续增长上限: 20.2%/年
+- 速度场 (增长边界): 可持续增长上限: 20.3%/年
 - 速度场 (增长边界): 保守增长下限: 11.6%/年
 - 结构场 (护城河): 窄护城河：一定竞争优势，但可能被侵蚀
 
 **关键驱动因素:**
-- ↑ roic_trend: 0.087
-- ↑ roe_trend: 0.317
-- ↑ revenue_trend: 0.205
+- ↑ roic_trend: 0.111
+- ↑ revenue_trend: 0.215
+- ↑ roe_trend: 0.367
 
 ---
 
-#### 688029.SH (共识分: 77.5%)
+#### 688029.SH (共识分: 78.1%)
 
 **六维基因图谱:**
 
@@ -348,7 +347,7 @@
 |------|------|------|
 | α 周期性 | 0.50 | |
 | β 资本密度 | 0.21 ⚠ | |
-| γ 成长动能 | 0.66 ✓ | |
+| γ 成长动能 | 0.67 ✓ | |
 | lambda_leverage | 0.09 ⚠ | |
 | δ_fraud 欺诈熵 | 0.00 ⚠ | |
 | δ_decay 衰退熵 | 0.00 ⚠ | |
@@ -362,83 +361,83 @@
 - 结构场 (护城河): 窄护城河：一定竞争优势，但可能被侵蚀
 
 **关键驱动因素:**
-- ↑ roic_trend: 0.070
-- ↑ revenue_trend: 0.065
-- ↑ roe_trend: 0.094
+- ↑ roic_trend: 0.071
+- ↑ revenue_trend: 0.066
+- ↓ rule_engine: -12.460
 
 ---
 
 ## 风险预警
 
-> 共 107 家公司触发高级别风险警告
+> 共 108 家公司触发高级别风险警告
 
 | 代码 | 风险原因 | T.R.U.T.H. | Eval | 详情 |
 |------|----------|------------|------|------|
-| 600478.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600686.SH | 欺诈熵熔断 | fraud_alert | quality |  |
-| 300249.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300436.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300803.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300318.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 000534.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 600807.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300220.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 600745.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 002512.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 300657.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 833575.BJ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002172.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
 | 002667.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300772.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600281.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 688621.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688260.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 000034.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 000509.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600481.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300368.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
 | 000762.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688630.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600821.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 603693.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 601127.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 300457.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 002219.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 600733.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000670.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300293.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002506.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 000009.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600476.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 600588.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 600807.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600203.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 688108.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688225.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 002134.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 300491.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600550.SH | 欺诈熵熔断 | fraud_alert | average |  |
+| 300123.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 688800.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600686.SH | 欺诈熵熔断 | fraud_alert | quality |  |
+| 300212.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
 | 300410.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300128.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000100.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300254.SZ | 欺诈熵熔断 | fraud_alert | quality |  |
-| 601727.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| ... | | | | 还有 77 家 |
+| 600732.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002675.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 000938.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 002180.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| ... | | | | 还有 78 家 |
 
 ## 因子-评分矛盾分析
 
 > 检测 TRUTH 因子揭示的风险是否被 Evaluator 评分忽略
 
-> 共发现 83 家公司存在因子-评分矛盾
+> 共发现 92 家公司存在因子-评分矛盾
 
 | 代码 | Eval 决策 | 矛盾点 |
 |------|-----------|--------|
+| 002506.SZ | average(61) | λ=0.91(高杠杆) vs Eval=61分；V=0.03(fake_growth) vs Eval=61分；δ_fraud=0.63 vs Eval=61分 |
+| 600550.SH | average(60) | λ=0.87(高杠杆) vs Eval=60分；δ_fraud=0.63 vs Eval=60分 |
 | 600686.SH | quality(75) | λ=0.78(高杠杆) vs Eval=75分；δ_fraud=0.63 vs Eval=75分 |
-| 000534.SZ | average(69) | V=0.00(fake_growth) vs Eval=69分；δ_fraud=0.60 vs Eval=69分 |
-| 300378.SZ | quality(73) | V=0.00(fake_growth) vs Eval=73分；δ_fraud=0.43 vs Eval=73分 |
+| 002180.SZ | average(69) | λ=0.68(高杠杆) vs Eval=69分；δ_fraud=0.63 vs Eval=69分 |
+| 600379.SH | quality(76) | V=0.15(fake_growth) vs Eval=76分；δ_fraud=0.44 vs Eval=76分 |
+| 601727.SH | average(69) | λ=0.80(高杠杆) vs Eval=69分；δ_fraud=0.63 vs Eval=69分 |
 | 601127.SH | average(69) | λ=0.87(高杠杆) vs Eval=69分；δ_fraud=0.63 vs Eval=69分 |
-| 300457.SZ | average(65) | V=0.01(fake_growth) vs Eval=65分；δ_fraud=0.68 vs Eval=65分 |
-| 601727.SH | average(67) | λ=0.80(高杠杆) vs Eval=67分；δ_fraud=0.63 vs Eval=67分 |
-| 688520.SH | quality(77) | λ=0.71(高杠杆) vs Eval=77分；δ_fraud=0.63 vs Eval=77分 |
-| 600268.SH | quality(72) | V=0.20(fake_growth) vs Eval=72分；δ_fraud=0.44 vs Eval=72分 |
+| 600268.SH | quality(73) | V=0.20(fake_growth) vs Eval=73分；δ_fraud=0.44 vs Eval=73分 |
+| 600821.SH | average(60) | λ=0.72(高杠杆) vs Eval=60分；δ_fraud=0.63 vs Eval=60分 |
 | 002456.SZ | average(67) | λ=0.86(高杠杆) vs Eval=67分；δ_fraud=0.63 vs Eval=67分 |
-| 600379.SH | quality(75) | V=0.15(fake_growth) vs Eval=75分；δ_fraud=0.44 vs Eval=75分 |
 | 839493.BJ | quality(76) | λ=0.74(高杠杆) vs Eval=76分；V=0.23(low_quality) vs Eval=76分 |
+| 600320.SH | average(69) | λ=0.86(高杠杆) vs Eval=69分；δ_fraud=0.63 vs Eval=69分 |
+| 688520.SH | quality(77) | λ=0.71(高杠杆) vs Eval=77分；δ_fraud=0.63 vs Eval=77分 |
+| 300220.SZ | average(62) | λ=0.73(高杠杆) vs Eval=62分；δ_fraud=0.63 vs Eval=62分 |
+| 000597.SZ | average(60) | λ=0.61(高杠杆) vs Eval=60分；δ_fraud=0.53 vs Eval=60分 |
+| 300378.SZ | quality(75) | V=0.00(fake_growth) vs Eval=75分；δ_fraud=0.43 vs Eval=75分 |
+| 000534.SZ | average(70) | V=0.00(fake_growth) vs Eval=70分；δ_fraud=0.60 vs Eval=70分 |
+| 002316.SZ | average(72) | λ=0.87(高杠杆) vs Eval=72分；δ_fraud=0.63 vs Eval=72分 |
+| 300457.SZ | average(68) | V=0.01(fake_growth) vs Eval=68分；δ_fraud=0.68 vs Eval=68分 |
+| 601985.SH | average(62) | λ=0.83(高杠杆) vs Eval=62分；δ_fraud=0.63 vs Eval=62分 |
+| 688516.SH | average(64) | λ=0.77(高杠杆) vs Eval=64分；V=0.40(low_quality) vs Eval=64分 |
 | 300049.SZ | quality(73) | V=0.25(fake_growth) vs Eval=73分；δ_fraud=0.57 vs Eval=73分 |
-| 002316.SZ | average(71) | λ=0.87(高杠杆) vs Eval=71分；δ_fraud=0.63 vs Eval=71分 |
-| 601985.SH | average(60) | λ=0.83(高杠杆) vs Eval=60分；δ_fraud=0.63 vs Eval=60分 |
-| 002180.SZ | average(70) | λ=0.68(高杠杆) vs Eval=70分；δ_fraud=0.63 vs Eval=70分 |
-| 600320.SH | average(68) | λ=0.86(高杠杆) vs Eval=68分；δ_fraud=0.63 vs Eval=68分 |
-| 300831.SZ | average(61) | V=0.00(fake_growth) vs Eval=61分 |
-| 601126.SH | average(71) | V=0.45(low_quality) vs Eval=71分 |
-| 603611.SH | quality(78) | λ=0.67(高杠杆) vs Eval=78分 |
-| 000550.SZ | quality(74) | λ=0.66(高杠杆) vs Eval=74分 |
-| 002655.SZ | average(65) | δ_fraud=0.50 vs Eval=65分 |
-| 300220.SZ | average(60) | δ_fraud=0.63 vs Eval=60分 |
-| 688315.SH | average(67) | V=0.15(fake_growth) vs Eval=67分 |
-| 688376.SH | average(59) | δ_fraud=0.51 vs Eval=59分 |
-| 300274.SZ | average(68) | λ=0.69(高杠杆) vs Eval=68分 |
+| 300657.SZ | average(56) | δ_fraud=0.63 vs Eval=56分 |
+| 920112.BJ | quality(76) | V=0.29(low_quality) vs Eval=76分 |
+| 300842.SZ | average(67) | λ=0.98(高杠杆) vs Eval=67分 |
 
 ## 统计验证
 
@@ -446,9 +445,9 @@
 
 | 统计量 | T.R.U.T.H. | Evaluators |
 |--------|------------|------------|
-| 均值 | 53.96% | 30.99% |
-| 标准差 | 15.50% | 23.70% |
-| 最高 | 78.78% | 92.78% |
+| 均值 | 53.92% | 32.59% |
+| 标准差 | 15.55% | 24.14% |
+| 最高 | 78.91% | 93.18% |
 | 最低 | 0.00% | 0.00% |
 
 ### T.R.U.T.H. 评级分布
@@ -458,16 +457,16 @@
 | ⭐⭐⭐ A+ | 28 | 1.5% |
 | ⭐⭐ A | 127 | 6.6% |
 | ⭐ B+ | 340 | 17.8% |
-| ✅ B | 406 | 21.2% |
-| ➖ C | 732 | 38.2% |
+| ✅ B | 404 | 21.1% |
+| ➖ C | 733 | 38.3% |
 | ⚠️ D | 173 | 9.0% |
-| ❌ F | 108 | 5.6% |
+| ❌ F | 109 | 5.7% |
 
 ### Evaluators 决策分布
 
-- 优质: 115 (6.0%)
+- 优质: 127 (6.6%)
 - 否决: 471 (24.6%)
-- 其他: 1328
+- 其他: 1316
 
 ### 数据质量
 

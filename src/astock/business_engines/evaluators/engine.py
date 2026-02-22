@@ -723,11 +723,22 @@ class CausalBayesianEvaluator:
         if infl_key in features:
             mf["has_inflection"] = features[infl_key]
 
+        # v4.3: 拐点类型 + 斜率变化 (fix: inflection_recovery 规则之前缺少这两个特征)
+        infl_type_key = f"{metric}_inflection_type"
+        if infl_type_key in features:
+            mf["inflection_type"] = features[infl_type_key]
+        slope_change_key = f"{metric}_slope_change"
+        if slope_change_key in features:
+            mf["slope_change"] = features[slope_change_key]
+
         # OCF 交叉引用 (用于 earnings_ocf_divergence 规则)
         mf["ref_ocf_slope"] = features.get("ocf_trend", 0.0)
 
-        # 连续下跌年数 (近似)
-        if features.get(f"{metric}_has_deterioration", False):
+        # v4.3: 使用实际数据计算连续下跌年数 (不再用严重度粗略映射)
+        consec_key = f"{metric}_consecutive_decline_years"
+        if consec_key in features and features[consec_key]:
+            mf["consecutive_decline_years"] = int(features[consec_key])
+        elif features.get(f"{metric}_has_deterioration", False):
             sev = features.get(f"{metric}_deterioration_severity", "none")
             mf["consecutive_decline_years"] = {
                 "severe": 4, "catastrophic": 4, "moderate": 3, "mild": 2,
@@ -735,9 +746,25 @@ class CausalBayesianEvaluator:
         else:
             mf["consecutive_decline_years"] = 0
 
-        # 最大单年跌幅
+        # v4.3: 最大单年跌幅 (修复: 以前用总跌幅替代单年跌幅，语义不符)
+        # decline_pct 已是 abs/100 归一化值，代表总跌幅
         decline = features.get(f"{metric}_decline_pct", 0.0)
-        mf["max_yoy_decline"] = -decline if decline > 0.30 else 0.0
+        # 对于 5 年数据，单年平均跌幅 ≈ 总跌/年数，但更准确的计算需要 raw_values
+        raw_vals_key = f"{metric}_raw_values"
+        if raw_vals_key in features and isinstance(features[raw_vals_key], (list, tuple)):
+            raw = [v for v in features[raw_vals_key] if isinstance(v, (int, float))]
+            if len(raw) >= 2:
+                max_drop = 0.0
+                for i in range(1, len(raw)):
+                    if raw[i-1] != 0:
+                        yoy = (raw[i] - raw[i-1]) / abs(raw[i-1])
+                        if yoy < max_drop:
+                            max_drop = yoy
+                mf["max_yoy_decline"] = max_drop  # 负值
+            else:
+                mf["max_yoy_decline"] = -decline if decline > 0.30 else 0.0
+        else:
+            mf["max_yoy_decline"] = -decline if decline > 0.30 else 0.0
 
         # CAGR 近似
         mf["cagr"] = features.get(f"{metric}_trend", 0.0)
@@ -794,6 +821,23 @@ class CausalBayesianEvaluator:
             }
             trend_score = grade_scores.get(trend_grade, 50)
 
+            # v4.4: mk_tau 趋势一致性调整
+            # mk_tau 是非参数 Mann-Kendall 统计量 [-1,1]，与 log_slope 方向交叉验证
+            # 两者一致 → 趋势可信度高，给予小幅加分
+            # 两者矛盾 → 趋势可能被噪声/异常值扭曲，施加小幅扣分
+            metric_base = metric_score_key.replace("_trend", "")
+            mk_tau = features.get(f"{metric_base}_mk_tau", 0.0)
+            if mk_tau and value:  # 两者都非零
+                slope_sign = 1 if value > 0.005 else (-1 if value < -0.005 else 0)
+                tau_sign = 1 if mk_tau > 0.05 else (-1 if mk_tau < -0.05 else 0)
+                if slope_sign != 0 and tau_sign != 0:
+                    if slope_sign == tau_sign:
+                        # 一致: 按|mk_tau|强度给予 0~3 分加成
+                        trend_score += min(3, abs(mk_tau) * 4)
+                    else:
+                        # 矛盾: 扣 2~4 分 (非参检验否定参数趋势)
+                        trend_score -= min(4, 2 + abs(mk_tau) * 3)
+
             # 绝对水平补充 (40%)
             level_key = LEVEL_THRESHOLD_KEYS.get(metric_score_key)
             level_feature = metric_score_key.replace("_trend", "_level")
@@ -845,14 +889,15 @@ class CausalBayesianEvaluator:
             if features.get(f"{metric_key.replace('_trend', '')}_has_deterioration", False)
         )
 
-        # v4.2: 多指标恶化直接调降基础分
-        # 当多个指标同时恶化，说明公司整体在走下坡路，不应获得 quality 评级
+        # v4.4: 多指标恶化调降 (降低力度，避免与规则P3三重惩罚)
+        # 旧版 -12/-8/-5 加上规则P3逐指标扣分 + base_score已含低趋势，导致三重打击
+        # 新版仅作为"多指标联动"信号的边际调整，核心惩罚由规则P3承担
         if deterioration_count >= 5:
-            base_score -= 12
+            base_score -= 6
         elif deterioration_count >= 4:
-            base_score -= 8
+            base_score -= 4
         elif deterioration_count >= 3:
-            base_score -= 5
+            base_score -= 2
 
         # 2. 规则引擎调整 (v4.2: 恶化感知型惩罚缩放)
         rule_adjustment = 0.0
