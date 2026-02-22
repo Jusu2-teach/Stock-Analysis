@@ -2,7 +2,7 @@
 
 > T.R.U.T.H. (数据驱动基因分析) × Evaluators (因果贝叶斯规则) 交叉验证
 
-- **生成时间**: 2026-02-22 13:26:52
+- **生成时间**: 2026-02-22 13:37:02
 - **T.R.U.T.H. 股票数**: 1914
 - **Evaluators 股票数**: 1914
 - **共同覆盖**: 1914
@@ -210,36 +210,36 @@
 
 | 代码 | 风险原因 | T.R.U.T.H. | Eval | 详情 |
 |------|----------|------------|------|------|
-| 300474.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 688016.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300666.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 000572.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 688582.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300157.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002028.SZ | 欺诈熵熔断 | fraud_alert | quality |  |
-| 300053.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300807.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002432.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 300328.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 688530.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300617.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 600718.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300249.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 002358.SZ | 欺诈熵熔断 | fraud_alert | average |  |
-| 688409.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 603636.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300150.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 002460.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300772.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600589.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002139.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 600728.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002865.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 300264.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002261.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002560.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 603906.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 688148.SH | 欺诈熵熔断 | fraud_alert | veto |  |
 | 300837.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 300853.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 301168.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688167.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000922.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
-| 688711.SH | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300582.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 688520.SH | 欺诈熵熔断 | fraud_alert | average |  |
-| 688162.SH | 欺诈熵熔断 | fraud_alert | poor |  |
-| 002439.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 300382.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 000158.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
-| 603097.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 300340.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002432.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 300552.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 002456.SZ | 欺诈熵熔断 | fraud_alert | average |  |
+| 002518.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688209.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688227.SH | 欺诈熵熔断 | fraud_alert | veto |  |
+| 603381.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 601016.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 000591.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 300300.SZ | 欺诈熵熔断 | fraud_alert | poor |  |
+| 688478.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600476.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 600166.SH | 欺诈熵熔断 | fraud_alert | poor |  |
+| 300347.SZ | 欺诈熵熔断 | fraud_alert | veto |  |
+| 688151.SH | 欺诈熵熔断 | fraud_alert | veto |  |
 | ... | | | | 还有 412 家 |
 
 ## 统计验证
