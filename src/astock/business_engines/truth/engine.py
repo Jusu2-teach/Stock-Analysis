@@ -354,14 +354,15 @@ def _calibrate(
     scoring = config.scoring
 
     # 因子加权平均（从 ScoringConfig.factor_weights 获取）
+    # v4.6: fallback 值与 config.py ScoringConfig 默认值保持一致
     factor_weight_map = {
-        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.08),
-        FactorId.BETA: scoring.factor_weights.get("BETA", 0.07),
-        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.22),
+        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.12),
+        FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
+        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.18),
         FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
         FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
-        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.12),
-        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.23),
+        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.18),
+        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
     }
 
     weighted_sum = 0.0
@@ -395,9 +396,44 @@ def _calibrate(
 
     solver_score = solver_sum / solver_total if solver_total > 0 else 0.5
 
+    # ====== v4.6: Gravity 实际 ROIC vs 动态阈值的余裕度调整 ======
+    # 审计发现: Gravity 求解器仅计算阈值的"宽松程度"作为分数,
+    # 完全不比较实际 ROIC 是否超过阈值 → 两家因子相同但 ROIC=5% vs 25% 的公司得分相同
+    # 修复: 从已注入的 actual_value 计算余裕度, 调整 solver_score
+    gravity_result = solvers.get(SolverId.GRAVITY)
+    if gravity_result and gravity_result.thresholds:
+        roic_th = gravity_result.thresholds.get("roic")
+        if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
+            # actual_value = 公司实际加权ROIC(%), value = 动态阈值(%)
+            clearance_pct = roic_th.actual_value - roic_th.value  # 百分点差值
+            # 每10pp余裕 ≈ ±0.12 solver分调整; 封顶±0.12
+            clearance_bonus = max(-0.12, min(0.12, clearance_pct / 10.0 * 0.12))
+            solver_score = max(0.0, min(1.0, solver_score + clearance_bonus))
+
     # 最终分数 = 因子 × factor_vs_solver_weight + 求解器 × (1 - factor_vs_solver_weight)
     factor_ratio = scoring.factor_vs_solver_weight
     final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
+
+    # ====== v4.6: δ_decay 硬性门控 ======
+    # 审计发现: 22.1% 的"优质"公司带 δ_decay>0.30 的衰退信号通过评估
+    #   - 三生国健 δ_decay=0.58 却获 A+ (75.50%)
+    #   - 国邦医药 处于"衰退期" + δ_decay=0.55 获 A (68.2%)
+    # 根因: δ_decay 权重(0.12) 被 V(0.23)+γ(0.22) 淹没
+    # 修复: 类似 Evaluator 的 ROIC 硬封顶, 加 δ_decay 后置门控
+    delta_decay = factors.get(FactorId.DELTA_DECAY)
+    gamma = factors.get(FactorId.GAMMA)
+    if delta_decay and delta_decay.score is not None:
+        dd = delta_decay.score
+        g = gamma.score if gamma and gamma.score is not None else 0.5
+        if dd >= 0.50 and g < 0.45:
+            # 严重衰退 + 低增长 → 封顶 B (0.62), 不配得到 A
+            final_score = min(final_score, 0.62)
+        elif dd >= 0.50:
+            # 严重衰退但增长尚可 → 封顶 B+ (0.68)
+            final_score = min(final_score, 0.68)
+        elif dd >= 0.35:
+            # 中度衰退 → 封顶 A- (0.72), 不给 A+ 机会
+            final_score = min(final_score, 0.72)
 
     # 计算置信度
     confidences = [r.confidence for r in factors.values() if r.confidence]
@@ -650,7 +686,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "4.1.0",
+            "algo_version": "4.6.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,

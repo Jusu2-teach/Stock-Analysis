@@ -98,16 +98,19 @@ class EvaluatorConfig:
     use_rule_engine: bool = True
     rule_veto_enabled: bool = True
 
-    # 评分权重 — 8 个核心指标 (去掉了不存在的 fcf_margin/asset_turnover)
+    # 评分权重 — 8 个核心指标
+    # v4.6: ROIC↔ROE去相关 — ROIC作为首要质量指标(Buffett/Greenblatt)提权,
+    #        ROE因与ROIC相关系数~0.8+杠杆膨胀降权;
+    #        OCF+毛利率提权(现金质量+结构性竞争优势)
     score_weights: Dict[str, float] = field(default_factory=lambda: {
-        "roic_trend": 0.18,
-        "roe_trend": 0.14,
-        "revenue_trend": 0.14,
-        "gross_margin_trend": 0.12,
-        "net_margin_trend": 0.10,
-        "ocf_trend": 0.12,
-        "roiic_trend": 0.10,
-        "profit_trend": 0.10,
+        "roic_trend": 0.22,          # v4.6 ↑ 0.18→0.22: 投入资本回报率=核心质量
+        "roe_trend": 0.08,           # v4.6 ↓ 0.14→0.08: 与ROIC高相关+杠杆虚增
+        "revenue_trend": 0.12,       # v4.6 ↓ 0.14→0.12
+        "gross_margin_trend": 0.14,  # v4.6 ↑ 0.12→0.14: 护城河标志
+        "net_margin_trend": 0.10,    # 不变
+        "ocf_trend": 0.14,           # v4.6 ↑ 0.12→0.14: 现金为王
+        "roiic_trend": 0.10,         # 不变
+        "profit_trend": 0.10,        # 不变
     })
 
     # 决策阈值

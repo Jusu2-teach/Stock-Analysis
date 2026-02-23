@@ -250,13 +250,13 @@ class ScoringConfig:
       原阈值导致0家A+/A, 现在top 5%能拿到A
     """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ALPHA": 0.08,
-        "BETA": 0.07,
-        "GAMMA": 0.22,
-        "LAMBDA": 0.12,            # v4.1 新增 杠杆因子
-        "DELTA_FRAUD": 0.16,
-        "DELTA_DECAY": 0.12,
-        "VERIFICATION": 0.23,
+        "ALPHA": 0.12,             # v4.6 ↑ 0.08→0.12: 周期性识别更重要
+        "BETA": 0.08,              # v4.6 ↑ 0.07→0.08: 轻微提升
+        "GAMMA": 0.18,             # v4.6 ↓ 0.22→0.18: 减少成长偏好
+        "LAMBDA": 0.12,            # v4.1 不变
+        "DELTA_FRAUD": 0.16,       # 不变
+        "DELTA_DECAY": 0.18,       # v4.6 ↑ 0.12→0.18: 衰退惩罚严重不足
+        "VERIFICATION": 0.16,      # v4.6 ↓ 0.23→0.16: V修复后给真实值,降低权重
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
         "GRAVITY": 0.35,

@@ -1333,7 +1333,10 @@ class VerificationFactor:
         conf = config.verification_config
         weights = conf.component_weights
 
-        score = 0.5  # 默认中性
+        # v4.6 BUG FIX: 0.5 初始值 + 仅 sloan(w=0.15) 触发时 → 0.5/0.15=3.33 → 截断为1.00
+        # 导致 74.8% 的 A/A+ 公司 V=1.00 (虚假满分), 置信度仅 21%
+        # 修复: 从 0 开始累加, 无数据时 fallback 仍为 0.5
+        score = 0.0
         total_weight = 0.0
 
         # 1. OCF增速 / 营收增速
@@ -1367,7 +1370,7 @@ class VerificationFactor:
             # 归一化到 [0, 1]
             v_normalized = normalize_score(v_ratio_revenue, "minmax", 0.0, 1.5)
             w = weights.get("ocf_revenue_ratio", 0.50)
-            score = v_normalized * w
+            score += v_normalized * w  # v4.6: += 而非 = (与其他组件一致)
             total_weight += w
             components["v_ratio_revenue"] = v_ratio_revenue
 
