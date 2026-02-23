@@ -806,6 +806,7 @@ class CausalBayesianEvaluator:
         weighted_sum = 0.0
         total_weight = 0.0
         _tl_divergence_count = 0  # v4.2: 趋势-水平背离计数
+        _excellent_level_count = 0  # v4.7: 卓越水平指标计数 (用于稳定性加分)
 
         # 1. 趋势 + 绝对水平 融合评分
         for metric_score_key, weight in self.config.score_weights.items():
@@ -824,19 +825,46 @@ class CausalBayesianEvaluator:
             }
             trend_score = grade_scores.get(trend_grade, 50)
 
-            # v4.5: R² 信度保护 — 趋势不可靠时分数向中性收缩
-            # 审计发现: 捷佳伟创 ROIC R²=0.001、广信科技 R²=0.04、海光信息 R²=0.05
-            # 这些公司的趋势方向完全不可靠，但系统仍用不可靠的方向给出极端评分
-            # 修复: 将 trend_score 按 R² 向 50(中性) 收缩
+            # v4.7: 预计算绝对水平等级 — 用于 R² 收缩决策和动态权重
+            # 核心洞察: 低R²+高绝对水平 = 卓越稳定性(非趋势不可靠)
+            # 迈瑞医疗 ROIC=30% 十年稳定, R²=0.12 → v4.5误判为"趋势不可靠"
             metric_base = metric_score_key.replace("_trend", "")
+            level_key = LEVEL_THRESHOLD_KEYS.get(metric_score_key)
+            level_feature = f"{metric_base}_level"
+            level_value = features.get(level_feature)
+            level_grade = None
+            if level_key and level_value is not None:
+                level_grade = self._get_adaptive_grade(level_key, level_value, context)
+                if level_grade == "excellent":
+                    _excellent_level_count += 1
+
+            # v4.7: Level-aware R² 信度保护
+            # 原理: R² 衡量趋势线拟合优度。低 R² 有两种根本不同的含义:
+            #   (a) 趋势不可靠(数据噪声大、无明确方向) → 应收缩到中性
+            #   (b) 高水平平台稳定(波动极小、斜率≈0) → 稳定性是竞争优势
+            # v4.5 未区分(a)(b), 对迈瑞(ROIC 30%)/恒瑞(ROE 14%) 等造成严重误杀
+            # v4.7: 绝对水平 excellent → 完全免除收缩; good → 大幅减免
             r2 = features.get(f"{metric_base}_r_squared", 0.5)
             if r2 < 0.20:
-                # R² 极低 → 趋势线几乎无意义，大幅收缩到中性
-                shrink_factor = r2 / 0.20  # 0→0, 0.10→0.5, 0.20→1.0
+                base_shrink = r2 / 0.20  # 0→0, 0.10→0.5, 0.20→1.0
+                if level_grade == "excellent":
+                    # 绝对水平卓越 + R²低 = 高位平台稳定运营, 不收缩
+                    shrink_factor = 1.0
+                elif level_grade == "good":
+                    # 绝对水平良好 → 保底75%信号保留
+                    shrink_factor = max(base_shrink, 0.75)
+                else:
+                    # 水平一般 → 原始收缩 (趋势确实不可靠)
+                    shrink_factor = base_shrink
                 trend_score = 50 + (trend_score - 50) * shrink_factor
             elif r2 < 0.40:
-                # R² 低 → 趋势有弱信号，适度收缩
-                shrink_factor = 0.6 + 0.4 * ((r2 - 0.20) / 0.20)  # 0.6→1.0
+                base_shrink = 0.6 + 0.4 * ((r2 - 0.20) / 0.20)  # 0.6→1.0
+                if level_grade == "excellent":
+                    shrink_factor = 1.0
+                elif level_grade == "good":
+                    shrink_factor = max(base_shrink, 0.85)
+                else:
+                    shrink_factor = base_shrink
                 trend_score = 50 + (trend_score - 50) * shrink_factor
 
             # v4.5: 近期趋势逆转检测
@@ -865,16 +893,27 @@ class CausalBayesianEvaluator:
                         # 矛盾: 扣 2~4 分 (非参检验否定参数趋势)
                         trend_score -= min(4, 2 + abs(mk_tau) * 3)
 
-            # 绝对水平补充 (40%)
-            level_key = LEVEL_THRESHOLD_KEYS.get(metric_score_key)
-            level_feature = metric_score_key.replace("_trend", "_level")
-            level_value = features.get(level_feature)
-
-            level_grade = None
-            if level_key and level_value is not None:
-                level_grade = self._get_adaptive_grade(level_key, level_value, context)
+            # v4.7: 动态趋势/水平权重融合 (替代固定 60/40)
+            # 核心原则: "维持卓越比从平庸改善更难, 也更有价值"
+            #           — 参考 Buffett 竞争优势持续性理论
+            # 固定 60/40 的缺陷: ROIC=30% 平稳趋势 → 60%权重的trend≈60分,
+            #   40%权重的level=95分 → 总分仅74. 卓越公司被"趋势平庸"拖累.
+            # v4.7: 根据水平/趋势组合动态分配权重
+            if level_key and level_value is not None and level_grade is not None:
                 level_score = grade_scores.get(level_grade, 50)
-                metric_score = 0.60 * trend_score + 0.40 * level_score
+                if level_grade == "excellent" and trend_grade in ("good", "acceptable"):
+                    # 卓越水平 + 平稳趋势 → 水平主导 (护城河信号)
+                    trend_w, level_w = 0.40, 0.60
+                elif level_grade == "excellent" and trend_grade == "excellent":
+                    # 双优 → 均衡 (持续成长的卓越公司)
+                    trend_w, level_w = 0.50, 0.50
+                elif level_grade in ("poor", "veto") and trend_grade in ("excellent", "good"):
+                    # 低水平但强改善 → 趋势主导 (困境反转信号)
+                    trend_w, level_w = 0.70, 0.30
+                else:
+                    # 默认: 55/45 (比原 60/40 更均衡)
+                    trend_w, level_w = 0.55, 0.45
+                metric_score = trend_w * trend_score + level_w * level_score
             else:
                 metric_score = trend_score
 
@@ -938,25 +977,37 @@ class CausalBayesianEvaluator:
         elif deterioration_count >= 3:
             base_score -= 2
 
+        # v4.7: 卓越稳定性加分 — 多指标同时处于卓越水平 = 宽广护城河
+        # 迈瑞医疗: ROIC 30%, ROE 34%, 毛利率 63%, 净利率 32% → 全面卓越
+        # 这类公司即使趋势平稳也应获得额外认可
+        if _excellent_level_count >= 5 and deterioration_count <= 2:
+            base_score += 3  # 全面卓越加分
+        elif _excellent_level_count >= 4 and deterioration_count <= 1:
+            base_score += 2  # 高度卓越加分
+
         # 2. 规则引擎调整 (v4.2: 恶化感知型惩罚缩放)
         rule_adjustment = 0.0
         if rule_result and not rule_result.vetoed:
             penalty = rule_result.total_penalty
             bonus = rule_result.total_bonus
 
-            # v4.2: 恶化感知型惩罚缩放 (解决"天花板压缩"问题)
-            # 问题: 优秀公司 (base=94) 因 R²<0.25 等小问题被规则引擎扣 25 分
-            #       导致 94-25=69 刚好低于 quality 阈值 70
-            # 修复: 无恶化/少恶化的公司获得惩罚折扣
-            #       多恶化的公司维持全额惩罚
+            # v4.7: 恶化感知型惩罚缩放 (v4.2→v4.7 增强)
+            # 问题: 规则引擎对历史波动(如比亚迪2015-2020)累积高额罚分,
+            #       即使当前基本面已显著改善, 仍被历史罚分拖入AVERAGE
+            # v4.7: 绝对水平卓越的公司获得额外折扣 ("当前优秀"减免"历史杂音")
             if deterioration_count <= 1:
-                penalty_discount = 0.65    # 近乎无恙 → 35%折扣
+                penalty_discount = 0.55    # 近乎无恙 → 45%折扣 (v4.2: 0.65)
             elif deterioration_count == 2:
-                penalty_discount = 0.80
+                penalty_discount = 0.70    # 轻度恶化 (v4.2: 0.80)
             elif deterioration_count == 3:
-                penalty_discount = 0.90
+                penalty_discount = 0.85    # 中度恶化 (v4.2: 0.90)
             else:
                 penalty_discount = 1.00    # 多指标恶化 → 全额惩罚
+
+            # v4.7: 卓越水平额外折扣
+            # 如果多数指标绝对水平卓越, 规则引擎的历史惩罚应进一步减免
+            if _excellent_level_count >= 4:
+                penalty_discount *= 0.80  # 额外20%折扣
 
             # 扣分递减 + 恶化感知
             floor_headroom = max(0, base_score - 10)

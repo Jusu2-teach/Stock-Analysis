@@ -21,7 +21,7 @@ metadata:
 # ═══════════════════════════════════════════════════════════════════════════════
 scoring:
   base_score: 100.0
-  max_penalty: 25.0
+  max_penalty: 20.0
   max_bonus: 30.0
 
   # 评级阈值
@@ -254,6 +254,19 @@ bonus_rules:
       log_slope_gt: 0
     score: 5
     message_template: "趋势高度稳定: R²={r_squared:.2f}"
+
+  # v4.7: 卓越平台奖励 — 高绝对水平 + 低波动 = 护城河信号
+  # 核心洞察: 迈瑞医疗 ROIC=30%, CV低, slope≈0 → 应获得奖励而非惩罚
+  - id: plateau_excellence
+    name: "卓越稳定平台"
+    description: "高绝对水平且斜率稳定, 反映竞争优势持续性"
+    applies_to: ["roic", "roe", "gross_margin", "net_margin"]
+    condition:
+      latest_value_gt: 12
+      cv_lt: 0.30
+      log_slope_gte: -0.05
+    score: 6
+    message_template: "卓越稳定平台: 绝对水平卓越且稳定"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 投资策略 (Strategies) - 模式识别

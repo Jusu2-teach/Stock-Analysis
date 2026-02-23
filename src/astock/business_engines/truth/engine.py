@@ -370,8 +370,10 @@ def _calibrate(
     for fid, weight in factor_weight_map.items():
         result = factors.get(fid)
         if result and result.score is not None:
-            # δ_fraud、δ_decay、λ 是负向指标 (越低越好)
-            if fid in (FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA):
+            # 负向指标 (越低越好): δ_fraud, δ_decay, λ
+            # v4.7: α (周期性) 改为反向 — 低周期性 = 业务稳定性高 = 投资质量优势
+            # 原版正向使用导致: 迈瑞/恒瑞等稳定公司因低α被惩罚, 周期性强的公司反被奖励
+            if fid in (FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA):
                 weighted_sum += (1.0 - result.score) * weight
             else:
                 weighted_sum += result.score * weight
@@ -406,8 +408,10 @@ def _calibrate(
         if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
             # actual_value = 公司实际加权ROIC(%), value = 动态阈值(%)
             clearance_pct = roic_th.actual_value - roic_th.value  # 百分点差值
-            # 每10pp余裕 ≈ ±0.12 solver分调整; 封顶±0.12
-            clearance_bonus = max(-0.12, min(0.12, clearance_pct / 10.0 * 0.12))
+            # v4.7: 扩大余裕度封顶 0.12→0.18
+            # 原版问题: ROIC=30% 和 ROIC=15% 获得相同奖励(0.12)
+            # 30%的护城河明显优于15%, 应有更大区分度
+            clearance_bonus = max(-0.18, min(0.18, clearance_pct / 10.0 * 0.12))
             solver_score = max(0.0, min(1.0, solver_score + clearance_bonus))
 
     # 最终分数 = 因子 × factor_vs_solver_weight + 求解器 × (1 - factor_vs_solver_weight)
@@ -425,15 +429,38 @@ def _calibrate(
     if delta_decay and delta_decay.score is not None:
         dd = delta_decay.score
         g = gamma.score if gamma and gamma.score is not None else 0.5
-        if dd >= 0.50 and g < 0.45:
-            # 严重衰退 + 低增长 → 封顶 B (0.62), 不配得到 A
-            final_score = min(final_score, 0.62)
-        elif dd >= 0.50:
-            # 严重衰退但增长尚可 → 封顶 B+ (0.68)
-            final_score = min(final_score, 0.68)
-        elif dd >= 0.35:
-            # 中度衰退 → 封顶 A- (0.72), 不给 A+ 机会
-            final_score = min(final_score, 0.72)
+
+        # v4.7: 绝对水平豁免 — ROIC 卓越的公司即使有轻微衰退也不应被硬封顶
+        # 问题: 迈瑞医疗 ROIC=30% 从32%→30%(微小波动) 👉 δ_decay≈0.20→35
+        #       触发 “中度衰退”封顶 0.72, 永远拿不到 A+
+        # 修复: ROIC>20%的公司, 封顶阈值上移; ROIC>25%取消封顶
+        roic_for_gate = None
+        gravity_result_gate = solvers.get(SolverId.GRAVITY)
+        if gravity_result_gate and gravity_result_gate.thresholds:
+            roic_th_gate = gravity_result_gate.thresholds.get("roic")
+            if roic_th_gate and hasattr(roic_th_gate, 'actual_value'):
+                roic_for_gate = roic_th_gate.actual_value
+
+        # 卓越水平豁免: ROIC >= 25% → 完全取消δ封顶
+        # ROIC 20-25% → 放宽封顶
+        if roic_for_gate is not None and roic_for_gate >= 25.0:
+            pass  # 不应用任何封顶 (世界级 ROIC + 轻微衰退 = 正常波动)
+        elif roic_for_gate is not None and roic_for_gate >= 20.0:
+            # ROIC 20-25%: 提升封顶阈值 (+0.05)
+            if dd >= 0.50 and g < 0.45:
+                final_score = min(final_score, 0.67)
+            elif dd >= 0.50:
+                final_score = min(final_score, 0.73)
+            elif dd >= 0.35:
+                final_score = min(final_score, 0.77)
+        else:
+            # 原版逻辑: ROIC < 20%
+            if dd >= 0.50 and g < 0.45:
+                final_score = min(final_score, 0.62)
+            elif dd >= 0.50:
+                final_score = min(final_score, 0.68)
+            elif dd >= 0.35:
+                final_score = min(final_score, 0.72)
 
     # 计算置信度
     confidences = [r.confidence for r in factors.values() if r.confidence]

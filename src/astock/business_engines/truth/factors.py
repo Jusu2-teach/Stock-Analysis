@@ -1028,9 +1028,18 @@ class DeltaFraudFactor:
                 ))
 
         # 5. 毛利率太平滑 ("麦道夫特征")
+        # v4.7: 增加卓越稳定公司豁免
+        # 原版问题: 迈瑞医疗毛利率极其稳定(CV<0.03)被标记为欺诈特征
+        # 修复: 如果 ROIC 水平卓越(>15%) + 毛利率卓越(>30%) → 这是真实稳定, 不是造假
         margin_cv = get_feature(probes, "cv", "gross_margin")
+        roic_for_smooth = get_feature(probes, "latest_value", "roic")
+        gm_for_smooth = get_feature(probes, "latest_value", "gross_margin")
+        is_genuinely_stable = (
+            roic_for_smooth is not None and roic_for_smooth > 15.0
+            and gm_for_smooth is not None and gm_for_smooth > 30.0
+        )
         if margin_cv is not None:
-            if margin_cv < conf.too_smooth_cv_threshold:
+            if margin_cv < conf.too_smooth_cv_threshold and not is_genuinely_stable:
                 smoothness_score = 1.0 - margin_cv / conf.too_smooth_cv_threshold
                 w = weights.get("margin_smoothness", 0.15)
                 fraud_signals += w * smoothness_score
@@ -1045,6 +1054,9 @@ class DeltaFraudFactor:
                     source="delta_fraud_factor",
                     values={"margin_cv": margin_cv},
                 ))
+            elif margin_cv < conf.too_smooth_cv_threshold and is_genuinely_stable:
+                # 卓越稳定公司: 记录但不惩罚
+                components["margin_smoothness"] = 0.0  # 豁免
 
         # 6. R² 太高 ("太完美")
         revenue_r2 = get_feature(probes, "r_squared", "revenue")
@@ -1254,6 +1266,19 @@ class DeltaDecayFactor:
             score = 0.0
 
         score = max(0.0, min(1.0, score))
+
+        # v4.7: 绝对水平折扣 — 高基数轻微下降 ≠ 严重衰退
+        # ROIC 从 32%→30% (还是世界级) 不应与 ROIC 从 8%→6% 获得相同惩罚
+        # 原理: 高水平维持是竞争优势的体现, 微小波动是正常的
+        roic_level = get_feature(probes, "latest_value", "roic")
+        if roic_level is not None and roic_level > 15.0 and score > 0.0:
+            # ROIC > 20%: 衰退分数减半 (30%→2%的波动不是真衰退)
+            # ROIC 15-20%: 衰退分数打0.7
+            if roic_level >= 20.0:
+                score *= 0.50
+            else:
+                score *= 0.70
+            score = max(0.0, min(1.0, score))
 
         # 衰退严重程度
         if score > 0.7:
