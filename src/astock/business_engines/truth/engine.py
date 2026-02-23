@@ -160,6 +160,7 @@ def _inject_actual_values(
     """注入实际观测值到动态阈值，使 DynamicThreshold.passed 生效
 
     - Gravity solver: 注入实际 ROIC (weighted_avg) 到 roic 阈值
+      v4.8: 同时注入 roic_latest_value 到 components (供 ROIC 门控使用)
     - Velocity solver: 注入实际 revenue 增长率到 growth 阈值
     - Structure solver: 注入实际 gross_margin 到 moat_width 阈值
     """
@@ -172,6 +173,8 @@ def _inject_actual_values(
 
         new_thresholds: Dict[str, DynamicThreshold] = {}
         changed = False
+        # v4.8: 收集额外组件值
+        extra_components: Dict[str, float] = {}
 
         for th_name, th in result.thresholds.items():
             actual = None
@@ -181,6 +184,11 @@ def _inject_actual_values(
                 actual = _extract_actual_from_probes(probes, "roic", "weighted_avg")
                 if actual is None:
                     actual = _extract_actual_from_probes(probes, "roic", "latest_value")
+                # v4.8: 同时提取 latest_value (供 ROIC 绝对水平门控使用)
+                # weighted_avg 可能掩盖近期恶化 (如: 华宝新能 weighted=34%, latest=3.3%)
+                roic_latest = _extract_actual_from_probes(probes, "roic", "latest_value")
+                if roic_latest is not None:
+                    extra_components["roic_latest_value"] = roic_latest
 
             elif sid == SolverId.VELOCITY:
                 if th_name == "growth_ceiling":
@@ -207,7 +215,13 @@ def _inject_actual_values(
                 new_thresholds[th_name] = th
 
         if changed:
-            updated[sid] = replace(result, thresholds=new_thresholds)
+            # v4.8: 合并额外组件值到 solver result
+            if extra_components:
+                merged_components = dict(result.components)
+                merged_components.update(extra_components)
+                updated[sid] = replace(result, thresholds=new_thresholds, components=merged_components)
+            else:
+                updated[sid] = replace(result, thresholds=new_thresholds)
         else:
             updated[sid] = result
 
@@ -418,6 +432,24 @@ def _calibrate(
     factor_ratio = scoring.factor_vs_solver_weight
     final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
+    # ====== v4.8: 提取 ROIC 实际值供多个门控使用 ======
+    # roic_for_gate = weighted_avg (用于 clearance_bonus 等趋势性判断)
+    # roic_latest  = latest_value  (用于绝对水平门控 — 当前真实盈利能力)
+    # 设计原因: weighted_avg 可能掩盖近期恶化
+    #   华宝新能: weighted_avg=34.3%, latest=3.3% → weighted 看着很好但实际已崩塌
+    roic_for_gate = None
+    roic_latest = None
+    gravity_result_gate = solvers.get(SolverId.GRAVITY)
+    if gravity_result_gate:
+        if gravity_result_gate.thresholds:
+            roic_th_gate = gravity_result_gate.thresholds.get("roic")
+            if roic_th_gate and hasattr(roic_th_gate, 'actual_value'):
+                roic_for_gate = roic_th_gate.actual_value  # weighted_avg
+        # v4.8: 从 components 获取 latest_value (由 _inject_actual_values 注入)
+        roic_latest = gravity_result_gate.components.get("roic_latest_value")
+    # 门控用最新值 (如果有), 否则 fallback 到 weighted_avg
+    roic_for_level_gate = roic_latest if roic_latest is not None else roic_for_gate
+
     # ====== v4.6: δ_decay 硬性门控 ======
     # 审计发现: 22.1% 的"优质"公司带 δ_decay>0.30 的衰退信号通过评估
     #   - 三生国健 δ_decay=0.58 却获 A+ (75.50%)
@@ -431,21 +463,21 @@ def _calibrate(
         g = gamma.score if gamma and gamma.score is not None else 0.5
 
         # v4.7: 绝对水平豁免 — ROIC 卓越的公司即使有轻微衰退也不应被硬封顶
-        # 问题: 迈瑞医疗 ROIC=30% 从32%→30%(微小波动) 👉 δ_decay≈0.20→35
-        #       触发 “中度衰退”封顶 0.72, 永远拿不到 A+
+        # 问题: 迈瑞医疗 ROIC=30% 从32%→30%(微小波动) → δ_decay≈0.20→35
+        #       触发 "中度衰退"封顶 0.72, 永远拿不到 A+
         # 修复: ROIC>20%的公司, 封顶阈值上移; ROIC>25%取消封顶
-        roic_for_gate = None
-        gravity_result_gate = solvers.get(SolverId.GRAVITY)
-        if gravity_result_gate and gravity_result_gate.thresholds:
-            roic_th_gate = gravity_result_gate.thresholds.get("roic")
-            if roic_th_gate and hasattr(roic_th_gate, 'actual_value'):
-                roic_for_gate = roic_th_gate.actual_value
-
-        # 卓越水平豁免: ROIC >= 25% → 完全取消δ封顶
-        # ROIC 20-25% → 放宽封顶
-        if roic_for_gate is not None and roic_for_gate >= 25.0:
+        # v4.8: 同时检查 latest ROIC — 防止 weighted_avg 掩盖崩塌
+        #   华宝新能: weighted=34% → 豁免, 但 latest=3.3% → 不应豁免!
+        # 豁免条件: weighted_avg ≥ 阈值 AND latest ≥ 阈值的一半 (容忍波动但不容忍崩塌)
+        roic_gate_val = roic_for_gate  # weighted_avg
+        roic_latest_check = roic_latest if roic_latest is not None else roic_gate_val
+        # 卓越水平豁免: ROIC >= 25% → 完全取消δ封顶, 但 latest 必须 >= 15%
+        # ROIC 20-25% → 放宽封顶, 但 latest 必须 >= 12%
+        if (roic_gate_val is not None and roic_gate_val >= 25.0
+                and roic_latest_check is not None and roic_latest_check >= 15.0):
             pass  # 不应用任何封顶 (世界级 ROIC + 轻微衰退 = 正常波动)
-        elif roic_for_gate is not None and roic_for_gate >= 20.0:
+        elif (roic_gate_val is not None and roic_gate_val >= 20.0
+                and roic_latest_check is not None and roic_latest_check >= 12.0):
             # ROIC 20-25%: 提升封顶阈值 (+0.05)
             if dd >= 0.50 and g < 0.45:
                 final_score = min(final_score, 0.67)
@@ -461,6 +493,31 @@ def _calibrate(
                 final_score = min(final_score, 0.68)
             elif dd >= 0.35:
                 final_score = min(final_score, 0.72)
+
+    # ====== v4.8: ROIC 绝对水平硬性门控 ======
+    # 审计发现: 27家 ROIC<8% 的公司获得 A+/A 评级 (44.2% A+ 严重失衡)
+    #   - 汇成股份 ROIC=4.5% → T=93% (A+!) ← 连资本成本都覆盖不了
+    #   - 珠海港   ROIC=3.9% → T=91% (A+!) ← 彻底不合格
+    #   - 华宝新能 ROIC=3.3% → T=85% (A+!) ← weighted_avg=34% 掩盖崩塌
+    #   - 雅克科技 ROIC=7.5% → T=94% (A+!) ← 勉强覆盖成本, 不可能 A+
+    # 根因: TRUTH 仅有 δ_decay 门控(检测衰退信号), 无 ROIC 绝对水平门控
+    #   低 ROIC + 低波动(inverted α↑) + 低衰退(inverted δ_decay↑) + 低杠杆(inverted λ↑)
+    #   → 4个反向因子天然高分 → factor_score 基线 0.65+ → 轻松突破 A 阈值
+    # 修复: 使用 roic_latest (最新年度 ROIC) 进行硬性门控
+    #   经济学逻辑: ROIC < WACC(~6-7%) = 价值毁灭, 绝不可能是"优质"公司
+    if roic_for_level_gate is not None:
+        if roic_for_level_gate < 6.0:
+            # ROIC < 6%: 低于社会平均资本成本, 不可能是优质公司
+            final_score = min(final_score, 0.45)  # C 级封顶
+        elif roic_for_level_gate < 8.0:
+            # ROIC 6-8%: 勉强覆盖资本成本, 无超额回报能力
+            final_score = min(final_score, 0.55)  # C+ 级封顶
+        elif roic_for_level_gate < 10.0:
+            # ROIC 8-10%: 中等水平, 可以评 B+ 但不应评 A
+            final_score = min(final_score, 0.65)  # B+ 封顶
+        elif roic_for_level_gate < 12.0:
+            # ROIC 10-12%: 尚可, 可评 A 但不应评 A+ (A+ 门槛 ≈ 0.73)
+            final_score = min(final_score, 0.72)  # A 封顶 (不允许 A+)
 
     # 计算置信度
     confidences = [r.confidence for r in factors.values() if r.confidence]

@@ -219,10 +219,17 @@ class AlphaFactor:
         total_weight = 0.0
         confidence_factors = []
 
+        # v4.8: ROIIC 是衍生指标 (Δ利润/Δ资本), 天然有极端波动性 (cv=7-30),
+        # 不反映真实业务周期性. 排除 ROIIC 以避免α虚高.
+        _ALPHA_METRICS = ["roic", "roe", "revenue", "profit",
+                          "gross_margin", "net_margin", "ocf"]
+
         # 1. 去趋势变异系数 (detrended_cv)
-        detrended_cv = aggregate_feature(probes, "detrended_cv", "mean")
+        detrended_cv = aggregate_feature(probes, "detrended_cv", "mean",
+                                         metrics=_ALPHA_METRICS)
         if detrended_cv is None:
-            detrended_cv = aggregate_feature(probes, "cv", "mean")
+            detrended_cv = aggregate_feature(probes, "cv", "mean",
+                                             metrics=_ALPHA_METRICS)
 
         if detrended_cv is not None:
             # CV 归一化: 0-1 映射到 0-1 (高CV = 高周期性)
@@ -236,7 +243,8 @@ class AlphaFactor:
             confidence_factors.append(0.3)
 
         # 2. R² 反向 (低R² = 周期性)
-        r_squared = aggregate_feature(probes, "r_squared", "mean")
+        r_squared = aggregate_feature(probes, "r_squared", "mean",
+                                       metrics=_ALPHA_METRICS)
         if r_squared is not None:
             r_squared = max(0.0, min(1.0, r_squared))
             r_squared_inverse = 1.0 - r_squared
@@ -250,7 +258,7 @@ class AlphaFactor:
             confidence_factors.append(0.3)
 
         # 3. 原始 CV
-        cv = aggregate_feature(probes, "cv", "mean")
+        cv = aggregate_feature(probes, "cv", "mean", metrics=_ALPHA_METRICS)
         if cv is not None:
             normalized = normalize_score(cv, "minmax", 0.0, 2.0)
             w = weights.get("cv", 0.20)
@@ -259,7 +267,8 @@ class AlphaFactor:
             components["cv"] = cv
 
         # 4. 周期性标志
-        is_cyclical = aggregate_feature(probes, "is_cyclical", "max")
+        is_cyclical = aggregate_feature(probes, "is_cyclical", "max",
+                                          metrics=_ALPHA_METRICS)
         if is_cyclical is not None:
             cyclical_score = 1.0 if is_cyclical > 0.5 else 0.0
             w = weights.get("is_cyclical", 0.15)
@@ -268,7 +277,8 @@ class AlphaFactor:
             components["is_cyclical"] = is_cyclical
 
         # 5. Hurst 指数 (H < 0.5 = 均值回归 = 真周期)
-        hurst = aggregate_feature(probes, "hurst_exponent", "mean")
+        hurst = aggregate_feature(probes, "hurst_exponent", "mean",
+                                    metrics=_ALPHA_METRICS)
         if hurst is not None:
             # H < 0.45 表示均值回归 (真周期), 得分高
             hurst_score = 1.0 - normalize_score(hurst, "minmax", 0.3, 0.7)
@@ -1059,14 +1069,33 @@ class DeltaFraudFactor:
                 components["margin_smoothness"] = 0.0  # 豁免
 
         # 6. R² 太高 ("太完美")
+        # v4.8: 多指标一致性高增长豁免 — 如果 revenue, profit, ROIC 均呈显著正趋势
+        # 且 R² 都较高, 说明是真实的持续增长而非数据造假
         revenue_r2 = get_feature(probes, "r_squared", "revenue")
         if revenue_r2 is not None:
             if revenue_r2 > conf.too_perfect_r2_threshold:
-                perfect_score = (revenue_r2 - conf.too_perfect_r2_threshold) / (1.0 - conf.too_perfect_r2_threshold)
-                w = weights.get("revenue_r_squared", 0.10)
-                fraud_signals += w * perfect_score
-                total_weight += w
-                components["revenue_r2_too_high"] = perfect_score
+                # 检查多指标一致性: ROIC 和 profit 也应显示一致的正向趋势
+                roic_r2 = get_feature(probes, "r_squared", "roic")
+                profit_r2 = get_feature(probes, "r_squared", "profit")
+                roic_slope_val = get_feature(probes, "log_slope", "roic")
+                revenue_slope_val = get_feature(probes, "log_slope", "revenue")
+
+                is_multi_metric_consistent = (
+                    roic_r2 is not None and roic_r2 > 0.80
+                    and profit_r2 is not None and profit_r2 > 0.80
+                    and roic_slope_val is not None and roic_slope_val > 0
+                    and revenue_slope_val is not None and revenue_slope_val > 0
+                )
+
+                if is_multi_metric_consistent:
+                    # 多指标一致性高增长: 真实的卓越企业, 豁免 R² 惩罚
+                    components["revenue_r2_too_high"] = 0.0  # 记录但不惩罚
+                else:
+                    perfect_score = (revenue_r2 - conf.too_perfect_r2_threshold) / (1.0 - conf.too_perfect_r2_threshold)
+                    w = weights.get("revenue_r_squared", 0.10)
+                    fraud_signals += w * perfect_score
+                    total_weight += w
+                    components["revenue_r2_too_high"] = perfect_score
 
         # 7. 交叉验证: 营收增长但ROIC下降 = 质量恶化
         revenue_slope = get_feature(probes, "log_slope", "revenue")
@@ -1365,13 +1394,20 @@ class VerificationFactor:
         total_weight = 0.0
 
         # 1. OCF增速 / 营收增速
+        # v4.8: 当 CAGR 因 OCF 极端波动 (cv>1, R²<0.2) 而为 NaN 时,
+        #        回退到 log_slope 作为 CAGR 代理, 避免 V 因子空值
         ocf_cagr = get_feature(probes, "cagr", "ocf")
         if ocf_cagr is None:
             ocf_cagr = get_feature(probes, "cagr_approx", "ocf")
+        if ocf_cagr is None:
+            # fallback: log_slope ≈ CAGR 在小值范围内的合理近似
+            ocf_cagr = get_feature(probes, "log_slope", "ocf")
 
         revenue_cagr = get_feature(probes, "cagr", "revenue")
         if revenue_cagr is None:
             revenue_cagr = get_feature(probes, "cagr_approx", "revenue")
+        if revenue_cagr is None:
+            revenue_cagr = get_feature(probes, "log_slope", "revenue")
 
         v_ratio_revenue = None
         if ocf_cagr is not None and revenue_cagr is not None:
@@ -1403,6 +1439,8 @@ class VerificationFactor:
         profit_cagr = get_feature(probes, "cagr", "profit")
         if profit_cagr is None:
             profit_cagr = get_feature(probes, "cagr_approx", "profit")
+        if profit_cagr is None:
+            profit_cagr = get_feature(probes, "log_slope", "profit")
 
         v_ratio_profit = None
         if ocf_cagr is not None and profit_cagr is not None:
