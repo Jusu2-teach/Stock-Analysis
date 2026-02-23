@@ -224,7 +224,11 @@ class AlphaFactor:
         _ALPHA_METRICS = ["roic", "roe", "revenue", "profit",
                           "gross_margin", "net_margin", "ocf"]
 
-        # 1. 去趋势变异系数 (detrended_cv)
+        # v5.0: 去共线性重构 — 移除原始cv(与detrended_cv r>0.9), 重新分配权重
+        # 学术依据: 多重共线性导致权重语义失效(VIF>5不可接受)
+        # 重构后: detrended_cv(0.40) + R²反向(0.30) + 周期标志(0.20) + Hurst(0.10)
+
+        # 1. 去趋势变异系数 (主波动率度量, 吸收原cv权重)
         detrended_cv = aggregate_feature(probes, "detrended_cv", "mean",
                                          metrics=_ALPHA_METRICS)
         if detrended_cv is None:
@@ -232,9 +236,8 @@ class AlphaFactor:
                                              metrics=_ALPHA_METRICS)
 
         if detrended_cv is not None:
-            # CV 归一化: 0-1 映射到 0-1 (高CV = 高周期性)
             normalized = normalize_score(detrended_cv, "minmax", 0.0, 1.0)
-            w = weights.get("detrended_cv", 0.35)
+            w = weights.get("detrended_cv", 0.40)
             score += w * normalized
             total_weight += w
             components["detrended_cv"] = detrended_cv
@@ -242,13 +245,13 @@ class AlphaFactor:
         else:
             confidence_factors.append(0.3)
 
-        # 2. R² 反向 (低R² = 周期性)
+        # 2. R² 反向 (低R² = 趋势不明确 = 周期性)
         r_squared = aggregate_feature(probes, "r_squared", "mean",
                                        metrics=_ALPHA_METRICS)
         if r_squared is not None:
             r_squared = max(0.0, min(1.0, r_squared))
             r_squared_inverse = 1.0 - r_squared
-            w = weights.get("r_squared_inverse", 0.25)
+            w = weights.get("r_squared_inverse", 0.30)
             score += w * r_squared_inverse
             total_weight += w
             components["r_squared"] = r_squared
@@ -257,32 +260,24 @@ class AlphaFactor:
         else:
             confidence_factors.append(0.3)
 
-        # 3. 原始 CV
-        cv = aggregate_feature(probes, "cv", "mean", metrics=_ALPHA_METRICS)
-        if cv is not None:
-            normalized = normalize_score(cv, "minmax", 0.0, 2.0)
-            w = weights.get("cv", 0.20)
-            score += w * normalized
-            total_weight += w
-            components["cv"] = cv
+        # v5.0: 移除原始cv组件 — 与detrended_cv共线(r>0.9), 双重计数
 
-        # 4. 周期性标志
+        # 3. 周期性标志 (行业分类信号)
         is_cyclical = aggregate_feature(probes, "is_cyclical", "max",
                                           metrics=_ALPHA_METRICS)
         if is_cyclical is not None:
             cyclical_score = 1.0 if is_cyclical > 0.5 else 0.0
-            w = weights.get("is_cyclical", 0.15)
+            w = weights.get("is_cyclical", 0.20)
             score += w * cyclical_score
             total_weight += w
             components["is_cyclical"] = is_cyclical
 
-        # 5. Hurst 指数 (H < 0.5 = 均值回归 = 真周期)
+        # 4. Hurst 指数 (H < 0.5 = 均值回归 = 真周期)
         hurst = aggregate_feature(probes, "hurst_exponent", "mean",
                                     metrics=_ALPHA_METRICS)
         if hurst is not None:
-            # H < 0.45 表示均值回归 (真周期), 得分高
             hurst_score = 1.0 - normalize_score(hurst, "minmax", 0.3, 0.7)
-            w = weights.get("hurst_exponent", 0.05)
+            w = weights.get("hurst_exponent", 0.10)
             score += w * hurst_score
             total_weight += w
             components["hurst_exponent"] = hurst
@@ -398,39 +393,33 @@ class BetaFactor:
                 details={"asset_type": "unknown", "data_available": False},
             ), warnings
 
-        # 1. 硬资产比率 (核心指标)
+        # v5.0: 去共线性重构 — 移除nca_ratio(hard_asset是其子集, r>0.8)
+        # 重构后: hard_asset(0.50) + intang反向(0.25) + working_capital反向(0.25)
+
+        # 1. 硬资产比率 (核心指标, 吸收原nca权重)
         hard_asset_ratio = get_financial_context(probes, "ratio_hard_asset", -1.0)
         if hard_asset_ratio >= 0:
-            # 硬资产比率直接就是 β 分数: 高硬资产 = 高β = 重资产
-            w = weights.get("hard_asset_ratio", 0.45)
+            w = weights.get("hard_asset_ratio", 0.50)
             score += w * hard_asset_ratio
             total_weight += w
             components["hard_asset_ratio"] = hard_asset_ratio
 
-        # 2. 非流动资产比率
-        nca_ratio = get_financial_context(probes, "ratio_nca", -1.0)
-        if nca_ratio >= 0:
-            w = weights.get("nca_ratio", 0.25)
-            score += w * nca_ratio
-            total_weight += w
-            components["nca_ratio"] = nca_ratio
+        # v5.0: 移除nca_ratio — 固定资产是非流动资产子集, 高度共线(VIF>5)
 
-        # 3. 无形资产比率 (轻资产特征，反向)
+        # 2. 无形资产比率 (轻资产特征，反向)
         intang_ratio = get_financial_context(probes, "ratio_intang_asset", -1.0)
         if intang_ratio >= 0:
-            # 高无形资产 = 轻资产 = 低β
             beta_from_intang = 1.0 - min(1.0, intang_ratio * 2)
-            w = weights.get("intang_ratio", 0.15)
+            w = weights.get("intang_ratio", 0.25)
             score += w * beta_from_intang
             total_weight += w
             components["intang_ratio"] = intang_ratio
 
-        # 4. 营运资本比率 (轻资产特征，反向)
+        # 3. 营运资本比率 (轻资产特征，反向)
         working_capital_ratio = get_financial_context(probes, "ratio_working_capital", -1.0)
         if working_capital_ratio >= 0:
-            # 高营运资本比率 = 轻资产 = 低β
             beta_from_wc = 1.0 - min(1.0, working_capital_ratio)
-            w = weights.get("working_capital_ratio", 0.15)
+            w = weights.get("working_capital_ratio", 0.25)
             score += w * beta_from_wc
             total_weight += w
             components["working_capital_ratio"] = working_capital_ratio
@@ -536,11 +525,17 @@ class GammaFactor:
         if cagr is None:
             cagr = aggregate_feature(probes, "cagr_approx", "mean", growth_metrics)
 
+        # v5.0: CAGR归一化致命BUG修复 + 去共线性重构
+        #   BUG: cagr/50.0 → CAGR是小数(0.17=17%), 除以50后值域[-0.01,+0.01]
+        #        tanh(0.003)≈0.003 → 归一化后全部压在0.500±0.005, 零区分度!
+        #   修复: cagr/0.50 → ±50%增速映射到±1, tanh(±1)=±0.76, 区分度充分
+        #   去共线: 移除robust_slope(与log_slope r>0.95), 重新分配权重
+        #   新权重: CAGR(0.45) + log_slope(0.30) + recent_3y(0.20) + R²惩罚(0.05)
+
         if cagr is not None:
-            # CAGR: 使用 tanh 压缩极端值
-            # -50% ~ +50% 映射到 0 ~ 1
-            normalized = normalize_score(cagr / 50.0, "tanh")
-            w = weights.get("cagr", 0.35)
+            # v5.0修复: cagr/0.50 (±50%增速→±1), NOT cagr/50.0
+            normalized = normalize_score(cagr / 0.50, "tanh")
+            w = weights.get("cagr", 0.45)
             score += w * normalized
             total_weight += w
             components["cagr"] = cagr
@@ -548,13 +543,13 @@ class GammaFactor:
         # 2. 对数斜率 (增长加速度)
         log_slope = aggregate_feature(probes, "log_slope", "mean", growth_metrics)
         if log_slope is not None:
-            normalized = normalize_score(log_slope / 0.3, "tanh")  # 30% 年化增速归一化
-            w = weights.get("log_slope", 0.25)
+            normalized = normalize_score(log_slope / 0.3, "tanh")
+            w = weights.get("log_slope", 0.30)
             score += w * normalized
             total_weight += w
             components["log_slope"] = log_slope
 
-        # 3. 近3年斜率 (动量)
+        # 3. 近3年斜率 (动量 — 捕捉近期加速/减速)
         recent_slope = aggregate_feature(probes, "recent_3y_slope", "mean", growth_metrics)
         if recent_slope is not None:
             normalized = normalize_score(recent_slope / 0.3, "tanh")
@@ -563,22 +558,14 @@ class GammaFactor:
             total_weight += w
             components["recent_3y_slope"] = recent_slope
 
-        # 4. 稳健斜率 (Theil-Sen)
-        robust_slope = aggregate_feature(probes, "robust_slope", "mean", growth_metrics)
-        if robust_slope is not None:
-            normalized = normalize_score(robust_slope / 0.3, "tanh")
-            w = weights.get("robust_slope", 0.15)
-            score += w * normalized
-            total_weight += w
-            components["robust_slope"] = robust_slope
+        # v5.0: 移除robust_slope — 与log_slope共线(r>0.95), 双重计数
 
-        # 5. R² 惩罚 (不稳定增长打折)
+        # 4. R² 惩罚 (不稳定增长打折)
         r_squared = aggregate_feature(probes, "r_squared", "mean", growth_metrics)
         if r_squared is not None:
-            # R² < 0.5 时惩罚
             r2_penalty = max(0, 0.5 - r_squared)
             w = weights.get("r_squared_penalty", 0.05)
-            score -= w * r2_penalty  # 注意是减分
+            score -= w * r2_penalty
             components["r_squared"] = r_squared
             components["r2_penalty"] = r2_penalty
 
@@ -760,33 +747,19 @@ class LambdaFactor:
             components["debt_trend_risk"] = trend_risk
 
         # 3. 现金覆盖度 (现金是否足以应对短期债务)
+        # v5.0: 吸收原equity_multiplier权重(0.20), 现金覆盖权重0.20→0.35
         cash_to_assets = get_financial_context(probes, "ratio_cash_to_assets", -1.0)
         if cash_to_assets >= 0 and debt_to_assets > 0:
-            # 现金/负债 比率: 高 = 安全
             cash_coverage = cash_to_assets / max(debt_to_assets, 0.01)
-            # 反向: 低覆盖 = 高杠杆风险
             coverage_risk = max(0, 1.0 - cash_coverage)
-            w = weights.get("cash_coverage", 0.20)
+            w = weights.get("cash_coverage", 0.35)
             leverage_score += w * coverage_risk
             total_weight += w
             components["cash_coverage_ratio"] = cash_coverage
             components["coverage_risk"] = coverage_risk
 
-        # 4. 权益乘数 (总资产/股东权益)
-        assets_to_equity = get_financial_context(probes, "ratio_equity_multiplier", -1.0)
-        if assets_to_equity < 0:
-            # 从 debt_to_assets 近似: EM = 1/(1-D/A)
-            if debt_to_assets >= 0 and debt_to_assets < 0.95:
-                assets_to_equity = 1.0 / (1.0 - debt_to_assets)
-                components["equity_multiplier_source"] = "derived"
-
-        if assets_to_equity > 0:
-            # 权益乘数 2 = 50%负债(正常), 4 = 75%负债(危险), 10 = 90%负债(极度)
-            em_score = min(1.0, max(0, (assets_to_equity - 1.0) / 4.0))
-            w = weights.get("equity_multiplier", 0.20)
-            leverage_score += w * em_score
-            total_weight += w
-            components["equity_multiplier"] = assets_to_equity
+        # v5.0: 移除equity_multiplier — EM=1/(1-D/A), 是debt_to_assets的单调变换
+        # 两者共线(r=1.0), VIF→∞, 权重0.55实质是对同一变量的双重计数
 
         # ================================================================
         # 计算最终分数
@@ -1309,27 +1282,10 @@ class DeltaDecayFactor:
                 score *= 0.70
             score = max(0.0, min(1.0, score))
 
-        # v4.9: 成长轨迹折扣 — 营收/利润双增长时效率下滑更可能是周期性的
-        # 药明康德: 营收增长15%, 利润增长8%, 但ROIC/ROE因行业下行而下降
-        #   → δ_decay=0.89 (因ROIC下降), 但这是CRO行业周期性现象, 非结构性恶化
-        # 逻辑: 如果公司的顶线(营收)和底线(利润)都在增长, 效率指标的下降
-        #        更可能是暂时性的(大量投入扩产、行业周期等), 不应获得与真正衰退等同的惩罚
-        if score > 0.0:
-            revenue_cagr = get_feature(probes, "cagr", "revenue")
-            profit_cagr = get_feature(probes, "cagr", "profit")
-            if revenue_cagr is None:
-                revenue_cagr = get_feature(probes, "log_slope", "revenue")
-            if profit_cagr is None:
-                profit_cagr = get_feature(probes, "log_slope", "profit")
-            if (revenue_cagr is not None and revenue_cagr > 0.08
-                    and profit_cagr is not None and profit_cagr > 0.05):
-                # 营收增长>8% + 利润增长>5% → 强有力的周期性证据
-                score *= 0.70
-            elif (revenue_cagr is not None and revenue_cagr > 0.05
-                    and profit_cagr is not None and profit_cagr > 0.0):
-                # 营收增长>5% + 利润为正 → 中等周期性证据
-                score *= 0.80
-            score = max(0.0, min(1.0, score))
+        # v5.0: 移除v4.9成长轨迹折扣 — 循环论证!
+        # γ因子已使用revenue/profit CAGR评估成长性
+        # δ_decay再用同一CAGR减免衰退 = 同一信号被两次利用抬高分数
+        # 保留ROIC绝对水平折扣(使用ROIC水平而非增速, 不存在循环)
 
         # 衰退严重程度
         if score > 0.7:

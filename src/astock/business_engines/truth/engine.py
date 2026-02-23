@@ -357,18 +357,30 @@ def _calibrate(
     config: TruthConfig,
     data_years: int = 10,
 ) -> tuple:
-    """校准层: 计算最终评分、信号、评级
+    """v5.0 校准层: 计算原始加权分数
 
-    【T-H1 修复】使用 ScoringConfig 中的权重，而非硬编码
-    【T-H2 修复】整合 CalibrationConfig 的数据年限置信度调整
+    v5.0 重大架构变更:
+      - 删除 v4.x 的 6 层门控级联 (δ_decay门控 / ROIC阶梯 / 成长折扣 / 余裕度调整)
+      - 原始得分仅用于 _cross_sectional_normalize() 的百分位排名输入
+      - 所有硬约束 (ROIC地板) 移至 _cross_sectional_normalize()
+      - 仅保留: 熔断 → 0 分
+
+    设计原理 (AQR QMJ / MSCI Quality 方法论):
+      绝对分数的门控 + 阈值会导致:
+        1) 分数聚集 (159家公司在cap值上)
+        2) 阈值附近的排名扭曲 (ROIC=11.9% vs 12.1% 命运迥异)
+        3) 手工调参黑洞 (6层×N参数, 每改一个连锁反应)
+      百分位排名的优势:
+        1) 天然均匀分布 → 无聚集
+        2) 无边界效应 → 排名连续
+        3) 零手工参数 → 数据自适应
     """
     if is_meltdown:
         return 0.0, TruthSignal.FRAUD_ALERT, TruthGrade.F, 0.0
 
     scoring = config.scoring
 
-    # 因子加权平均（从 ScoringConfig.factor_weights 获取）
-    # v4.6: fallback 值与 config.py ScoringConfig 默认值保持一致
+    # ── Factor weighted average (raw) ──
     factor_weight_map = {
         FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.12),
         FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
@@ -378,30 +390,25 @@ def _calibrate(
         FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.18),
         FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
     }
+    # 负向因子: score 越高越差 → 反转
+    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA}
 
     weighted_sum = 0.0
     total_weight = 0.0
     for fid, weight in factor_weight_map.items():
         result = factors.get(fid)
         if result and result.score is not None:
-            # 负向指标 (越低越好): δ_fraud, δ_decay, λ
-            # v4.7: α (周期性) 改为反向 — 低周期性 = 业务稳定性高 = 投资质量优势
-            # 原版正向使用导致: 迈瑞/恒瑞等稳定公司因低α被惩罚, 周期性强的公司反被奖励
-            if fid in (FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA):
-                weighted_sum += (1.0 - result.score) * weight
-            else:
-                weighted_sum += result.score * weight
+            s = (1.0 - result.score) if fid in _NEGATIVE_FACTORS else result.score
+            weighted_sum += s * weight
             total_weight += weight
-
     factor_score = weighted_sum / total_weight if total_weight > 0 else 0.5
 
-    # 求解器加权（从 ScoringConfig.solver_weights 获取）
+    # ── Solver weighted average (raw) ──
     solver_weight_map = {
         SolverId.GRAVITY: scoring.solver_weights.get("GRAVITY", 0.40),
         SolverId.VELOCITY: scoring.solver_weights.get("VELOCITY", 0.30),
         SolverId.STRUCTURE: scoring.solver_weights.get("STRUCTURE", 0.30),
     }
-
     solver_sum = 0.0
     solver_total = 0.0
     for sid, weight in solver_weight_map.items():
@@ -409,148 +416,27 @@ def _calibrate(
         if result and result.score is not None:
             solver_sum += result.score * weight
             solver_total += weight
-
     solver_score = solver_sum / solver_total if solver_total > 0 else 0.5
 
-    # ====== v4.6: Gravity 实际 ROIC vs 动态阈值的余裕度调整 ======
-    # 审计发现: Gravity 求解器仅计算阈值的"宽松程度"作为分数,
-    # 完全不比较实际 ROIC 是否超过阈值 → 两家因子相同但 ROIC=5% vs 25% 的公司得分相同
-    # 修复: 从已注入的 actual_value 计算余裕度, 调整 solver_score
-    gravity_result = solvers.get(SolverId.GRAVITY)
-    if gravity_result and gravity_result.thresholds:
-        roic_th = gravity_result.thresholds.get("roic")
-        if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
-            # actual_value = 公司实际加权ROIC(%), value = 动态阈值(%)
-            clearance_pct = roic_th.actual_value - roic_th.value  # 百分点差值
-            # v4.7: 扩大余裕度封顶 0.12→0.18
-            # 原版问题: ROIC=30% 和 ROIC=15% 获得相同奖励(0.12)
-            # 30%的护城河明显优于15%, 应有更大区分度
-            clearance_bonus = max(-0.18, min(0.18, clearance_pct / 10.0 * 0.12))
-            solver_score = max(0.0, min(1.0, solver_score + clearance_bonus))
-
-    # 最终分数 = 因子 × factor_vs_solver_weight + 求解器 × (1 - factor_vs_solver_weight)
+    # ── Combined raw score ──
     factor_ratio = scoring.factor_vs_solver_weight
     final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
-    # ====== v4.8: 提取 ROIC 实际值供多个门控使用 ======
-    # roic_for_gate = weighted_avg (用于 clearance_bonus 等趋势性判断)
-    # roic_latest  = latest_value  (用于绝对水平门控 — 当前真实盈利能力)
-    # 设计原因: weighted_avg 可能掩盖近期恶化
-    #   华宝新能: weighted_avg=34.3%, latest=3.3% → weighted 看着很好但实际已崩塌
-    roic_for_gate = None
-    roic_latest = None
-    gravity_result_gate = solvers.get(SolverId.GRAVITY)
-    if gravity_result_gate:
-        if gravity_result_gate.thresholds:
-            roic_th_gate = gravity_result_gate.thresholds.get("roic")
-            if roic_th_gate and hasattr(roic_th_gate, 'actual_value'):
-                roic_for_gate = roic_th_gate.actual_value  # weighted_avg
-        # v4.8: 从 components 获取 latest_value (由 _inject_actual_values 注入)
-        roic_latest = gravity_result_gate.components.get("roic_latest_value")
-    # 门控用最新值 (如果有), 否则 fallback 到 weighted_avg
-    roic_for_level_gate = roic_latest if roic_latest is not None else roic_for_gate
-
-    # ====== v4.6: δ_decay 硬性门控 ======
-    # 审计发现: 22.1% 的"优质"公司带 δ_decay>0.30 的衰退信号通过评估
-    #   - 三生国健 δ_decay=0.58 却获 A+ (75.50%)
-    #   - 国邦医药 处于"衰退期" + δ_decay=0.55 获 A (68.2%)
-    # 根因: δ_decay 权重(0.12) 被 V(0.23)+γ(0.22) 淹没
-    # 修复: 类似 Evaluator 的 ROIC 硬封顶, 加 δ_decay 后置门控
-    delta_decay = factors.get(FactorId.DELTA_DECAY)
-    gamma = factors.get(FactorId.GAMMA)
-    if delta_decay and delta_decay.score is not None:
-        dd = delta_decay.score
-        g = gamma.score if gamma and gamma.score is not None else 0.5
-
-        # v4.7: 绝对水平豁免 — ROIC 卓越的公司即使有轻微衰退也不应被硬封顶
-        # 问题: 迈瑞医疗 ROIC=30% 从32%→30%(微小波动) → δ_decay≈0.20→35
-        #       触发 "中度衰退"封顶 0.72, 永远拿不到 A+
-        # 修复: ROIC>20%的公司, 封顶阈值上移; ROIC>25%取消封顶
-        # v4.8: 同时检查 latest ROIC — 防止 weighted_avg 掩盖崩塌
-        #   华宝新能: weighted=34% → 豁免, 但 latest=3.3% → 不应豁免!
-        # 豁免条件: weighted_avg ≥ 阈值 AND latest ≥ 阈值的一半 (容忍波动但不容忍崩塌)
-        roic_gate_val = roic_for_gate  # weighted_avg
-        roic_latest_check = roic_latest if roic_latest is not None else roic_gate_val
-        # 卓越水平豁免: ROIC >= 25% → 完全取消δ封顶, 但 latest 必须 >= 15%
-        # ROIC 20-25% → 放宽封顶, 但 latest 必须 >= 12%
-        if (roic_gate_val is not None and roic_gate_val >= 25.0
-                and roic_latest_check is not None and roic_latest_check >= 15.0):
-            pass  # 不应用任何封顶 (世界级 ROIC + 轻微衰退 = 正常波动)
-        elif (roic_gate_val is not None and roic_gate_val >= 20.0
-                and roic_latest_check is not None and roic_latest_check >= 12.0):
-            # ROIC 20-25%: 提升封顶阈值 (+0.05)
-            if dd >= 0.50 and g < 0.45:
-                final_score = min(final_score, 0.67)
-            elif dd >= 0.50:
-                final_score = min(final_score, 0.73)
-            elif dd >= 0.35:
-                final_score = min(final_score, 0.77)
-        else:
-            # v4.9: 成长语境感知的 δ_decay 门控
-            # v4.8 问题: dd≥0.50→cap0.68 和 dd≥0.35→cap0.72 导致过度惩罚
-            #   药明康德 dd=0.89(行业周期性下行) + γ=0.67 + V=0.82 → raw=76.6% capped at 68%
-            #   因子权重(0.18)已充分惩罚衰退, 硬门控是二次处罚
-            # v4.9: 仅在衰退+停滞同时发生时硬性封顶
-            #   高增长抵消衰退 = 周期性下行(CRO行业整体不景气), 非结构性恶化
-            if dd >= 0.50 and g < 0.45:
-                # 结构性衰退: 显著衰退 + 无增长 → 严格封顶
-                final_score = min(final_score, 0.62)
-            elif dd >= 0.70 and g < 0.55:
-                # 严重衰退 + 增长乏力 → 中度封顶
-                final_score = min(final_score, 0.68)
-            # 移除: dd≥0.50→cap0.68 (因子权重已充分体现, 避免二次处罚)
-            # 移除: dd≥0.35→cap0.72 (阈值过低, 正常波动也被捕获)
-
-    # ====== v4.9: ROIC 绝对水平 — 连续软惩罚 ======
-    # v4.8 使用阶梯函数(8-10→0.65, 10-12→0.72) 造成大量分数聚集
-    #   中科曙光 ROIC=8.8% raw=77.9% → capped at 65.0% (lost 12.9pp)
-    #   扬杰科技 ROIC=8.5% raw=74.9% → capped at 65.0% (lost 9.9pp)
-    # 世界级量化系统(AQR QMJ, GMO)使用连续惩罚而非离散阶梯
-    # v4.9 修复: 连续惩罚函数 + 成长调整 + 硬性地板
-    #   经济学逻辑: ROIC每低于12%一个百分点 → 递增惩罚
-    #   但高成长公司(γ≥0.60)惩罚减半(当前低ROIC可能因大量资本开支, 未来将改善)
-    if roic_for_level_gate is not None:
-        if roic_for_level_gate < 5.0:
-            # ROIC < 5%: 严重价值毁灭, 硬性地板
-            final_score = min(final_score, 0.45)
-        elif roic_for_level_gate < 12.0:
-            # 连续惩罚: 每低于12%一个百分点 → 惩罚 1.2pp
-            # ROIC=11% → -0.012, ROIC=10% → -0.024, ROIC=8% → -0.048
-            roic_penalty = (12.0 - roic_for_level_gate) * 0.012
-            # 成长调整: γ≥0.60 的高增长公司, 惩罚打折
-            # 逻辑: 比亚迪/宁德时代等公司资本开支大→当前ROIC被压低
-            #       但高增长意味着产能利用率将提升→未来ROIC改善
-            gamma_val = factors.get(FactorId.GAMMA)
-            if gamma_val and gamma_val.score is not None and gamma_val.score >= 0.60:
-                # γ=0.60→0%折扣, γ=0.80→50%折扣 (线性插值)
-                growth_discount = min(0.50, (gamma_val.score - 0.60) * 2.5)
-                roic_penalty *= (1.0 - growth_discount)
-            final_score -= roic_penalty
-            # 安全地板: ROIC<6% 绝不应是 A, ROIC<8% 绝不应是 A+
-            if roic_for_level_gate < 6.0:
-                final_score = min(final_score, 0.48)  # C+ 地板
-            elif roic_for_level_gate < 8.0:
-                final_score = min(final_score, 0.58)  # B 地板
-
-    # 计算置信度
+    # ── Confidence (data years scaling) ──
     confidences = [r.confidence for r in factors.values() if r.confidence]
     confidences.extend([r.confidence for r in solvers.values() if r.confidence])
     confidence = sum(confidences) / len(confidences) if confidences else 0.5
 
-    # 【T-H2 v3.4 修复】数据年限置信度调整 — 平滑曲线替代硬性cap
     cal = config.calibration
     if data_years < cal.full_confidence_years:
-        # 平滑曲线: 3年→60%, 5年→85%, 7年→100%
         if data_years <= cal.min_data_years:
             year_factor = cal.min_confidence_3y if hasattr(cal, 'min_confidence_3y') else 0.60
         else:
-            # 线性插值: min_data_years → max_confidence_5y → full
             progress = (data_years - cal.min_data_years) / (cal.full_confidence_years - cal.min_data_years)
             year_factor = cal.max_confidence_5y + (1.0 - cal.max_confidence_5y) * progress
         confidence = confidence * year_factor
-    # 不再使用 min() 硬性 cap, 让高质量公司可以突破天花板
 
-    # 信号和评级（使用 ScoringConfig 阈值）
+    # 初始信号/评级 (将被 _cross_sectional_normalize 覆盖)
     signal = _score_to_signal(final_score, scoring)
     grade = _score_to_grade(final_score, scoring)
 
@@ -714,6 +600,200 @@ def _calculate_summary(profiles: List[TruthProfile]) -> Dict[str, Any]:
 
 
 # ============================================================================
+# v5.0 Cross-Sectional Percentile Normalization
+# ============================================================================
+
+def _percentile_ranks(values: List[Optional[float]]) -> List[float]:
+    """Raw scores → percentile ranks [0.0, 1.0].
+
+    None → 0.5 (中位数). Ties → 平均排名.
+    纯 Python 实现, 无 scipy/numpy 依赖.
+
+    算法: 排序 → 分配名次 (相同值取平均) → 线性映射到 [0, 1]
+    """
+    n = len(values)
+    result = [0.5] * n
+
+    valid = [(i, v) for i, v in enumerate(values) if v is not None]
+    n_valid = len(valid)
+    if n_valid < 2:
+        return result
+
+    sorted_valid = sorted(valid, key=lambda x: x[1])
+
+    # 分配排名 (ties → 平均排名)
+    i = 0
+    while i < n_valid:
+        j = i + 1
+        while j < n_valid and sorted_valid[j][1] == sorted_valid[i][1]:
+            j += 1
+        avg_rank = (i + j - 1) / 2.0
+        percentile = avg_rank / (n_valid - 1)
+        for k in range(i, j):
+            result[sorted_valid[k][0]] = percentile
+        i = j
+
+    return result
+
+
+def _extract_roic_actual(profile: TruthProfile) -> Optional[float]:
+    """从 Gravity 求解器提取实际 ROIC (%).
+
+    优先使用 latest_value (更准确反映当前盈利能力),
+    回退到 weighted_avg (actual_value in thresholds).
+    """
+    gravity = profile.solvers.get(SolverId.GRAVITY)
+    if not gravity:
+        return None
+    # 优先 latest (v4.8: 防止 weighted_avg 掩盖近期崩塌)
+    latest = gravity.components.get("roic_latest_value")
+    if latest is not None:
+        return float(latest)
+    # 回退 weighted_avg
+    if gravity.thresholds:
+        roic_th = gravity.thresholds.get("roic")
+        if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
+            return float(roic_th.actual_value)
+    return None
+
+
+def _cross_sectional_normalize(
+    profiles: List[TruthProfile],
+    config: TruthConfig,
+) -> List[TruthProfile]:
+    """v5.0 Cross-Sectional Percentile Normalization
+
+    方法论来源: AQR Quality-Minus-Junk (QMJ), MSCI Quality Index, GMO Quality
+    核心思路: 绝对分数 → 全样本百分位排名 → 加权合成 → 评级
+
+    为什么这样做:
+    ┌─────────────────────────────────────────────────┐
+    │ 问题: 绝对分数的系统性缺陷                       │
+    │                                                   │
+    │ 1. 聚集效应: γ CAGR 所有公司 0.500±0.005         │
+    │    (因 normalize_score 压缩到 tanh 窄带)          │
+    │ 2. 因子刻度不同: α∈[0.1,0.9], β∈[0.2,0.6]      │
+    │    → 高刻度因子主导合成分数                       │
+    │ 3. 门控依赖绝对阈值: ROIC<12%→惩罚              │
+    │    → 阈值附近排名扭曲 (11.9% vs 12.1%)           │
+    │                                                   │
+    │ 解决: 百分位排名天然均匀 [0,1],                   │
+    │       每个因子贡献均衡, 无阈值边界效应            │
+    └─────────────────────────────────────────────────┘
+
+    硬约束 (仅经济学普适原则):
+    - ROIC < 5% → 上限 0.45 (价值毁灭: ROIC < 最低 WACC)
+    - ROIC < 8% → 上限 0.58 (低于资本成本线)
+    - 熔断 → 已在 _process_single 中处理
+
+    Returns: 重新评分后的 profiles (dataclasses.replace)
+    """
+    if len(profiles) < 5:
+        logger.warning(f"样本量不足 ({len(profiles)} < 5), 跳过 cross-sectional normalization")
+        return profiles
+
+    scoring = config.scoring
+
+    # ══════ Step 1: 提取原始分数矩阵 ══════
+    factor_ids = [
+        FactorId.ALPHA, FactorId.BETA, FactorId.GAMMA, FactorId.LAMBDA,
+        FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.VERIFICATION,
+    ]
+    solver_ids = [SolverId.GRAVITY, SolverId.VELOCITY, SolverId.STRUCTURE]
+
+    factor_raw: Dict[FactorId, List[Optional[float]]] = {fid: [] for fid in factor_ids}
+    solver_raw: Dict[SolverId, List[Optional[float]]] = {sid: [] for sid in solver_ids}
+
+    for p in profiles:
+        for fid in factor_ids:
+            r = p.factors.get(fid)
+            factor_raw[fid].append(r.score if r and r.score is not None else None)
+        for sid in solver_ids:
+            r = p.solvers.get(sid)
+            solver_raw[sid].append(r.score if r and r.score is not None else None)
+
+    # ══════ Step 2: 百分位排名 ══════
+    factor_pct = {fid: _percentile_ranks(factor_raw[fid]) for fid in factor_ids}
+    solver_pct = {sid: _percentile_ranks(solver_raw[sid]) for sid in solver_ids}
+
+    # ══════ Step 3: 加权合成 + 硬约束 → 评级 ══════
+    factor_weight_map = {
+        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.12),
+        FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
+        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.18),
+        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
+        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
+        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.18),
+        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
+    }
+    solver_weight_map = {
+        SolverId.GRAVITY: scoring.solver_weights.get("GRAVITY", 0.40),
+        SolverId.VELOCITY: scoring.solver_weights.get("VELOCITY", 0.30),
+        SolverId.STRUCTURE: scoring.solver_weights.get("STRUCTURE", 0.30),
+    }
+
+    # 负向因子: raw score 越高越差 → percentile 高 = 差 → 需要反转
+    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA}
+    factor_ratio = scoring.factor_vs_solver_weight
+
+    new_profiles: List[TruthProfile] = []
+    n_hard_constrained = 0
+
+    for i, p in enumerate(profiles):
+        # 熔断 → 保持原样
+        if p.signal == TruthSignal.FRAUD_ALERT:
+            new_profiles.append(p)
+            continue
+
+        # ── Factor percentile composite ──
+        f_sum, f_total = 0.0, 0.0
+        for fid, w in factor_weight_map.items():
+            pct = factor_pct[fid][i]
+            # 负向因子: high raw = bad → high percentile → invert to low
+            if fid in _NEGATIVE_FACTORS:
+                pct = 1.0 - pct
+            f_sum += pct * w
+            f_total += w
+        factor_score = f_sum / f_total if f_total > 0 else 0.5
+
+        # ── Solver percentile composite ──
+        s_sum, s_total = 0.0, 0.0
+        for sid, w in solver_weight_map.items():
+            pct = solver_pct[sid][i]
+            s_sum += pct * w
+            s_total += w
+        solver_score = s_sum / s_total if s_total > 0 else 0.5
+
+        # ── Combined score ──
+        final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
+
+        # ══════ Hard constraints (经济学普适原则, 非启发式) ══════
+        roic_actual = _extract_roic_actual(p)
+        if roic_actual is not None:
+            if roic_actual < 5.0:
+                # ROIC < 5%: 价值毁灭 (低于任何行业的 WACC 下界)
+                final_score = min(final_score, 0.45)
+                n_hard_constrained += 1
+            elif roic_actual < 8.0:
+                # ROIC < 8%: 低于权益资本成本, 不应获得溢价评级
+                final_score = min(final_score, 0.58)
+                n_hard_constrained += 1
+
+        # ── Signal / Grade ──
+        signal = _score_to_signal(final_score, scoring)
+        grade = _score_to_grade(final_score, scoring)
+
+        new_profiles.append(replace(p, final_score=final_score, signal=signal, grade=grade))
+
+    logger.info(
+        f"v5.0 Cross-Sectional Normalization: "
+        f"{len(profiles)} companies, "
+        f"{n_hard_constrained} hard-constrained (ROIC floor)"
+    )
+    return new_profiles
+
+
+# ============================================================================
 # 公开 API
 # ============================================================================
 
@@ -778,12 +858,17 @@ def run_truth(
             object.__setattr__(profile, 'industry', info.get('industry', ''))
         profiles.append(profile)
 
+    # ══════ v5.0: Cross-Sectional Percentile Normalization ══════
+    # _process_single 产出原始加权分数, 这里执行全样本百分位排名重评分
+    # 替代了 v4.x 的 6 层门控级联 (δ_decay门控 / ROIC阶梯 / 余裕度调整等)
+    profiles = _cross_sectional_normalize(profiles, config)
+
     profiles_dict = [_profile_to_dict(p) for p in profiles]
     summary = _calculate_summary(profiles)
 
     return {
         "metadata": {
-            "algo_version": "4.6.0",
+            "algo_version": "5.0.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,

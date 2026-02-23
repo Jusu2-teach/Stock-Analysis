@@ -36,13 +36,16 @@ class TimeDecayConfig:
 
 @dataclass(frozen=True)
 class AlphaFactorConfig:
-    """α 因子 (周期性) - 业绩对宏观经济的敏感弹性"""
+    """α 因子 (周期性) - 业绩对宏观经济的敏感弹性
+
+    v5.0 去共线性: 移除 cv (与 detrended_cv r>0.9, VIF>5)
+    重新分配: detrended_cv(0.40) + R²反向(0.30) + 周期标志(0.20) + Hurst(0.10)
+    """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "detrended_cv": 0.35,
-        "r_squared_inverse": 0.25,
-        "cv": 0.20,
-        "is_cyclical": 0.15,
-        "hurst_exponent": 0.05,
+        "detrended_cv": 0.40,
+        "r_squared_inverse": 0.30,
+        "is_cyclical": 0.20,
+        "hurst_exponent": 0.10,
     })
 
 
@@ -51,23 +54,29 @@ class BetaFactorConfig:
     """β 因子 (资本密度) - 赚取利润所需的资本投入
 
     数据源: financial_context 探针的资产结构比率
+    v5.0 去共线性: 移除 nca_ratio (hard_asset是其子集, r>0.8)
+    重新分配: hard_asset(0.50) + intang反向(0.25) + working_capital反向(0.25)
     """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "hard_asset_ratio": 0.45,      # (固定资产+在建工程) / 总资产
-        "nca_ratio": 0.25,             # 非流动资产 / 总资产
-        "intang_ratio": 0.15,          # 无形资产 / 总资产 (反向)
-        "working_capital_ratio": 0.15, # 营运资本 / 总资产 (反向)
+        "hard_asset_ratio": 0.50,      # (固定资产+在建工程) / 总资产
+        "intang_ratio": 0.25,          # 无形资产 / 总资产 (反向)
+        "working_capital_ratio": 0.25, # 营运资本 / 总资产 (反向)
     })
 
 
 @dataclass(frozen=True)
 class GammaFactorConfig:
-    """γ 因子 (成长动能) - 业务扩张加速度"""
+    """γ 因子 (成长动能) - 业务扩张加速度
+
+    v5.0:
+    - 致命BUG修复: cagr/50.0 → cagr/0.50 (CAGR是小数→原归一化完全失效)
+    - 去共线性: 移除 robust_slope (与 log_slope r>0.95)
+    - CAGR权重提升至 0.45 (成长因子的核心度量)
+    """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "cagr": 0.35,
-        "log_slope": 0.25,
+        "cagr": 0.45,
+        "log_slope": 0.30,
         "recent_3y_slope": 0.20,
-        "robust_slope": 0.15,
         "r_squared_penalty": 0.05,
     })
     high_growth_threshold: float = 0.15  # CAGR > 15%
@@ -110,11 +119,11 @@ class LambdaFactorConfig:
     v4.1 新增: 填补 Altman Z-Score 和 AQR QMJ Safety 维度的空白
     数据源: financial_context 探针的负债结构比率
     """
+    # v5.0 去共线性: 移除 equity_multiplier (EM=1/(1-D/A), 完全共线)
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "debt_to_assets": 0.35,         # 资产负债率 (核心)
+        "debt_to_assets": 0.40,         # 资产负债率 (核心)
         "debt_trend": 0.25,             # 负债率变动趋势
-        "cash_coverage": 0.20,          # 现金覆盖度
-        "equity_multiplier": 0.20,      # 权益乘数
+        "cash_coverage": 0.35,          # 现金覆盖度 (吸收原EM权重)
     })
     safe_debt_ratio: float = 0.50       # 安全负债率上限
     danger_debt_ratio: float = 0.75     # 危险负债率
