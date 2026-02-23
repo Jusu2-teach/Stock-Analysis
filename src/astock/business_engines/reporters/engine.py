@@ -909,15 +909,9 @@ def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
 
     # 4. 标准评级映射
     if grade in ("A+", "A"):
-        # v4.4: δ_decay 衰退否决门 — 高评级但衰退严重的公司不应判为 quality
-        # 审计发现: V factor (0.23 权重) 系统性给出 1.00，cover 住 δ_decay
-        # 导致衰退公司也能获得 A/A+ 评级 → 需后置修正
-        if decay_score >= 0.50 and gamma_score < 0.45:
-            # 严重衰退 + 低成长力 → 不给 quality，降级为 average
-            return "average"
-        if decay_score >= 0.60:
-            # 极度衰退 (无论 γ) → 降级为 average
-            return "average"
+        # v5.3: δ_decay 衰退惩罚已移至 truth engine._cross_sectional_normalize
+        # 在百分位评级之前施加，score/grade/decision 三者一致
+        # 不再在 reporter 层用绝对阈值覆写百分位评级结果
         return "quality"
     elif grade in ("B+", "B"):
         return "average"
@@ -1255,7 +1249,7 @@ def report_truth(
     if quality_profiles:
         lines.append("## ⭐ 优质公司完整列表 (QUALITY)")
         lines.append("")
-        lines.append(f"> 共 {len(quality_profiles)} 家公司通过 T.R.U.T.H. 评估（A+ / A 评级）")
+        lines.append(f"> 共 {len(quality_profiles)} 家公司通过 T.R.U.T.H. 评估（优质）")
         lines.append("")
         lines.append("| 代码 | 名称 | 行业 | 得分 | 置信度 | 生命周期 | 主要驱动因素 |")
         lines.append("|------|------|------|------|--------|----------|-------------|")
@@ -1285,7 +1279,7 @@ def report_truth(
     if average_profiles:
         lines.append("## 🟡 一般公司 (AVERAGE)")
         lines.append("")
-        lines.append(f"> 共 {len(average_profiles)} 家（B+ / B 评级）")
+        lines.append(f"> 共 {len(average_profiles)} 家（良好）")
         lines.append("")
         lines.append("| 代码 | 名称 | 得分 | 置信度 | 生命周期 | 主要因素 |")
         lines.append("|------|------|------|--------|----------|----------|")

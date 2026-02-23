@@ -391,7 +391,8 @@ def _calibrate(
         FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
     }
     # 负向因子: score 越高越差 → 反转
-    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA}
+    # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
+    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
 
     weighted_sum = 0.0
     total_weight = 0.0
@@ -661,32 +662,22 @@ def _cross_sectional_normalize(
     profiles: List[TruthProfile],
     config: TruthConfig,
 ) -> List[TruthProfile]:
-    """v5.0 Cross-Sectional Percentile Normalization
+    """v5.2 Cross-Sectional Percentile Normalization + Industry Neutralization
 
     方法论来源: AQR Quality-Minus-Junk (QMJ), MSCI Quality Index, GMO Quality
-    核心思路: 绝对分数 → 全样本百分位排名 → 加权合成 → 评级
+    核心思路: 原始分数 → 行业内z-score → 全样本百分位排名 → 加权合成 → 百分位评级
 
-    为什么这样做:
+    v5.2 新增:
     ┌─────────────────────────────────────────────────┐
-    │ 问题: 绝对分数的系统性缺陷                       │
+    │ 行业中性化 (Industry Neutralization)             │
     │                                                   │
-    │ 1. 聚集效应: γ CAGR 所有公司 0.500±0.005         │
-    │    (因 normalize_score 压缩到 tanh 窄带)          │
-    │ 2. 因子刻度不同: α∈[0.1,0.9], β∈[0.2,0.6]      │
-    │    → 高刻度因子主导合成分数                       │
-    │ 3. 门控依赖绝对阈值: ROIC<12%→惩罚              │
-    │    → 阈值附近排名扭曲 (11.9% vs 12.1%)           │
+    │ 问题: 软件业天然ROIC=30%, 钢铁业天然ROIC=5%     │
+    │   → 全市场直接排名导致软件业系统性偏低           │
     │                                                   │
-    │ 解决: 百分位排名天然均匀 [0,1],                   │
-    │       每个因子贡献均衡, 无阈值边界效应            │
+    │ 解决: 行业内z-score → 比较的是"同行中的相对位置" │
+    │   z_{i,ind} = (x_i - μ_ind) / σ_ind             │
+    │   然后再做全样本百分位排名                        │
     └─────────────────────────────────────────────────┘
-
-    硬约束 (仅经济学普适原则):
-    - ROIC < 5% → 上限 0.45 (价值毁灭: ROIC < 最低 WACC)
-    - ROIC < 8% → 上限 0.58 (低于资本成本线)
-    - 熔断 → 已在 _process_single 中处理
-
-    Returns: 重新评分后的 profiles (dataclasses.replace)
     """
     if len(profiles) < 5:
         logger.warning(f"样本量不足 ({len(profiles)} < 5), 跳过 cross-sectional normalization")
@@ -712,9 +703,55 @@ def _cross_sectional_normalize(
             r = p.solvers.get(sid)
             solver_raw[sid].append(r.score if r and r.score is not None else None)
 
-    # ══════ Step 2: 百分位排名 ══════
-    factor_pct = {fid: _percentile_ranks(factor_raw[fid]) for fid in factor_ids}
-    solver_pct = {sid: _percentile_ranks(solver_raw[sid]) for sid in solver_ids}
+    # ══════ Step 1.5: v5.2 行业中性化 (Industry Neutralization) ══════
+    # AQR QMJ / MSCI Quality 标准做法:
+    #   在行业内做 z-score 标准化, 消除行业系统性差异
+    #   z_{i,ind} = (x_i - μ_ind) / σ_ind
+    #   例: 软件行业天然 ROIC 高, 钢铁天然 ROIC 低 → 直接比不公平
+    #   行业内 z-score 后, 比较的是 "在同行中的相对位置"
+    MIN_INDUSTRY_SIZE = 8  # 行业内样本少于此阈值时不做行业调整
+
+    # 构建行业索引
+    industry_map: Dict[str, List[int]] = {}
+    for i, p in enumerate(profiles):
+        ind = getattr(p, 'industry', '') or '__unknown__'
+        industry_map.setdefault(ind, []).append(i)
+
+    def _industry_zscore(raw: Dict[Any, List[Optional[float]]]
+                         ) -> Dict[Any, List[Optional[float]]]:
+        """对每个因子/求解器, 在行业内做 z-score 标准化"""
+        result = {}
+        for key, vals in raw.items():
+            zscored = list(vals)  # shallow copy
+            for ind, indices in industry_map.items():
+                if len(indices) < MIN_INDUSTRY_SIZE:
+                    continue  # 小行业样本不足, 保留原始值
+                ind_vals = [vals[j] for j in indices if vals[j] is not None]
+                if len(ind_vals) < 3:
+                    continue
+                mu = sum(ind_vals) / len(ind_vals)
+                var = sum((v - mu) ** 2 for v in ind_vals) / len(ind_vals)
+                sigma = var ** 0.5
+                if sigma < 1e-10:
+                    continue  # 行业内无方差, 跳过
+                for j in indices:
+                    if vals[j] is not None:
+                        zscored[j] = (vals[j] - mu) / sigma
+            result[key] = zscored
+        return result
+
+    factor_adj = _industry_zscore(factor_raw)
+    solver_adj = _industry_zscore(solver_raw)
+
+    n_neutralized = sum(1 for indices in industry_map.values() if len(indices) >= MIN_INDUSTRY_SIZE)
+    logger.info(
+        f"v5.2 Industry Neutralization: "
+        f"{len(industry_map)} industries, {n_neutralized} neutralized (>={MIN_INDUSTRY_SIZE} members)"
+    )
+
+    # ══════ Step 2: 百分位排名 (对行业中性化后的值) ══════
+    factor_pct = {fid: _percentile_ranks(factor_adj[fid]) for fid in factor_ids}
+    solver_pct = {sid: _percentile_ranks(solver_adj[sid]) for sid in solver_ids}
 
     # ══════ Step 3: 加权合成 + 硬约束 → 评级 ══════
     factor_weight_map = {
@@ -733,7 +770,9 @@ def _cross_sectional_normalize(
     }
 
     # 负向因子: raw score 越高越差 → percentile 高 = 差 → 需要反转
-    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA}
+    # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
+    # Structure solver 的 capital_barrier 维度已单独捕获重资产护城河效应
+    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
     factor_ratio = scoring.factor_vs_solver_weight
 
     new_profiles: List[TruthProfile] = []
@@ -745,23 +784,30 @@ def _cross_sectional_normalize(
             new_profiles.append(p)
             continue
 
-        # ── Factor percentile composite ──
+        # ── Factor percentile composite (v5.2: confidence-weighted) ──
         f_sum, f_total = 0.0, 0.0
         for fid, w in factor_weight_map.items():
             pct = factor_pct[fid][i]
             # 负向因子: high raw = bad → high percentile → invert to low
             if fid in _NEGATIVE_FACTORS:
                 pct = 1.0 - pct
-            f_sum += pct * w
-            f_total += w
+            # 置信度缩放: 低置信因子贡献降低
+            r = p.factors.get(fid)
+            conf = r.confidence if r and r.confidence is not None else 0.5
+            eff_w = w * conf
+            f_sum += pct * eff_w
+            f_total += eff_w
         factor_score = f_sum / f_total if f_total > 0 else 0.5
 
-        # ── Solver percentile composite ──
+        # ── Solver percentile composite (v5.2: confidence-weighted) ──
         s_sum, s_total = 0.0, 0.0
         for sid, w in solver_weight_map.items():
             pct = solver_pct[sid][i]
-            s_sum += pct * w
-            s_total += w
+            r = p.solvers.get(sid)
+            conf = r.confidence if r and r.confidence is not None else 0.5
+            eff_w = w * conf
+            s_sum += pct * eff_w
+            s_total += eff_w
         solver_score = s_sum / s_total if s_total > 0 else 0.5
 
         # ── Combined score ──
@@ -778,6 +824,25 @@ def _cross_sectional_normalize(
                 # ROIC < 3%: 显著价值毁灭，不应高于中等评级
                 final_score = min(final_score, 0.40)
                 n_hard_constrained += 1
+
+        # ══════ v5.3: 高衰退惩罚 (从 reporter 移入引擎层) ══════
+        # 问题: 行业中性化后 δ_decay 的绝对水平丢失，V factor 系统性给出
+        # 高分 (≈1.00)，导致衰退严重的公司仍被百分位排名推至 top tier。
+        # 之前在 reporter._infer_decision_from_truth 做事后覆写，
+        # 造成 score/grade 与 decision 不一致 (e.g. 89.4% A+ 显示为 AVERAGE)。
+        # 修复: 用 RAW (非行业中性化) δ_decay 分值在合成分阶段施加惩罚，
+        # 使 final_score 和百分位评级自然反映衰退风险。
+        raw_decay = factor_raw[FactorId.DELTA_DECAY][i]
+        raw_gamma = factor_raw[FactorId.GAMMA][i]
+        if raw_decay is not None:
+            if raw_decay >= 0.60:
+                # 极度衰退: 最多打 8 折
+                decay_penalty = 0.80
+                final_score *= decay_penalty
+            elif raw_decay >= 0.50 and (raw_gamma is None or raw_gamma < 0.45):
+                # 严重衰退 + 低成长: 最多打 85 折
+                decay_penalty = 0.85
+                final_score *= decay_penalty
 
         new_profiles.append(replace(p, final_score=final_score))
 
@@ -903,7 +968,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "5.1.0",
+            "algo_version": "5.2.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,

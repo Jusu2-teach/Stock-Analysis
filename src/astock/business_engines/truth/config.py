@@ -133,13 +133,13 @@ class LambdaFactorConfig:
 class VerificationFactorConfig:
     """V 因子 (真相验证) - 成长含金量验证
 
-    v4.1 升级: 新增 Sloan Accruals Ratio (Sloan 1996)
+    v5.1 升级: 移除 ocf_profit_ratio (与 δ_fraud 重叠),
+    替换为 rev_profit_consistency (利润/营收增速一致性, 独立信号)
     """
     component_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ocf_revenue_ratio": 0.40,
-        "ocf_profit_ratio": 0.25,
-        "sloan_accruals": 0.15,       # v4.1 新增: Sloan 应计质量比率
-        "consistency": 0.20,
+        "ocf_revenue_ratio": 0.55,         # v5.1: ↑ 0.40→0.55 (核心 OCF 增速验证)
+        "rev_profit_consistency": 0.25,     # v5.1: 新增 (替代 ocf_profit_ratio)
+        "sloan_accruals": 0.20,            # v5.1: ↑ 0.15→0.20 (Sloan 应计质量)
     })
     true_growth_threshold: float = 0.8
     fake_growth_threshold: float = 0.3
@@ -294,7 +294,7 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "5.1.0"
+    algo_version: str = "5.2.0"
     config_version: str = "default"
 
     # Layer 0

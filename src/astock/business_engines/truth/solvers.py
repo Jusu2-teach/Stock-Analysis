@@ -352,24 +352,32 @@ class VelocitySolver:
         components["alpha"] = alpha
 
         # ============================================================
-        # 使用设计文档公式:
-        # T_growth = GDP增速 + k1×(γ×V) + k2×α×0.5
+        # v5.2: 使用独立信号替代 γ×V 乘积 (消除三重计数)
+        # 原公式: T_growth = GDP + k1×(γ×V) + k2×α×0.5
+        # 问题: γ 和 V 已作为独立因子(34%权重)贡献于 factor composite,
+        #       solver 层再用 γ×V 乘积 = 三重编码, 约50%总分受γ和V驱动
+        # 修复: 只用 γ (成长动能), V 的信号由因子层独立贡献
+        #       增加 δ_decay 的独立贡献 (衰退拖累增长天花板)
         # ============================================================
 
-        # k1: 真成长加成 (γ×V 越大，真成长越强，增长天花板越高)
-        true_growth_factor = conf.k_true_growth * gamma * verification
+        # k1: 成长动能加成 (γ 越大，成长越强，增长天花板越高)
+        true_growth_factor = conf.k_true_growth * gamma
         components["true_growth_factor"] = true_growth_factor
 
         # k2: 周期容忍 (α 越大，周期性越强，增长预期降低)
         cycle_tolerance = conf.k_cycle_tolerance * alpha * 0.5
         components["cycle_tolerance"] = cycle_tolerance
 
+        # k3: 衰退拖累 (δ_decay 越大，增长天花板越低)
+        decay_drag = 0.5 * delta_decay  # 范围 [0, 0.5]
+        components["decay_drag"] = decay_drag
+
         # 基准增长 = GDP + CPI (名义增速) — 从宏观配置读取
         base_growth = config.macro.gdp_growth_rate + config.macro.cpi_rate
         components["base_growth"] = base_growth
 
         # 增长天花板
-        growth_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100
+        growth_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100 - decay_drag * 100
         growth_ceiling = clamp(growth_ceiling, 0.0, 50.0)  # 限制 0-50%
         components["growth_ceiling"] = growth_ceiling
 
