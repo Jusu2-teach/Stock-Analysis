@@ -302,6 +302,12 @@ class GravitySolver:
         if wacc is not None:
             parts.append(f"WACC≈{wacc:.1f}%")
 
+        # v6.0: ROIC excess return
+        excess = components.get("roic_excess_return")
+        if excess is not None:
+            sign = "+" if excess >= 0 else ""
+            parts.append(f"超额回报={sign}{excess:.1f}pp")
+
         if "interpretation" in details:
             parts.append(details["interpretation"])
 

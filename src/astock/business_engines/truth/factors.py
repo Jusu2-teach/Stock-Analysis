@@ -477,8 +477,8 @@ class BetaFactor:
 
         if "hard_asset_ratio" in components:
             parts.append(f"硬资产比率{components['hard_asset_ratio']:.1%}")
-        if "nca_ratio" in components:
-            parts.append(f"非流动资产{components['nca_ratio']:.1%}")
+        if "intang_ratio" in components:
+            parts.append(f"无形资产{components['intang_ratio']:.1%}")
 
         return "，".join(parts)
 
@@ -601,7 +601,7 @@ class GammaFactor:
                 code="GAMMA_DECLINE",
                 level=WarningLevel.WARNING,
                 title="负增长",
-                message=f"CAGR={cagr:.1f}%，营收/利润处于下滑趋势",
+                message=f"CAGR={cagr:.1%}，营收/利润处于下滑趋势",
                 source="gamma_factor",
                 values={"cagr": cagr if cagr else 0},
             ))
@@ -633,7 +633,7 @@ class GammaFactor:
         parts = [f"γ={score:.2f} ({growth_label})"]
 
         if "cagr" in components:
-            parts.append(f"CAGR={components['cagr']:.1f}%")
+            parts.append(f"CAGR={components['cagr']:.1%}")
         if "log_slope" in components:
             parts.append(f"斜率={components['log_slope']:.2f}")
 
@@ -1004,7 +1004,7 @@ class DeltaFraudFactor:
                     code="FRAUD_OCF_DIVERGENCE",
                     level=WarningLevel.CRITICAL,
                     title="利润-现金流背离",
-                    message=f"利润增速{profit_cagr:.1f}%，但现金流仅{ocf_cagr:.1f}%",
+                    message=f"利润增速{profit_cagr:.1%}，但现金流仅{ocf_cagr:.1%}",
                     source="delta_fraud_factor",
                     metrics=("profit", "ocf"),
                     values={"profit_cagr": profit_cagr, "ocf_cagr": ocf_cagr},

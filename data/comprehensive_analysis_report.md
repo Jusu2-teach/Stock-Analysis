@@ -4,7 +4,7 @@
 
 ## 📋 报告概要
 
-- **生成时间**: 2026-02-23 15:01:51
+- **生成时间**: 2026-02-23 15:51:29
 - **算法版本**: v2.0 (Causal Bayesian)
 - **分析股票数**: 1914
 - **优质公司数**: 161
@@ -727,56 +727,56 @@
 
 | 代码 | 名称 | 行业 | 得分 | 置信度 | 否决原因 |
 |------|------|------|------|--------|--------|
-| 300122.SZ | 智飞生物 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 688135.SH | 利扬芯片 | 半导体 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 600537.SH | 亿晶光电 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 688202.SH | 美迪西 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 688562.SH | 航天软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 832876.BJ | 慧为智能 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 301285.SZ | 鸿日达 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 301180.SZ | 万祥科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 300290.SZ | 荣科科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
-| 600734.SH | 实达集团 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
-| 300520.SZ | 科大国创 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 300556.SZ | 丝路视觉 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 连续亏损4年, 最新 |
-| 300204.SZ | 舒泰神 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 连续亏损4年, 最新 |
+| 300255.SZ | 常山药业 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 000536.SZ | 华映科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 300317.SZ | 珈伟新能 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 688048.SH | 长光华芯 | 半导体 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 002153.SZ | 石基信息 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 688619.SH | 罗普特 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 688007.SH | 光峰科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 300427.SZ | 红相股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 连续亏损4年, 最新 |
+| 301176.SZ | 逸豪新材 | 元器件 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 趋势严重恶化: sl |
+| 301153.SZ | 中科江南 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 688560.SH | 明冠新材 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 688310.SH | 迈得医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 002793.SZ | 罗欣药业 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 688039.SH | 当虹科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 600855.SH | 航天长峰 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 300040.SZ | 九洲集团 | 新型电力 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 833030.BJ | 立方控股 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
+| 688435.SH | 英方软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 300149.SZ | 睿智医药 | 生物制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 688590.SH | 新致软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
+| 430300.BJ | 辰光医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 301357.SZ | 北方长龙 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 300076.SZ | GQY视讯 | IT设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 688499.SH | 利元亨 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 688266.SH | 泽璟制药-U | 生物制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 000710.SZ | 贝瑞基因 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 301387.SZ | 光大同创 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 688020.SH | 方邦股份 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 300542.SZ | 新晨科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 300448.SZ | 浩云科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 连续亏损4年, 最新 |
+| 300036.SZ | 超图软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 从峰值下跌5563. |
+| 688004.SH | 博汇科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 300499.SZ | 高澜股份 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 688369.SH | 致远互联 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 603978.SH | 深圳新星 | 小金属 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 688110.SH | 东芯股份 | 半导体 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 301067.SZ | 显盈科技 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 002855.SZ | 捷荣技术 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
 | 603990.SH | 麦迪科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 603936.SH | 博敏电子 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 600110.SH | 诺德股份 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 600588.SH | 用友网络 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 688022.SH | 瀚川智能 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 连续亏损4年, 最新 |
-| 002622.SZ | 皓宸医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roe] 连续亏损4年, 最新值 |
-| 688079.SH | 美迪凯 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 688030.SH | 山石网科 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 688536.SH | 思瑞浦 | 半导体 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 000572.SZ | 海马汽车 | 汽车整车 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 连续亏损4年, 最新 |
-| 688381.SH | 帝奥微 | 半导体 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 300981.SZ | 中红医疗 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 从43.6崩塌至-2 |
-| 002362.SZ | 汉王科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 301060.SZ | 兰卫医学 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 300480.SZ | 光力科技 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 600281.SH | 华阳新材 | 小金属 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 趋势严重恶化: sl |
-| 688567.SH | 孚能科技 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 002426.SZ | 胜利精密 | 元器件 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 300471.SZ | 厚普股份 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 000952.SZ | 广济药业 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 688068.SH | 热景生物 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
-| 688289.SH | 圣湘生物 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 603679.SH | 华体科技 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 002232.SZ | 启明信息 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 300624.SZ | 万兴科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 600203.SH | 福日电子 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 002842.SZ | 翔鹭钨业 | 小金属 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 688390.SH | 固德威 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
-| 001314.SZ | 亿道信息 | 元器件 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 688512.SH | 慧智微-U | 半导体 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 连续亏损4年, 最新 |
-| 300663.SZ | 科蓝软件 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 003035.SZ | 南网能源 | 新型电力 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 000813.SZ | 德展健康 | 化学制药 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
-| 600212.SH | 绿能慧充 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 300935.SZ | 盈建科 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
-| 301266.SZ | 宇邦新材 | 电气设备 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
-| 688373.SH | 盟科药业-U | 化学制药 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 连续亏损4年, 最新 |
+| 600202.SH | 哈空调 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 688193.SH | 仁度生物 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
+| 600571.SH | 信雅达 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 恶化等级: seve |
+| 002466.SZ | 天齐锂业 | 小金属 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 从35.6崩塌至-0 |
+| 301302.SZ | 华如科技 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 688361.SH | 中科飞测 | 半导体 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 恶化等级: seve |
+| 300293.SZ | 蓝英装备 | 专用机械 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 300264.SZ | 佳创视讯 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(7个): [roic] 连续亏损4年, 最新 |
+| 688382.SH |  |  | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 连续亏损4年, 最新 |
+| 688651.SH | 盛邦安全 | 软件服务 | 0.0 | 95.0% | 多指标共识否决(6个): [roic] 趋势严重恶化: sl |
+| 002022.SZ | 科华生物 | 医疗保健 | 0.0 | 95.0% | 多指标共识否决(5个): [roic] 趋势严重恶化: sl |
 | ... | | | | | 还有 421 家 |
 
 ## 🔬 双引擎交叉验证
@@ -785,112 +785,121 @@
 
 - Evaluator 优质: **161** 家
 - T.R.U.T.H. 优质: **180** 家
-- **双引擎共识**: **90** 家 (56% of Evaluator)
-- Evaluator优质但TRUTH较差: 4 家
+- **双引擎共识**: **102** 家 (63% of Evaluator)
+- Evaluator优质但TRUTH较差: 1 家
 
 ### ⭐ 双引擎共识优质 (最高信度)
 
 | 代码 | 名称 | 行业 | E评分 | T评分 | T评级 | E周期 | T周期 | γ | 成长质量 |
 |------|------|------|-------|-------|-------|-------|-------|---|----------|
-| 002835.SZ | 同为股份 | IT设备 | 89.8 | 83.5% | A+ | cash_cow | growth | 0.67 | true_growth |
-| 301678.SZ | 新恒汇 | 半导体 | 89.6 | 82.8% | A+ | growth | growth | 0.75 | true_growth |
-| 601717.SH | 中创智领 | 专用机械 | 87.9 | 82.0% | A+ | slowing | growth | 0.71 | true_growth |
-| 603676.SH | 卫信康 | 化学制药 | 89.3 | 78.4% | A+ | growth | growth | 0.69 | true_growth |
-| 002422.SZ | 科伦药业 | 化学制药 | 87.2 | 79.6% | A+ | slowing | growth | 0.68 | true_growth |
-| 688278.SH | 特宝生物 | 生物制药 | 87.8 | 78.8% | A+ | growth | growth | 0.89 | true_growth |
-| 301479.SZ | 弘景光电 | 元器件 | 91.1 | 75.0% | A+ | turnaround | growth | 0.92 | true_growth |
-| 832735.BJ | 德源药业 | 化学制药 | 93.3 | 72.8% | A+ | mature | cash_cow | 0.62 | true_growth |
-| 600582.SH | 天地科技 | 专用机械 | 85.3 | 80.5% | A+ | slowing | cash_cow | 0.63 | true_growth |
-| 688029.SH | 南微医学 | 医疗保健 | 88.3 | 77.3% | A+ | slowing | cash_cow | 0.64 | true_growth |
-| 002595.SZ | 豪迈科技 | 专用机械 | 87.2 | 78.1% | A+ | growth | growth | 0.70 | true_growth |
-| 000682.SZ | 东方电子 | 电气设备 | 86.6 | 78.3% | A+ | growth | growth | 0.70 | true_growth |
-| 301301.SZ | 川宁生物 | 化学制药 | 89.0 | 75.8% | A+ | turnaround | growth | 0.75 | true_growth |
-| 603611.SH | 诺力股份 | 专用机械 | 85.7 | 78.9% | A+ | growth | growth | 0.66 | true_growth |
-| 300866.SZ | 安克创新 | 元器件 | 89.0 | 75.4% | A+ | growth | growth | 0.71 | true_growth |
-| 832982.BJ | 锦波生物 | 医疗保健 | 89.6 | 74.5% | A+ | growth | growth | 0.97 | true_growth |
-| 002850.SZ | 科达利 | 电气设备 | 87.2 | 76.0% | A+ | growth | growth | 0.87 | true_growth |
-| 002351.SZ | 漫步者 | IT设备 | 87.1 | 76.1% | A+ | mature | cash_cow | 0.63 | true_growth |
-| 600262.SH | 北方股份 | 专用机械 | 80.3 | 82.6% | A+ | growth | growth | 0.73 | true_growth |
-| 601958.SH | 金钼股份 | 小金属 | 76.4 | 85.8% | A+ | turnaround | growth | 0.84 | true_growth |
-| 688111.SH | 金山办公 | 软件服务 | 86.2 | 75.4% | A+ | growth | emerging | 0.72 | low_quality |
-| 601567.SH | 三星医疗 | 电气设备 | 90.6 | 69.0% | A | growth | growth | 0.76 | moderate_quality |
-| 001395.SZ | 亚联机械 | 专用机械 | 87.2 | 72.4% | A+ | growth | growth | 0.74 | true_growth |
-| 600062.SH | 华润双鹤 | 化学制药 | 88.5 | 70.7% | A+ | mature | cash_cow | 0.63 | true_growth |
-| 002028.SZ | 思源电气 | 电气设备 | 86.2 | 72.7% | A+ | growth | growth | 0.73 | true_growth |
-| 600406.SH | 国电南瑞 | 电气设备 | 93.2 | 65.7% | A | turnaround | mature | 0.47 | true_growth |
-| 002371.SZ | 北方华创 | 半导体 | 90.1 | 68.8% | A | growth | growth | 0.93 | true_growth |
-| 688248.SH | 南网科技 | 电气设备 | 88.8 | 69.9% | A+ | growth | growth | 0.74 | moderate_quality |
-| 300743.SZ | 天地数码 | IT设备 | 84.9 | 73.8% | A+ | slowing | growth | 0.63 | true_growth |
-| 001389.SZ | 广合科技 | 元器件 | 89.2 | 68.4% | A | turnaround | growth | 0.78 | true_growth |
-| 002056.SZ | 横店东磁 | 电气设备 | 85.5 | 72.0% | A+ | growth | growth | 0.67 | true_growth |
-| 688128.SH | 中国电研 | 专用机械 | 88.8 | 68.6% | A | growth | cash_cow | 0.65 | moderate_quality |
-| 002270.SZ | 华明装备 | 电气设备 | 83.7 | 73.7% | A+ | slowing | turnaround | 0.64 | true_growth |
-| 300724.SZ | 捷佳伟创 | 专用机械 | 81.2 | 76.0% | A+ | turnaround | turnaround | 0.88 | true_growth |
-| 688389.SH | 普门科技 | 医疗保健 | 79.9 | 77.3% | A+ | growth | growth | 0.69 | true_growth |
-| 600885.SH | 宏发股份 | 电气设备 | 81.8 | 75.2% | A+ | turnaround | cash_cow | 0.59 | true_growth |
-| 688019.SH | 安集科技 | 半导体 | 85.2 | 71.7% | A+ | mature | cash_cow | 0.57 | true_growth |
-| 600312.SH | 平高电气 | 电气设备 | 85.7 | 70.9% | A+ | slowing | growth | 0.77 | true_growth |
-| 002484.SZ | 江海股份 | 元器件 | 78.9 | 77.5% | A+ | growth | mature | 0.62 | true_growth |
-| 300274.SZ | 阳光电源 | 电气设备 | 78.2 | 77.8% | A+ | growth | growth | 0.85 | true_growth |
-| 603277.SH | 银都股份 | 专用机械 | 81.2 | 74.6% | A+ | cash_cow | cash_cow | 0.60 | true_growth |
-| 301602.SZ | 超研股份 | 医疗保健 | 77.7 | 77.9% | A+ | cash_cow | cash_cow | 0.57 | true_growth |
-| 300962.SZ | 中金辐照 | 医疗保健 | 88.2 | 66.8% | A | mature | cash_cow | 0.53 | moderate_quality |
-| 601137.SH | 博威合金 | 小金属 | 83.1 | 71.8% | A+ | growth | growth | 0.79 | true_growth |
-| 688018.SH | 乐鑫科技 | 半导体 | 86.3 | 68.5% | A | cash_cow | growth | 0.67 | true_growth |
-| 300896.SZ | 爱美客 | 医疗保健 | 77.3 | 77.2% | A+ | growth | cash_cow | 0.65 | true_growth |
-| 300545.SZ | 联得装备 | 专用机械 | 87.4 | 67.0% | A | growth | growth | 0.74 | true_growth |
-| 300346.SZ | 南大光电 | 半导体 | 75.2 | 79.2% | A+ | emerging | growth | 0.71 | true_growth |
-| 920101.BJ | 志高机械 | 专用机械 | 85.4 | 68.7% | A | turnaround | turnaround | 0.57 | true_growth |
-| 600301.SH | 华锡有色 | 小金属 | 81.2 | 72.5% | A+ | growth | growth | 0.92 | true_growth |
-| 688617.SH | 惠泰医疗 | 医疗保健 | 82.0 | 71.6% | A+ | growth | growth | 0.76 | true_growth |
-| 002273.SZ | 水晶光电 | 元器件 | 80.1 | 73.2% | A+ | growth | growth | 0.66 | true_growth |
-| 002533.SZ | 金杯电工 | 电气设备 | 80.1 | 72.9% | A+ | slowing | growth | 0.68 | moderate_quality |
-| 600211.SH | 西藏药业 | 生物制药 | 79.6 | 73.3% | A+ | mature | mature | 0.67 | true_growth |
-| 000513.SZ | 丽珠集团 | 化学制药 | 86.1 | 66.5% | A | mature | cash_cow | 0.54 | true_growth |
-| 000400.SZ | 许继电气 | 电气设备 | 78.6 | 73.7% | A+ | growth | cash_cow | 0.63 | true_growth |
-| 920068.BJ | 天工股份 | 小金属 | 74.7 | 77.1% | A+ | turnaround | growth | 0.84 | true_growth |
-| 301609.SZ | 山大电力 | 电气设备 | 84.8 | 66.8% | A | turnaround | cash_cow | 0.66 | moderate_quality |
-| 000997.SZ | 新大陆 | IT设备 | 84.0 | 67.5% | A | cash_cow | mature | 0.63 | true_growth |
-| 300833.SZ | 浩洋股份 | 专用机械 | 75.0 | 75.9% | A+ | growth | growth | 0.60 | true_growth |
-| 300705.SZ | 九典制药 | 化学制药 | 83.5 | 67.2% | A | mature | growth | 0.58 | true_growth |
-| 300573.SZ | 兴齐眼药 | 化学制药 | 84.3 | 66.2% | A | cash_cow | mature | 0.49 | true_growth |
-| 601633.SH | 长城汽车 | 汽车整车 | 80.4 | 69.9% | A | growth | growth | 0.72 | true_growth |
-| 000551.SZ | 创元科技 | 专用机械 | 75.1 | 75.1% | A+ | slowing | cash_cow | 0.60 | true_growth |
-| 603259.SH | 药明康德 | 化学制药 | 79.5 | 70.1% | A+ | growth | growth | 0.70 | true_growth |
-| 603993.SH | 洛阳钼业 | 小金属 | 76.4 | 73.0% | A+ | mature | growth | 0.69 | true_growth |
-| 300693.SZ | 盛弘股份 | 电气设备 | 77.5 | 71.7% | A+ | growth | growth | 0.68 | moderate_quality |
-| 301491.SZ | 汉桑科技 | IT设备 | 77.4 | 71.7% | A+ | cash_cow | mature | 0.56 | true_growth |
-| 300760.SZ | 迈瑞医疗 | 医疗保健 | 79.3 | 69.6% | A | growth | growth | 0.67 | moderate_quality |
-| 300453.SZ | 三鑫医疗 | 医疗保健 | 83.6 | 65.1% | A | declining | mature | 0.44 | moderate_quality |
-| 301668.SZ | C昊创 | 电气设备 | 79.1 | 69.3% | A | growth | growth | 0.80 | true_growth |
-| 002690.SZ | 美亚光电 | 专用机械 | 74.7 | 73.7% | A+ | cash_cow | mature | 0.52 | true_growth |
-| 600529.SH | 山东药玻 | 医疗保健 | 74.7 | 73.3% | A+ | mature | cash_cow | 0.62 | true_growth |
-| 300750.SZ | 宁德时代 | 电气设备 | 78.6 | 69.0% | A | growth | growth | 0.74 | moderate_quality |
-| 000915.SZ | 华特达因 | 化学制药 | 78.3 | 68.9% | A | cash_cow | mature | 0.58 | true_growth |
-| 603855.SH | 华荣股份 | 专用机械 | 79.8 | 67.4% | A | cash_cow | cash_cow | 0.63 | moderate_quality |
-| 300508.SZ | 维宏股份 | 软件服务 | 77.0 | 69.7% | A | mature | growth | 0.64 | true_growth |
-| 688188.SH | 柏楚电子 | 专用机械 | 80.0 | 66.5% | A | mature | cash_cow | 0.59 | moderate_quality |
-| 688755.SH | 汉邦科技 | 专用机械 | 76.7 | 68.4% | A | declining | mature | 0.52 | true_growth |
-| 002475.SZ | 立讯精密 | 元器件 | 77.9 | 67.0% | A | growth | growth | 0.73 | true_growth |
-| 603920.SH | 世运电路 | 元器件 | 76.3 | 68.5% | A | mature | mature | 0.55 | true_growth |
-| 300033.SZ | 同花顺 | 软件服务 | 73.6 | 70.4% | A+ | cash_cow | cash_cow | 0.53 | fake_growth |
-| 301275.SZ | 汉朔科技 | 元器件 | 76.5 | 67.1% | A | growth | growth | 0.86 | true_growth |
-| 002020.SZ | 京新药业 | 化学制药 | 74.7 | 68.6% | A | turnaround | slowing | 0.49 | true_growth |
-| 688775.SH | 影石创新 | IT设备 | 76.3 | 65.8% | A | growth | growth | 0.94 | true_growth |
-| 688120.SH | 华海清科 | 半导体 | 73.3 | 68.7% | A | growth | growth | 0.72 | moderate_quality |
-| 835237.BJ | 力佳科技 | 电气设备 | 75.4 | 66.6% | A | cash_cow | mature | 0.52 | true_growth |
-| 300406.SZ | 九强生物 | 医疗保健 | 74.9 | 65.9% | A | mature | growth | 0.66 | true_growth |
-| 301138.SZ | 华研精机 | 专用机械 | 74.1 | 65.9% | A | mature | mature | 0.48 | true_growth |
-| 300855.SZ | 图南股份 | 小金属 | 72.1 | 66.6% | A | cash_cow | slowing | 0.48 | true_growth |
+| 301479.SZ | 弘景光电 | 元器件 | 91.1 | 91.4% | A+ | turnaround | growth | 0.92 | true_growth |
+| 002835.SZ | 同为股份 | IT设备 | 89.8 | 92.3% | A+ | cash_cow | growth | 0.67 | true_growth |
+| 832982.BJ | 锦波生物 | 医疗保健 | 89.6 | 90.5% | A+ | growth | growth | 0.97 | true_growth |
+| 688278.SH | 特宝生物 | 生物制药 | 87.8 | 92.2% | A+ | growth | growth | 0.89 | true_growth |
+| 002595.SZ | 豪迈科技 | 专用机械 | 87.2 | 91.7% | A+ | growth | growth | 0.70 | true_growth |
+| 301678.SZ | 新恒汇 | 半导体 | 89.6 | 88.9% | A+ | growth | growth | 0.75 | true_growth |
+| 300866.SZ | 安克创新 | 元器件 | 89.0 | 89.0% | A+ | growth | growth | 0.71 | true_growth |
+| 601717.SH | 中创智领 | 专用机械 | 87.9 | 87.5% | A+ | slowing | growth | 0.71 | true_growth |
+| 832735.BJ | 德源药业 | 化学制药 | 93.3 | 81.7% | A+ | mature | cash_cow | 0.62 | true_growth |
+| 001395.SZ | 亚联机械 | 专用机械 | 87.2 | 87.6% | A+ | growth | growth | 0.74 | true_growth |
+| 002351.SZ | 漫步者 | IT设备 | 87.1 | 87.6% | A+ | mature | cash_cow | 0.63 | true_growth |
+| 603676.SH | 卫信康 | 化学制药 | 89.3 | 83.9% | A+ | growth | growth | 0.69 | true_growth |
+| 688029.SH | 南微医学 | 医疗保健 | 88.3 | 84.8% | A+ | slowing | cash_cow | 0.64 | true_growth |
+| 001389.SZ | 广合科技 | 元器件 | 89.2 | 83.3% | A+ | turnaround | growth | 0.78 | true_growth |
+| 688111.SH | 金山办公 | 软件服务 | 86.2 | 86.3% | A+ | growth | emerging | 0.72 | low_quality |
+| 002028.SZ | 思源电气 | 电气设备 | 86.2 | 85.0% | A+ | growth | growth | 0.73 | true_growth |
+| 301301.SZ | 川宁生物 | 化学制药 | 89.0 | 82.2% | A+ | turnaround | growth | 0.75 | true_growth |
+| 000682.SZ | 东方电子 | 电气设备 | 86.6 | 83.1% | A+ | growth | growth | 0.70 | true_growth |
+| 601567.SH | 三星医疗 | 电气设备 | 90.6 | 78.4% | A+ | growth | growth | 0.76 | moderate_quality |
+| 300724.SZ | 捷佳伟创 | 专用机械 | 81.2 | 87.5% | A+ | turnaround | turnaround | 0.88 | true_growth |
+| 600582.SH | 天地科技 | 专用机械 | 85.3 | 83.3% | A+ | slowing | cash_cow | 0.63 | true_growth |
+| 600406.SH | 国电南瑞 | 电气设备 | 93.2 | 75.3% | A+ | turnaround | mature | 0.47 | true_growth |
+| 002422.SZ | 科伦药业 | 化学制药 | 87.2 | 80.5% | A+ | slowing | growth | 0.68 | true_growth |
+| 301609.SZ | 山大电力 | 电气设备 | 84.8 | 82.5% | A+ | turnaround | cash_cow | 0.66 | moderate_quality |
+| 600885.SH | 宏发股份 | 电气设备 | 81.8 | 85.5% | A+ | turnaround | cash_cow | 0.59 | true_growth |
+| 833523.BJ | 德瑞锂电 | 电气设备 | 88.0 | 78.2% | A+ | growth | growth | 0.70 | true_growth |
+| 002850.SZ | 科达利 | 电气设备 | 87.2 | 78.7% | A+ | growth | growth | 0.87 | true_growth |
+| 688128.SH | 中国电研 | 专用机械 | 88.8 | 77.1% | A+ | growth | cash_cow | 0.65 | moderate_quality |
+| 603611.SH | 诺力股份 | 专用机械 | 85.7 | 80.0% | A+ | growth | growth | 0.66 | true_growth |
+| 600062.SH | 华润双鹤 | 化学制药 | 88.5 | 77.1% | A+ | mature | cash_cow | 0.63 | true_growth |
+| 603277.SH | 银都股份 | 专用机械 | 81.2 | 84.3% | A+ | cash_cow | cash_cow | 0.60 | true_growth |
+| 688019.SH | 安集科技 | 半导体 | 85.2 | 80.3% | A+ | mature | cash_cow | 0.57 | true_growth |
+| 300743.SZ | 天地数码 | IT设备 | 84.9 | 80.1% | A+ | slowing | growth | 0.63 | true_growth |
+| 002371.SZ | 北方华创 | 半导体 | 90.1 | 74.9% | A+ | growth | growth | 0.93 | true_growth |
+| 688248.SH | 南网科技 | 电气设备 | 88.8 | 75.5% | A+ | growth | growth | 0.74 | moderate_quality |
+| 301491.SZ | 汉桑科技 | IT设备 | 77.4 | 86.9% | A+ | cash_cow | mature | 0.56 | true_growth |
+| 920112.BJ | 巴兰仕 | 专用机械 | 86.7 | 77.2% | A+ | mature | emerging | 0.74 | low_quality |
+| 601958.SH | 金钼股份 | 小金属 | 76.4 | 86.7% | A+ | turnaround | growth | 0.84 | true_growth |
+| 600211.SH | 西藏药业 | 生物制药 | 79.6 | 83.2% | A+ | mature | mature | 0.67 | true_growth |
+| 688617.SH | 惠泰医疗 | 医疗保健 | 82.0 | 80.5% | A+ | growth | growth | 0.76 | true_growth |
+| 002270.SZ | 华明装备 | 电气设备 | 83.7 | 78.7% | A+ | slowing | turnaround | 0.64 | true_growth |
+| 688018.SH | 乐鑫科技 | 半导体 | 86.3 | 75.4% | A+ | cash_cow | growth | 0.67 | true_growth |
+| 600301.SH | 华锡有色 | 小金属 | 81.2 | 80.5% | A+ | growth | growth | 0.92 | true_growth |
+| 300033.SZ | 同花顺 | 软件服务 | 73.6 | 87.8% | A+ | cash_cow | cash_cow | 0.53 | fake_growth |
+| 300274.SZ | 阳光电源 | 电气设备 | 78.2 | 82.8% | A+ | growth | growth | 0.85 | true_growth |
+| 920101.BJ | 志高机械 | 专用机械 | 85.4 | 75.4% | A+ | turnaround | turnaround | 0.57 | true_growth |
+| 301602.SZ | 超研股份 | 医疗保健 | 77.7 | 82.7% | A+ | cash_cow | cash_cow | 0.57 | true_growth |
+| 601633.SH | 长城汽车 | 汽车整车 | 80.4 | 79.7% | A+ | growth | growth | 0.72 | true_growth |
+| 300705.SZ | 九典制药 | 化学制药 | 83.5 | 76.6% | A+ | mature | growth | 0.58 | true_growth |
+| 301668.SZ | C昊创 | 电气设备 | 79.1 | 80.9% | A+ | growth | growth | 0.80 | true_growth |
+| 600312.SH | 平高电气 | 电气设备 | 85.7 | 74.1% | A | slowing | growth | 0.77 | true_growth |
+| 002533.SZ | 金杯电工 | 电气设备 | 80.1 | 79.6% | A+ | slowing | growth | 0.68 | moderate_quality |
+| 600262.SH | 北方股份 | 专用机械 | 80.3 | 79.4% | A+ | growth | growth | 0.73 | true_growth |
+| 688188.SH | 柏楚电子 | 专用机械 | 80.0 | 79.4% | A+ | mature | cash_cow | 0.59 | moderate_quality |
+| 300545.SZ | 联得装备 | 专用机械 | 87.4 | 72.0% | A | growth | growth | 0.74 | true_growth |
+| 603855.SH | 华荣股份 | 专用机械 | 79.8 | 79.1% | A+ | cash_cow | cash_cow | 0.63 | moderate_quality |
+| 002463.SZ | 沪电股份 | 元器件 | 83.0 | 75.8% | A+ | mature | mature | 0.61 | moderate_quality |
+| 300962.SZ | 中金辐照 | 医疗保健 | 88.2 | 70.3% | A | mature | cash_cow | 0.53 | moderate_quality |
+| 002273.SZ | 水晶光电 | 元器件 | 80.1 | 78.1% | A+ | growth | growth | 0.66 | true_growth |
+| 605116.SH | 奥锐特 | 化学制药 | 88.2 | 69.9% | A | growth | growth | 0.71 | moderate_quality |
+| 601137.SH | 博威合金 | 小金属 | 83.1 | 74.9% | A+ | growth | growth | 0.79 | true_growth |
+| 000997.SZ | 新大陆 | IT设备 | 84.0 | 73.8% | A | cash_cow | mature | 0.63 | true_growth |
+| 000513.SZ | 丽珠集团 | 化学制药 | 86.1 | 71.7% | A | mature | cash_cow | 0.54 | true_growth |
+| 300896.SZ | 爱美客 | 医疗保健 | 77.3 | 80.3% | A+ | growth | cash_cow | 0.65 | true_growth |
+| 301275.SZ | 汉朔科技 | 元器件 | 76.5 | 81.0% | A+ | growth | growth | 0.86 | true_growth |
+| 600066.SH | 宇通客车 | 汽车整车 | 82.2 | 75.1% | A+ | mature | growth | 0.76 | true_growth |
+| 300573.SZ | 兴齐眼药 | 化学制药 | 84.3 | 72.8% | A | cash_cow | mature | 0.49 | true_growth |
+| 300693.SZ | 盛弘股份 | 电气设备 | 77.5 | 79.0% | A+ | growth | growth | 0.68 | moderate_quality |
+| 300346.SZ | 南大光电 | 半导体 | 75.2 | 81.1% | A+ | emerging | growth | 0.71 | true_growth |
+| 920068.BJ | 天工股份 | 小金属 | 74.7 | 81.5% | A+ | turnaround | growth | 0.84 | true_growth |
+| 000400.SZ | 许继电气 | 电气设备 | 78.6 | 77.5% | A+ | growth | cash_cow | 0.63 | true_growth |
+| 300760.SZ | 迈瑞医疗 | 医疗保健 | 79.3 | 76.4% | A+ | growth | growth | 0.67 | moderate_quality |
+| 002130.SZ | 沃尔核材 | 电气设备 | 85.1 | 70.5% | A | cash_cow | emerging | 0.64 | fake_growth |
+| 300508.SZ | 维宏股份 | 软件服务 | 77.0 | 78.3% | A+ | mature | growth | 0.64 | true_growth |
+| 002056.SZ | 横店东磁 | 电气设备 | 85.5 | 69.7% | A | growth | growth | 0.67 | true_growth |
+| 300453.SZ | 三鑫医疗 | 医疗保健 | 83.6 | 71.6% | A | declining | mature | 0.44 | moderate_quality |
+| 002690.SZ | 美亚光电 | 专用机械 | 74.7 | 80.1% | A+ | cash_cow | mature | 0.52 | true_growth |
+| 688775.SH | 影石创新 | IT设备 | 76.3 | 78.1% | A+ | growth | growth | 0.94 | true_growth |
+| 603993.SH | 洛阳钼业 | 小金属 | 76.4 | 77.9% | A+ | mature | growth | 0.69 | true_growth |
+| 688389.SH | 普门科技 | 医疗保健 | 79.9 | 73.9% | A | growth | growth | 0.69 | true_growth |
+| 300832.SZ | 新产业 | 医疗保健 | 81.0 | 72.6% | A | mature | mature | 0.57 | fake_growth |
+| 600529.SH | 山东药玻 | 医疗保健 | 74.7 | 78.8% | A+ | mature | cash_cow | 0.62 | true_growth |
+| 002484.SZ | 江海股份 | 元器件 | 78.9 | 74.3% | A | growth | mature | 0.62 | true_growth |
+| 002997.SZ | 瑞鹄模具 | 专用机械 | 79.0 | 73.6% | A | turnaround | growth | 0.75 | true_growth |
+| 920080.BJ | 奥美森 | 专用机械 | 78.8 | 73.8% | A | mature | mature | 0.58 | true_growth |
+| 300750.SZ | 宁德时代 | 电气设备 | 78.6 | 74.0% | A | growth | growth | 0.74 | moderate_quality |
+| 000551.SZ | 创元科技 | 专用机械 | 75.1 | 77.3% | A+ | slowing | cash_cow | 0.60 | true_growth |
+| 002594.SZ | 比亚迪 | 汽车整车 | 82.0 | 69.7% | A | growth | growth | 0.94 | moderate_quality |
+| 000915.SZ | 华特达因 | 化学制药 | 78.3 | 73.1% | A | cash_cow | mature | 0.58 | true_growth |
+| 002475.SZ | 立讯精密 | 元器件 | 77.9 | 72.9% | A | growth | growth | 0.73 | true_growth |
+| 000963.SZ | 华东医药 | 化学制药 | 81.5 | 68.9% | A | mature | cash_cow | 0.58 | low_quality |
+| 688566.SH | 吉贝尔 | 化学制药 | 80.2 | 69.5% | A | growth | cash_cow | 0.64 | true_growth |
+| 835237.BJ | 力佳科技 | 电气设备 | 75.4 | 74.1% | A | cash_cow | mature | 0.52 | true_growth |
+| 688755.SH | 汉邦科技 | 专用机械 | 76.7 | 71.9% | A | declining | mature | 0.52 | true_growth |
+| 603920.SH | 世运电路 | 元器件 | 76.3 | 71.9% | A | mature | mature | 0.55 | true_growth |
+| 301138.SZ | 华研精机 | 专用机械 | 74.1 | 73.9% | A | mature | mature | 0.48 | true_growth |
+| 002020.SZ | 京新药业 | 化学制药 | 74.7 | 73.3% | A | turnaround | slowing | 0.49 | true_growth |
+| 002138.SZ | 顺络电子 | 元器件 | 76.9 | 70.3% | A | turnaround | cash_cow | 0.65 | true_growth |
+| 300833.SZ | 浩洋股份 | 专用机械 | 75.0 | 71.7% | A | growth | growth | 0.60 | true_growth |
+| 300406.SZ | 九强生物 | 医疗保健 | 74.9 | 71.5% | A | mature | growth | 0.66 | true_growth |
+| 688120.SH | 华海清科 | 半导体 | 73.3 | 71.8% | A | growth | growth | 0.72 | moderate_quality |
+| 301031.SZ | 中熔电气 | 电气设备 | 75.9 | 68.8% | A | growth | growth | 0.83 | true_growth |
 
 ### ⚠️ 分歧警告 (Evaluator优质 / TRUTH较差)
 
 | 代码 | 名称 | E评分 | T评分 | T评级 | 风险提示 |
 |------|------|-------|-------|-------|----------|
-| 688082.SH | 盛美上海 | 79.8 | 45.7% | C | 水平高但成长存疑 |
-| 002179.SZ | 中航光电 | 79.8 | 47.0% | C | 水平高但成长存疑 |
-| 688517.SH | 金冠电气 | 79.1 | 48.9% | C | 水平高但成长存疑 |
-| 603508.SH | 思维列控 | 76.8 | 45.5% | C | 水平高但成长存疑 |
+| 603508.SH | 思维列控 | 76.8 | 48.1% | C | 水平高但成长存疑 |
 
 ## 📖 方法论说明
 
