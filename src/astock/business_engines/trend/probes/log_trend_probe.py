@@ -18,6 +18,7 @@
 """
 
 import logging
+import math
 import numpy as np
 from scipy import stats
 from typing import List, Dict, Any, Optional, Tuple
@@ -361,9 +362,10 @@ class LogTrendProbe:
 
         # ========== 4. Bootstrap 置信区间 ==========
         # 对于小样本，Bootstrap 比 t 分布更可靠
-        # 注: 向量化实现，500次重采样性能优秀且统计更稳定
+        # v5.1: 确定性种子 = 数据哈希值，保证可重复性
+        _seed = int(hash(values.tobytes()) % (2**31))
         boot_median, boot_ci_low, boot_ci_high = bootstrap_slope_ci(
-            years, transformed, n_bootstrap=500, ci_level=0.95
+            years, transformed, n_bootstrap=500, ci_level=0.95, seed=_seed
         )
 
         # ========== 5. 融合斜率估计 ==========
@@ -418,15 +420,34 @@ class LogTrendProbe:
         quality: DataQualitySummary,
         trend_metrics: Dict[str, Any],
     ) -> float:
+        """v5.1: 回归法 CAGR — 使用全部数据点而非端点
+
+        端点法 (values[-1]/values[0])^(1/n)-1 只用2个点，对首尾异常值极敏感。
+        回归法通过 OLS 拟合全部 n 个点的对数值，斜率即连续复合增长率:
+            log(Y) = a + b*t  →  CAGR = exp(b) - 1
+
+        对 arcsinh 变换: arcsinh(x) ≈ ln(2x) for large |x|,
+        但在零附近非线性，故回退端点法（arcsinh 不直接对应 CAGR）。
+        """
         if quality.has_loss_years or trend_metrics['crosses_zero'] or np.any(values <= 0):
             return float('nan')
 
         period_years = len(values) - 1
-        if period_years > 0 and values[0] > 0:
-            cagr = (values[-1] / values[0]) ** (1.0 / period_years) - 1.0
-            return float(cagr)
+        if period_years <= 0 or values[0] <= 0:
+            return float('nan')
 
-        return float('nan')
+        transform_method = trend_metrics.get('transform_method', 'arcsinh')
+
+        if transform_method == 'log':
+            # 回归法: log_slope = d(log Y)/dt ≈ 连续 CAGR
+            # 使用 fused_slope (OLS+WLS 融合) 获得更稳健的估计
+            log_slope = trend_metrics.get('fused_slope', trend_metrics.get('log_slope', 0.0))
+            cagr = math.exp(log_slope) - 1.0
+        else:
+            # arcsinh 变换不能直接转 CAGR，回退端点法
+            cagr = (values[-1] / values[0]) ** (1.0 / period_years) - 1.0
+
+        return float(cagr)
 
     def _build_result(
         self,

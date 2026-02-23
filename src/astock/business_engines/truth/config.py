@@ -268,9 +268,9 @@ class ScoringConfig:
         "VERIFICATION": 0.16,      # v4.6 ↓ 0.23→0.16: V修复后给真实值,降低权重
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "GRAVITY": 0.35,
-        "VELOCITY": 0.35,
-        "STRUCTURE": 0.30,
+        "GRAVITY": 0.50,     # v5.1: ↑ 0.35→0.50 (ROIC阈值推导, 核心价值锚)
+        "VELOCITY": 0.40,    # v5.1: ↑ 0.35→0.40 (增长边界, 独立信号)
+        "STRUCTURE": 0.10,   # v5.1: ↓ 0.30→0.10 (ρ≈0.80与因子高度共线)
     })
     factor_vs_solver_weight: float = 0.60  # 因子权重提高 (原0.5)
     signal_thresholds: Mapping[str, float] = field(default_factory=lambda: {
@@ -294,7 +294,7 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "4.1.0"
+    algo_version: str = "5.1.0"
     config_version: str = "default"
 
     # Layer 0

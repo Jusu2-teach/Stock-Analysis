@@ -767,30 +767,65 @@ def _cross_sectional_normalize(
         # ── Combined score ──
         final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
-        # ══════ Hard constraints (经济学普适原则, 非启发式) ══════
+        # ══════ Hard constraints (v5.1: 仅真正价值毁灭) ══════
+        # v5.0 的 ROIC<5%/8% 双阈值导致 73% 公司被硬约束，
+        # 使百分位排名对大部分公司无效。v5.1 只保留 ROIC<3%
+        # (低于任何行业 WACC 下界，真正的资本毁灭)。
+        # ROIC 的信号已通过 Gravity solver 在因子端充分表达。
         roic_actual = _extract_roic_actual(p)
         if roic_actual is not None:
-            if roic_actual < 5.0:
-                # ROIC < 5%: 价值毁灭 (低于任何行业的 WACC 下界)
-                final_score = min(final_score, 0.45)
-                n_hard_constrained += 1
-            elif roic_actual < 8.0:
-                # ROIC < 8%: 低于权益资本成本, 不应获得溢价评级
-                final_score = min(final_score, 0.58)
+            if roic_actual < 3.0:
+                # ROIC < 3%: 显著价值毁灭，不应高于中等评级
+                final_score = min(final_score, 0.40)
                 n_hard_constrained += 1
 
-        # ── Signal / Grade ──
-        signal = _score_to_signal(final_score, scoring)
-        grade = _score_to_grade(final_score, scoring)
+        new_profiles.append(replace(p, final_score=final_score))
 
-        new_profiles.append(replace(p, final_score=final_score, signal=signal, grade=grade))
+    # ══════ Step 4: v5.1 百分位评级 ══════
+    # 用 final_score 排名分配评级，而非绝对阈值
+    # 保证评级分布稳定，不受市场环境偏移影响
+    # 目标分布: A+ top5%, A next5%, B+ next10%, B next15%, C next30%, D next20%, F bottom15%
+    scored = [(i, p.final_score) for i, p in enumerate(new_profiles)
+              if p.signal != TruthSignal.FRAUD_ALERT and p.final_score is not None]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    n_scored = len(scored)
+
+    # 百分位边界 (累积比例)
+    _GRADE_BANDS = [
+        (0.05, TruthGrade.A_PLUS),   # top 5%
+        (0.10, TruthGrade.A),        # next 5%  (cum 10%)
+        (0.20, TruthGrade.B_PLUS),   # next 10% (cum 20%)
+        (0.35, TruthGrade.B),        # next 15% (cum 35%)
+        (0.65, TruthGrade.C),        # next 30% (cum 65%)
+        (0.85, TruthGrade.D),        # next 20% (cum 85%)
+        (1.00, TruthGrade.F),        # bottom 15%
+    ]
+
+    grade_map: Dict[int, TruthGrade] = {}
+    for rank, (idx, _) in enumerate(scored):
+        pct = (rank + 1) / n_scored if n_scored > 0 else 1.0
+        for cum_pct, grade in _GRADE_BANDS:
+            if pct <= cum_pct:
+                grade_map[idx] = grade
+                break
+
+    # 分配 signal 和 grade
+    final_profiles: List[TruthProfile] = []
+    for i, p in enumerate(new_profiles):
+        if p.signal == TruthSignal.FRAUD_ALERT:
+            final_profiles.append(p)
+            continue
+        grade = grade_map.get(i, TruthGrade.C)
+        signal = _score_to_signal(p.final_score, scoring)
+        final_profiles.append(replace(p, signal=signal, grade=grade))
 
     logger.info(
-        f"v5.0 Cross-Sectional Normalization: "
+        f"v5.1 Cross-Sectional Normalization: "
         f"{len(profiles)} companies, "
-        f"{n_hard_constrained} hard-constrained (ROIC floor)"
+        f"{n_hard_constrained} hard-constrained (ROIC<3%), "
+        f"percentile grading applied"
     )
-    return new_profiles
+    return final_profiles
 
 
 # ============================================================================
@@ -868,7 +903,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "5.0.0",
+            "algo_version": "5.1.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,

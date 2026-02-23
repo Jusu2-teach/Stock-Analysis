@@ -1408,43 +1408,36 @@ class VerificationFactor:
 
             # 归一化到 [0, 1]
             v_normalized = normalize_score(v_ratio_revenue, "minmax", 0.0, 1.5)
-            w = weights.get("ocf_revenue_ratio", 0.50)
+            w = weights.get("ocf_revenue_ratio", 0.55)  # v5.1: ↑ 0.50→0.55
             score += v_normalized * w  # v4.6: += 而非 = (与其他组件一致)
             total_weight += w
             components["v_ratio_revenue"] = v_ratio_revenue
 
-        # 2. OCF增速 / 利润增速
+        # 2. v5.1: 营收/利润一致性 (替代 ocf_profit_ratio 以消除与δ_fraud重叠)
+        # OCF/利润背离已由δ_fraud.ocf_profit_divergence专门检测，
+        # V因子改为检测 revenue growth vs profit growth 一致性 —— 不同的信号。
         profit_cagr = get_feature(probes, "cagr", "profit")
         if profit_cagr is None:
             profit_cagr = get_feature(probes, "cagr_approx", "profit")
         if profit_cagr is None:
             profit_cagr = get_feature(probes, "log_slope", "profit")
 
-        v_ratio_profit = None
-        if ocf_cagr is not None and profit_cagr is not None:
+        if revenue_cagr is not None and profit_cagr is not None:
             components["profit_cagr"] = profit_cagr
-
-            if abs(profit_cagr) < 0.01:
-                # 利润几乎不变(<1%)，看 OCF 绝对值
-                v_ratio_profit = 1.0 if ocf_cagr >= 0 else 0.5
-            elif profit_cagr < 0:
-                v_ratio_profit = 1.2 if ocf_cagr > profit_cagr else 0.7
+            # 利润增速应跟随营收增速; 利润增速 > 营收增速 = 经营杠杆/效率提升 = 好
+            # 利润增速 << 营收增速 = 成本失控 = 差
+            if abs(revenue_cagr) < 0.01:
+                rev_profit_consistency = 1.0 if profit_cagr >= 0 else 0.4
+            elif revenue_cagr > 0:
+                ratio = profit_cagr / revenue_cagr
+                rev_profit_consistency = normalize_score(ratio, "minmax", 0.0, 2.0)
             else:
-                v_ratio_profit = ocf_cagr / profit_cagr
-
-            v_normalized = normalize_score(v_ratio_profit, "minmax", 0.0, 1.5)
-            w = weights.get("ocf_profit_ratio", 0.30)
-            score += v_normalized * w
+                # 营收下降: 利润下降更少 = 好
+                rev_profit_consistency = 0.8 if profit_cagr > revenue_cagr else 0.3
+            w = weights.get("rev_profit_consistency", 0.25)  # v5.1 new signal
+            score += rev_profit_consistency * w
             total_weight += w
-            components["v_ratio_profit"] = v_ratio_profit
-
-        # 3. 一致性检验: 两个 V 比率是否一致
-        if v_ratio_revenue is not None and v_ratio_profit is not None:
-            consistency = 1.0 - abs(v_ratio_revenue - v_ratio_profit) / max(v_ratio_revenue, v_ratio_profit, 0.01)
-            w = weights.get("consistency", 0.20)
-            score += max(0, consistency) * w
-            total_weight += w
-            components["consistency"] = consistency
+            components["rev_profit_consistency"] = rev_profit_consistency
 
         # 4. Sloan Accruals Ratio (Sloan 1996) — 应计质量
         # Accruals = (ΔCA - ΔCash) - (ΔCL - ΔSTD - ΔTP) - Dep&Amort
@@ -1466,7 +1459,7 @@ class VerificationFactor:
                 else:
                     sloan_score = 0.0  # 负现金转化 = 最差
 
-                w = weights.get("sloan_accruals", 0.15)
+                w = weights.get("sloan_accruals", 0.20)  # v5.1: ↑ 0.15→0.20
                 score += sloan_score * w
                 total_weight += w
                 components["sloan_accruals"] = sloan_score
