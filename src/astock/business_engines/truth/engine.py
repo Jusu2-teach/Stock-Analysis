@@ -799,6 +799,23 @@ def _cross_sectional_normalize(
     _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
     factor_ratio = scoring.factor_vs_solver_weight
 
+    # ══════ v5.4: 数据驱动衰退惩罚阈值 ══════
+    # v5.3 使用硬编码绝对阈值 (0.60, 0.50), 市场环境变化时可能失效.
+    # v5.4: 用 raw δ_decay 的百分位分布确定惩罚线:
+    #   top 10% → severe_penalty (0.80×)
+    #   top 10-20% + low γ → moderate_penalty (0.85×)
+    # 这样惩罚永远针对"当前宇宙集中衰退最严重的10-20%", 自动适应。
+    _raw_decays_valid = [
+        v for v in factor_raw[FactorId.DELTA_DECAY] if v is not None
+    ]
+    if _raw_decays_valid:
+        _raw_decays_sorted = sorted(_raw_decays_valid)
+        _n_rd = len(_raw_decays_sorted)
+        _severe_threshold = _raw_decays_sorted[int(_n_rd * 0.90)]  # top 10%
+        _moderate_threshold = _raw_decays_sorted[int(_n_rd * 0.80)]  # top 20%
+    else:
+        _severe_threshold, _moderate_threshold = 0.60, 0.50  # fallback
+
     new_profiles: List[TruthProfile] = []
     n_hard_constrained = 0
 
@@ -856,24 +873,19 @@ def _cross_sectional_normalize(
                 final_score = min(final_score, 0.40)
                 n_hard_constrained += 1
 
-        # ══════ v5.3: 高衰退惩罚 (从 reporter 移入引擎层) ══════
-        # 问题: 行业中性化后 δ_decay 的绝对水平丢失，V factor 系统性给出
-        # 高分 (≈1.00)，导致衰退严重的公司仍被百分位排名推至 top tier。
-        # 之前在 reporter._infer_decision_from_truth 做事后覆写，
-        # 造成 score/grade 与 decision 不一致 (e.g. 89.4% A+ 显示为 AVERAGE)。
-        # 修复: 用 RAW (非行业中性化) δ_decay 分值在合成分阶段施加惩罚，
-        # 使 final_score 和百分位评级自然反映衰退风险。
+        # ══════ v5.4: 数据驱动衰退惩罚 ══════
+        # v5.3 硬编码 δ_decay>=0.60 → 0.80×, 不适应分布变化.
+        # v5.4: 使用当前宇宙集的百分位阈值 (top 10%/20%)
+        # RAW (非行业中性化) δ_decay 保留绝对水平信息.
         raw_decay = factor_raw[FactorId.DELTA_DECAY][i]
         raw_gamma = factor_raw[FactorId.GAMMA][i]
         if raw_decay is not None:
-            if raw_decay >= 0.60:
-                # 极度衰退: 最多打 8 折
-                decay_penalty = 0.80
-                final_score *= decay_penalty
-            elif raw_decay >= 0.50 and (raw_gamma is None or raw_gamma < 0.45):
-                # 严重衰退 + 低成长: 最多打 85 折
-                decay_penalty = 0.85
-                final_score *= decay_penalty
+            if raw_decay >= _severe_threshold:
+                # top 10% 衰退: 强惩罚
+                final_score *= 0.80
+            elif raw_decay >= _moderate_threshold and (raw_gamma is None or raw_gamma < 0.45):
+                # top 10-20% 衰退 + 低成长: 中等惩罚
+                final_score *= 0.85
 
         new_profiles.append(replace(p, final_score=final_score))
 
@@ -999,7 +1011,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "5.3.0",
+            "algo_version": "5.4.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,

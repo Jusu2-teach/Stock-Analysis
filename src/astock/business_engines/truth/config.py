@@ -294,7 +294,7 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "5.3.0"
+    algo_version: str = "5.4.0"
     config_version: str = "default"
 
     # Layer 0
