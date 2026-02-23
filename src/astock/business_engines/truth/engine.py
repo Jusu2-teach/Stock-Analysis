@@ -486,38 +486,51 @@ def _calibrate(
             elif dd >= 0.35:
                 final_score = min(final_score, 0.77)
         else:
-            # 原版逻辑: ROIC < 20%
+            # v4.9: 成长语境感知的 δ_decay 门控
+            # v4.8 问题: dd≥0.50→cap0.68 和 dd≥0.35→cap0.72 导致过度惩罚
+            #   药明康德 dd=0.89(行业周期性下行) + γ=0.67 + V=0.82 → raw=76.6% capped at 68%
+            #   因子权重(0.18)已充分惩罚衰退, 硬门控是二次处罚
+            # v4.9: 仅在衰退+停滞同时发生时硬性封顶
+            #   高增长抵消衰退 = 周期性下行(CRO行业整体不景气), 非结构性恶化
             if dd >= 0.50 and g < 0.45:
+                # 结构性衰退: 显著衰退 + 无增长 → 严格封顶
                 final_score = min(final_score, 0.62)
-            elif dd >= 0.50:
+            elif dd >= 0.70 and g < 0.55:
+                # 严重衰退 + 增长乏力 → 中度封顶
                 final_score = min(final_score, 0.68)
-            elif dd >= 0.35:
-                final_score = min(final_score, 0.72)
+            # 移除: dd≥0.50→cap0.68 (因子权重已充分体现, 避免二次处罚)
+            # 移除: dd≥0.35→cap0.72 (阈值过低, 正常波动也被捕获)
 
-    # ====== v4.8: ROIC 绝对水平硬性门控 ======
-    # 审计发现: 27家 ROIC<8% 的公司获得 A+/A 评级 (44.2% A+ 严重失衡)
-    #   - 汇成股份 ROIC=4.5% → T=93% (A+!) ← 连资本成本都覆盖不了
-    #   - 珠海港   ROIC=3.9% → T=91% (A+!) ← 彻底不合格
-    #   - 华宝新能 ROIC=3.3% → T=85% (A+!) ← weighted_avg=34% 掩盖崩塌
-    #   - 雅克科技 ROIC=7.5% → T=94% (A+!) ← 勉强覆盖成本, 不可能 A+
-    # 根因: TRUTH 仅有 δ_decay 门控(检测衰退信号), 无 ROIC 绝对水平门控
-    #   低 ROIC + 低波动(inverted α↑) + 低衰退(inverted δ_decay↑) + 低杠杆(inverted λ↑)
-    #   → 4个反向因子天然高分 → factor_score 基线 0.65+ → 轻松突破 A 阈值
-    # 修复: 使用 roic_latest (最新年度 ROIC) 进行硬性门控
-    #   经济学逻辑: ROIC < WACC(~6-7%) = 价值毁灭, 绝不可能是"优质"公司
+    # ====== v4.9: ROIC 绝对水平 — 连续软惩罚 ======
+    # v4.8 使用阶梯函数(8-10→0.65, 10-12→0.72) 造成大量分数聚集
+    #   中科曙光 ROIC=8.8% raw=77.9% → capped at 65.0% (lost 12.9pp)
+    #   扬杰科技 ROIC=8.5% raw=74.9% → capped at 65.0% (lost 9.9pp)
+    # 世界级量化系统(AQR QMJ, GMO)使用连续惩罚而非离散阶梯
+    # v4.9 修复: 连续惩罚函数 + 成长调整 + 硬性地板
+    #   经济学逻辑: ROIC每低于12%一个百分点 → 递增惩罚
+    #   但高成长公司(γ≥0.60)惩罚减半(当前低ROIC可能因大量资本开支, 未来将改善)
     if roic_for_level_gate is not None:
-        if roic_for_level_gate < 6.0:
-            # ROIC < 6%: 低于社会平均资本成本, 不可能是优质公司
-            final_score = min(final_score, 0.45)  # C 级封顶
-        elif roic_for_level_gate < 8.0:
-            # ROIC 6-8%: 勉强覆盖资本成本, 无超额回报能力
-            final_score = min(final_score, 0.55)  # C+ 级封顶
-        elif roic_for_level_gate < 10.0:
-            # ROIC 8-10%: 中等水平, 可以评 B+ 但不应评 A
-            final_score = min(final_score, 0.65)  # B+ 封顶
+        if roic_for_level_gate < 5.0:
+            # ROIC < 5%: 严重价值毁灭, 硬性地板
+            final_score = min(final_score, 0.45)
         elif roic_for_level_gate < 12.0:
-            # ROIC 10-12%: 尚可, 可评 A 但不应评 A+ (A+ 门槛 ≈ 0.73)
-            final_score = min(final_score, 0.72)  # A 封顶 (不允许 A+)
+            # 连续惩罚: 每低于12%一个百分点 → 惩罚 1.2pp
+            # ROIC=11% → -0.012, ROIC=10% → -0.024, ROIC=8% → -0.048
+            roic_penalty = (12.0 - roic_for_level_gate) * 0.012
+            # 成长调整: γ≥0.60 的高增长公司, 惩罚打折
+            # 逻辑: 比亚迪/宁德时代等公司资本开支大→当前ROIC被压低
+            #       但高增长意味着产能利用率将提升→未来ROIC改善
+            gamma_val = factors.get(FactorId.GAMMA)
+            if gamma_val and gamma_val.score is not None and gamma_val.score >= 0.60:
+                # γ=0.60→0%折扣, γ=0.80→50%折扣 (线性插值)
+                growth_discount = min(0.50, (gamma_val.score - 0.60) * 2.5)
+                roic_penalty *= (1.0 - growth_discount)
+            final_score -= roic_penalty
+            # 安全地板: ROIC<6% 绝不应是 A, ROIC<8% 绝不应是 A+
+            if roic_for_level_gate < 6.0:
+                final_score = min(final_score, 0.48)  # C+ 地板
+            elif roic_for_level_gate < 8.0:
+                final_score = min(final_score, 0.58)  # B 地板
 
     # 计算置信度
     confidences = [r.confidence for r in factors.values() if r.confidence]

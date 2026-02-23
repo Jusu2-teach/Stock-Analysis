@@ -1309,6 +1309,28 @@ class DeltaDecayFactor:
                 score *= 0.70
             score = max(0.0, min(1.0, score))
 
+        # v4.9: 成长轨迹折扣 — 营收/利润双增长时效率下滑更可能是周期性的
+        # 药明康德: 营收增长15%, 利润增长8%, 但ROIC/ROE因行业下行而下降
+        #   → δ_decay=0.89 (因ROIC下降), 但这是CRO行业周期性现象, 非结构性恶化
+        # 逻辑: 如果公司的顶线(营收)和底线(利润)都在增长, 效率指标的下降
+        #        更可能是暂时性的(大量投入扩产、行业周期等), 不应获得与真正衰退等同的惩罚
+        if score > 0.0:
+            revenue_cagr = get_feature(probes, "cagr", "revenue")
+            profit_cagr = get_feature(probes, "cagr", "profit")
+            if revenue_cagr is None:
+                revenue_cagr = get_feature(probes, "log_slope", "revenue")
+            if profit_cagr is None:
+                profit_cagr = get_feature(probes, "log_slope", "profit")
+            if (revenue_cagr is not None and revenue_cagr > 0.08
+                    and profit_cagr is not None and profit_cagr > 0.05):
+                # 营收增长>8% + 利润增长>5% → 强有力的周期性证据
+                score *= 0.70
+            elif (revenue_cagr is not None and revenue_cagr > 0.05
+                    and profit_cagr is not None and profit_cagr > 0.0):
+                # 营收增长>5% + 利润为正 → 中等周期性证据
+                score *= 0.80
+            score = max(0.0, min(1.0, score))
+
         # 衰退严重程度
         if score > 0.7:
             decay_severity = "severe"
