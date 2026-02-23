@@ -205,6 +205,30 @@ def detect_heteroscedasticity(residuals: np.ndarray, x: np.ndarray) -> Tuple[boo
 
     return bool(has_hetero), float(correlation)
 
+
+def durbin_watson(residuals: np.ndarray) -> float:
+    """Durbin-Watson 序列相关检验
+
+    检测 OLS 残差是否存在一阶自相关 (财务时序常见):
+        DW ≈ 2(1 - ρ), 其中 ρ = lag-1 自相关系数
+        DW ≈ 2.0: 无自相关 (理想)
+        DW < 1.5: 正自相关 (趋势惯性, OLS std_err 低估)
+        DW > 2.5: 负自相关 (均值回复)
+
+    对于 n=5-10 的小样本, DW 临界值较宽, 仅作为诊断信息。
+    当 DW < 1.5 时, 用 Newey-West 调整因子放大 std_err。
+
+    Returns:
+        DW 统计量 [0, 4]
+    """
+    n = len(residuals)
+    if n < 3:
+        return 2.0  # 样本不足, 返回中性值
+    diff = np.diff(residuals)
+    dw = float(np.sum(diff ** 2) / np.sum(residuals ** 2))
+    return dw
+
+
 class LogTrendProbe:
     """Log trend probe with adaptive transformation.
 
@@ -360,6 +384,17 @@ class LogTrendProbe:
         ols_residuals = transformed - (log_slope * years + log_intercept)
         has_heteroscedasticity, hetero_corr = detect_heteroscedasticity(ols_residuals, years)
 
+        # ========== 3.5. v5.3 Durbin-Watson 序列相关检测 ==========
+        # 财务时序常有趋势惯性(正自相关), DW<1.5 时 OLS std_err 低估
+        dw_stat = durbin_watson(ols_residuals)
+        has_autocorrelation = dw_stat < 1.5 or dw_stat > 2.5
+
+        # Newey-West 近似调整: DW 偏离2.0时放大 std_err
+        # NW_factor = sqrt(1 + 2*ρ), ρ ≈ 1 - DW/2
+        rho_hat = 1.0 - dw_stat / 2.0
+        nw_factor = max(1.0, (1.0 + 2.0 * abs(rho_hat)) ** 0.5)
+        adjusted_std_err = std_err * nw_factor
+
         # ========== 4. Bootstrap 置信区间 ==========
         # 对于小样本，Bootstrap 比 t 分布更可靠
         # v5.1: 确定性种子 = 数据哈希值，保证可重复性
@@ -388,7 +423,8 @@ class LogTrendProbe:
             'r_value': float(r_value),
             'r_squared': float(r_value ** 2),
             'p_value': float(p_value),
-            'std_err': float(std_err),
+            'std_err': float(adjusted_std_err),  # v5.3: Newey-West adjusted
+            'std_err_raw': float(std_err),  # 原始 OLS std_err
             'crosses_zero': crosses_zero,
             'transformed': transformed,
             'years': years,
@@ -403,6 +439,11 @@ class LogTrendProbe:
             # 异方差诊断
             'has_heteroscedasticity': has_heteroscedasticity,
             'heteroscedasticity_correlation': float(hetero_corr),
+
+            # v5.3 序列相关诊断
+            'durbin_watson': float(dw_stat),
+            'has_autocorrelation': has_autocorrelation,
+            'nw_adjustment_factor': float(nw_factor),
 
             # Bootstrap 置信区间
             'bootstrap_slope_median': float(boot_median),
@@ -523,6 +564,23 @@ class LogTrendProbe:
                 )
             )
 
+        # v5.3: Durbin-Watson 自相关警告
+        dw_val = trend_metrics.get('durbin_watson', 2.0)
+        if trend_metrics.get('has_autocorrelation', False):
+            direction = "positive" if dw_val < 1.5 else "negative"
+            warnings.append(
+                TrendWarning(
+                    code="AUTOCORRELATION_DETECTED",
+                    level="info",
+                    message=f"DW={dw_val:.2f}, {direction} autocorrelation — std_err adjusted by NW factor {trend_metrics.get('nw_adjustment_factor', 1.0):.2f}",
+                    context={
+                        "durbin_watson": dw_val,
+                        "direction": direction,
+                        "nw_factor": trend_metrics.get('nw_adjustment_factor', 1.0),
+                    },
+                )
+            )
+
         metadata = {
             "log_transform": trend_metrics.get('transform_method', 'arcsinh'),
             "periods_used": len(trend_metrics['years']),
@@ -535,6 +593,9 @@ class LogTrendProbe:
             "fused_slope": trend_metrics.get('fused_slope'),
             "slope_method": trend_metrics.get('slope_method'),
             "has_heteroscedasticity": trend_metrics.get('has_heteroscedasticity', False),
+            "durbin_watson": trend_metrics.get('durbin_watson'),
+            "has_autocorrelation": trend_metrics.get('has_autocorrelation', False),
+            "nw_adjustment_factor": trend_metrics.get('nw_adjustment_factor', 1.0),
             "bootstrap_ci": {
                 "median": trend_metrics.get('bootstrap_slope_median'),
                 "low": trend_metrics.get('bootstrap_ci_low'),

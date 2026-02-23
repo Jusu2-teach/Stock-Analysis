@@ -719,15 +719,26 @@ def _cross_sectional_normalize(
 
     def _industry_zscore(raw: Dict[Any, List[Optional[float]]]
                          ) -> Dict[Any, List[Optional[float]]]:
-        """对每个因子/求解器, 在行业内做 z-score 标准化"""
+        """对每个因子/求解器, 在行业内做 z-score 标准化
+
+        v5.3 改进: 小行业 (<MIN_INDUSTRY_SIZE) 退化为全样本 z-score,
+        而非保留 raw score. 保留 raw score 导致它们与已 z-scored 的
+        大行业数据处于不同尺度, 后续百分位排名时产生偏差.
+        """
         result = {}
         for key, vals in raw.items():
             zscored = list(vals)  # shallow copy
+
+            # 收集小行业成员索引 (用于全样本 z-score fallback)
+            small_industry_indices = []
+
             for ind, indices in industry_map.items():
                 if len(indices) < MIN_INDUSTRY_SIZE:
-                    continue  # 小行业样本不足, 保留原始值
+                    small_industry_indices.extend(indices)
+                    continue  # 小行业不做行业内 z-score
                 ind_vals = [vals[j] for j in indices if vals[j] is not None]
                 if len(ind_vals) < 3:
+                    small_industry_indices.extend(indices)
                     continue
                 mu = sum(ind_vals) / len(ind_vals)
                 var = sum((v - mu) ** 2 for v in ind_vals) / len(ind_vals)
@@ -737,6 +748,19 @@ def _cross_sectional_normalize(
                 for j in indices:
                     if vals[j] is not None:
                         zscored[j] = (vals[j] - mu) / sigma
+
+            # v5.3: 小行业退化为全样本 z-score
+            if small_industry_indices:
+                pool_vals = [vals[j] for j in small_industry_indices if vals[j] is not None]
+                if len(pool_vals) >= 3:
+                    mu_pool = sum(pool_vals) / len(pool_vals)
+                    var_pool = sum((v - mu_pool) ** 2 for v in pool_vals) / len(pool_vals)
+                    sigma_pool = var_pool ** 0.5
+                    if sigma_pool > 1e-10:
+                        for j in small_industry_indices:
+                            if vals[j] is not None:
+                                zscored[j] = (vals[j] - mu_pool) / sigma_pool
+
             result[key] = zscored
         return result
 
@@ -813,15 +837,22 @@ def _cross_sectional_normalize(
         # ── Combined score ──
         final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
-        # ══════ Hard constraints (v5.1: 仅真正价值毁灭) ══════
-        # v5.0 的 ROIC<5%/8% 双阈值导致 73% 公司被硬约束，
-        # 使百分位排名对大部分公司无效。v5.1 只保留 ROIC<3%
-        # (低于任何行业 WACC 下界，真正的资本毁灭)。
-        # ROIC 的信号已通过 Gravity solver 在因子端充分表达。
+        # ══════ Hard constraints (v5.3: 分级ROIC约束) ══════
+        # v5.1 binary cap: ROIC<3% → 统一cap=0.40 (42%宇宙集)
+        #   问题: ROIC=-10%与ROIC=2.9%同等处理, 底部42%失去区分度
+        # v5.3 graduated: 按价值毁灭严重程度分3档, 保留底部区分度
+        #   ROIC<0%  → cap=0.25 (负回报, 严重价值毁灭)
+        #   0%~1.5% → cap=0.30 (远低于任何行业WACC)
+        #   1.5%~3% → cap=0.40 (接近但仍低于WACC下界)
         roic_actual = _extract_roic_actual(p)
         if roic_actual is not None:
-            if roic_actual < 3.0:
-                # ROIC < 3%: 显著价值毁灭，不应高于中等评级
+            if roic_actual < 0.0:
+                final_score = min(final_score, 0.25)
+                n_hard_constrained += 1
+            elif roic_actual < 1.5:
+                final_score = min(final_score, 0.30)
+                n_hard_constrained += 1
+            elif roic_actual < 3.0:
                 final_score = min(final_score, 0.40)
                 n_hard_constrained += 1
 
@@ -968,7 +999,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "5.2.0",
+            "algo_version": "5.3.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,
