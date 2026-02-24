@@ -609,13 +609,31 @@ class CausalBayesianEvaluator:
             combined_result.total_penalty += result.total_penalty
             combined_result.total_bonus += result.total_bonus
 
-        # v4.1.1: ≥5 指标共识否决
-        # 8个指标中 roic↔roe, gross_margin↔net_margin 高度相关,
-        # ≥4 很容易被相关指标同时触发 (误杀); ≥5 要求真正的多维度衰退
-        if veto_count >= 5:
+        # v7.1: 去共线性的独立因子组否决
+        # 高度相关指标分组: ROIC↔ROE(ρ≈0.8), Gross↔Net Margin(ρ≈0.6), Revenue↔Profit(ρ≈0.7)
+        # 同一组内多个指标触发 veto 仅计 1 票, 避免单一基本面问题同时触发 4-6 票
+        VETO_GROUPS = {
+            "return":   ["roic", "roe"],          # 回报率组
+            "margin":   ["gross_margin", "net_margin"],  # 利润率组
+            "growth":   ["revenue", "profit"],     # 营收/利润增长组
+            "cash":     ["ocf"],                   # 现金流组 (独立)
+            "capital":  ["roiic"],                 # 增量资本效率组 (独立)
+        }
+        metric_to_group = {m: g for g, ms in VETO_GROUPS.items() for m in ms}
+        vetoed_groups = set()
+        for reason in veto_reasons:
+            # veto_reasons format: "[metric] reason_text"
+            metric_tag = reason.split("]")[0].strip("[")
+            group = metric_to_group.get(metric_tag)
+            if group:
+                vetoed_groups.add(group)
+
+        # ≥3 独立组共识否决 (5 组中真正多维度衰退)
+        if len(vetoed_groups) >= 3:
             combined_result.vetoed = True
             combined_result.veto_reason = (
-                f"多指标共识否决({veto_count}个): " + "; ".join(veto_reasons)
+                f"多维度共识否决({len(vetoed_groups)}/{len(VETO_GROUPS)}组, "
+                f"{veto_count}个指标): " + "; ".join(veto_reasons)
             )
 
         # Cap
@@ -959,6 +977,29 @@ class CausalBayesianEvaluator:
         if _tl_divergence_count >= 2:
             # 多指标趋势-水平背离: 公司处于"虚假繁荣"状态
             base_score -= 3 * _tl_divergence_count
+
+        # v7.1: 连续盈利质量检测 (Accruals Quality — Sloan 1996)
+        # 核心原理: 高应计利润(profit >> OCF)是盈利不可持续的最强信号之一
+        # Sloan (1996) 证明: 高 accruals 公司未来回报显著低于低 accruals 公司
+        # 当前 earnings_ocf_divergence 规则是二元信号，此处增加连续量化惩罚
+        profit_trend = features.get("profit_trend", 0.0)
+        ocf_trend = features.get("ocf_trend", 0.0)
+        profit_level = features.get("profit_level", 0.0)
+        ocf_level = features.get("ocf_level", 0.0)
+        # 趋势维度: 利润增长但现金流停滞/下降 → 增量盈利质量差
+        if profit_trend > 0.05 and ocf_trend < 0.0:
+            accrual_divergence = profit_trend - ocf_trend
+            accrual_penalty = min(5.0, accrual_divergence * 8.0)  # 最多 -5 分
+            base_score -= accrual_penalty
+        # 水平维度: 利润远超现金流 → 存量盈利含金量低
+        if profit_level > 0.5 and ocf_level > 0:
+            cash_conversion = ocf_level / max(profit_level, 0.01)
+            if cash_conversion < 0.50:
+                # 现金转化率 <50% → 显著扣分 (A股应收账款操纵常见)
+                base_score -= min(4.0, (0.50 - cash_conversion) * 8.0)
+            elif cash_conversion < 0.70:
+                # 现金转化率 50-70% → 轻微扣分
+                base_score -= min(2.0, (0.70 - cash_conversion) * 5.0)
 
         # v4.2: 多指标恶化检测
         # TRUTH 有 δ_decay/V_factor 检测衰退和虚假成长，Evaluator 需要对等能力
