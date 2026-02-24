@@ -414,6 +414,19 @@ class LogTrendProbe:
             fused_slope = 0.6 * log_slope + 0.4 * wls_slope
             slope_method = "ols_dominant"
 
+        # ========== 6. v7.2 Empirical Bayes Shrinkage ==========
+        # 高噪声序列 (std_err 大) 将斜率收缩向零 (保守先验)
+        # ROIIC (CV=1.188) 的 slope 估计本质是噪声, 需要正则化
+        # shrunk_slope = (1 - B) * fused_slope + B * 0
+        # B = σ²_slope / (σ²_slope + τ²)
+        # τ² = 全市场 log_slope 方差的经验估计 ≈ 0.04
+        tau_squared = 0.04  # 先验: 全市场 log_slope 标准差 ≈ 0.20
+        slope_var = adjusted_std_err ** 2
+        shrinkage_B = slope_var / (slope_var + tau_squared)
+        shrunk_slope = (1.0 - shrinkage_B) * fused_slope
+        # shrinkage_B → 1: 高噪声 → 收缩到零 (ROIIC: ~0.6-0.8)
+        # shrinkage_B → 0: 低噪声 → 保留原始估计 (ROIC: ~0.1-0.2)
+
         return {
             # 核心指标
             'log_slope': float(log_slope),
@@ -453,6 +466,10 @@ class LogTrendProbe:
             # 融合估计
             'fused_slope': float(fused_slope),
             'slope_method': slope_method,
+
+            # v7.2 Bayesian shrinkage
+            'shrunk_slope': float(shrunk_slope),
+            'shrinkage_intensity': float(shrinkage_B),
         }
 
     def _compute_cagr(

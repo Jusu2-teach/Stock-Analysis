@@ -95,8 +95,9 @@ class IQROutlierDetector(OutlierDetector):
 
         cleaned = arr.copy()
         if has_outliers:
-            median = np.median(arr[~outlier_mask])
-            cleaned[outlier_mask] = median
+            # v7.2: Winsorization 替代中位数替换 (Tukey/MSCI Barra 标准)
+            # 中位数替换会破坏极端值的方向信息，Winsorize 保留方向但限制杠杆
+            cleaned = np.clip(arr, lower_bound, upper_bound)
 
         warnings = []
         if has_outliers:
@@ -170,8 +171,10 @@ class ZScoreOutlierDetector(OutlierDetector):
 
         cleaned = arr.copy()
         if has_outliers:
-            median = np.median(arr[~outlier_mask])
-            cleaned[outlier_mask] = median
+            # v7.2: Winsorization 替代中位数替换
+            lower_clip = mean - threshold * std
+            upper_clip = mean + threshold * std
+            cleaned = np.clip(arr, lower_clip, upper_clip)
 
         warnings = []
         if has_outliers:
@@ -242,7 +245,10 @@ class MADOutlierDetector(OutlierDetector):
 
         cleaned = arr.copy()
         if has_outliers:
-            cleaned[outlier_mask] = median
+            # v7.2: Winsorization 替代中位数替换
+            lower_clip = median - threshold * mad_scaled
+            upper_clip = median + threshold * mad_scaled
+            cleaned = np.clip(arr, lower_clip, upper_clip)
 
         warnings = []
         if has_outliers:
