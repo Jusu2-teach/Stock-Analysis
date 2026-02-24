@@ -151,11 +151,12 @@ def bootstrap_slope_ci(
         seed: 随机种子
 
     Returns:
-        (slope_median, ci_lower, ci_upper)
+        (slope_median, ci_lower, ci_upper, slopes_var)
+        slopes_var: bootstrap slopes 的方差 (用于 Empirical Bayes τ² 估计)
     """
     n = len(x)
     if n < 3:
-        return 0.0, float('-inf'), float('inf')
+        return 0.0, float('-inf'), float('inf'), 0.0
 
     rng = np.random.default_rng(seed)
 
@@ -180,7 +181,7 @@ def bootstrap_slope_ci(
         var_x = np.sum(x_centered ** 2)
 
         if var_x < 1e-10:
-            return 0.0, float('-inf'), float('inf')
+            return 0.0, float('-inf'), float('inf'), 0.0
 
         y_star_mean = y_star.mean(axis=1, keepdims=True)  # (B, 1)
         y_star_centered = y_star - y_star_mean  # (B, n)
@@ -204,21 +205,25 @@ def bootstrap_slope_ci(
 
         valid_mask = variance > 1e-10
         if valid_mask.sum() < 50:
-            return 0.0, float('-inf'), float('inf')
+            return 0.0, float('-inf'), float('inf'), 0.0
 
         slopes = covariance[valid_mask] / variance[valid_mask]
 
     # 过滤非有限值
     slopes = slopes[np.isfinite(slopes)]
     if len(slopes) < 50:
-        return 0.0, float('-inf'), float('inf')
+        return 0.0, float('-inf'), float('inf'), 0.0
 
     alpha = 1 - ci_level
     ci_lower = np.percentile(slopes, alpha / 2 * 100)
     ci_upper = np.percentile(slopes, (1 - alpha / 2) * 100)
     slope_median = np.median(slopes)
 
-    return float(slope_median), float(ci_lower), float(ci_upper)
+    # v9.0 fix: 返回 slopes 的方差, 供 Empirical Bayes τ² 估计使用
+    # 之前 slopes 是 bootstrap_slope_ci 的局部变量, _compute_trend_metrics 无法访问
+    slopes_var = float(np.var(slopes)) if len(slopes) > 10 else 0.0
+
+    return float(slope_median), float(ci_lower), float(ci_upper), slopes_var
 
 
 def detect_heteroscedasticity(residuals: np.ndarray, x: np.ndarray) -> Tuple[bool, float]:
@@ -509,7 +514,7 @@ class LogTrendProbe:
         # 对于小样本，Bootstrap 比 t 分布更可靠
         # v5.1: 确定性种子 = 数据哈希值，保证可重复性
         _seed = int(hash(values.tobytes()) % (2**31))
-        boot_median, boot_ci_low, boot_ci_high = bootstrap_slope_ci(
+        boot_median, boot_ci_low, boot_ci_high, boot_slopes_var = bootstrap_slope_ci(
             years, transformed, n_bootstrap=500, ci_level=0.95, seed=_seed
         )
 
@@ -538,7 +543,10 @@ class LogTrendProbe:
         # References:
         #   - Morris, C.N. (1983). JASA, 78(381), 47-55.
         #   - Efron, B. (2010). Large-Scale Inference. Cambridge University Press.
-        tau_squared_bootstrap = float(np.var(slopes)) if 'slopes' in dir() and len(slopes) > 10 else None
+        # v9.0 bugfix: 之前用 'slopes' in dir() 判断 — slopes 是 bootstrap_slope_ci
+        # 的局部变量, 在此作用域永远不可见, 导致 τ² 始终回退到硬编码 0.04
+        # 修复: bootstrap_slope_ci 现在直接返回 slopes_var
+        tau_squared_bootstrap = boot_slopes_var if boot_slopes_var > 1e-6 else None
         if tau_squared_bootstrap is not None and tau_squared_bootstrap > 1e-6:
             # 数据驱动的 τ²: bootstrap 分散度扣除测量噪声
             # τ² = max(Var_bootstrap - σ²_ols, floor)
