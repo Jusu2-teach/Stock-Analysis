@@ -26,7 +26,6 @@
 更新: 2026-01-22 - 架构重构，evaluators 与 truth 并行，各自产出独立报告
 """
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -39,16 +38,6 @@ from orchestrator.decorators.register import register_method
 # ═══════════════════════════════════════════════════════════════════════════════
 # 综合报告引擎 (基于 Evaluators 规则引擎)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# 策略名称映射
-STRATEGY_NAMES = {
-    "high_growth": "🚀 高成长",
-    "turnaround": "🔄 困境反转",
-    "stable_dividend": "💰 稳定分红",
-    "cyclical_bottom": "📉 周期底部",
-    "moat_defense": "🏰 护城河防守",
-}
-
 
 def _generate_comprehensive_section(evaluation: Dict[str, Any]) -> List[str]:
     """
@@ -774,93 +763,6 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
     return lines
 
 
-def _generate_compact_row(profile: Dict[str, Any]) -> str:
-    """生成紧凑的表格行（用于汇总列表）——展示全部6因子+3求解器"""
-    ts_code = profile.get("ts_code", "")
-    name = (profile.get("name") or "")[:8]
-    industry = (profile.get("industry") or "")[:6]
-    final_score = profile.get("final_score", 0) or 0
-    grade = profile.get("grade", "-")
-    signal = profile.get("signal", "-")
-    confidence = profile.get("confidence", 0) or 0
-
-    # 提取全部因子分数
-    factors = profile.get("factors", {})
-    def _get_factor(fid_lower, fid_upper):
-        fd = factors.get(fid_lower) or factors.get(fid_upper, {})
-        return fd.get("score", 0) if isinstance(fd, dict) else (fd or 0)
-
-    alpha = _get_factor("alpha", "ALPHA")
-    beta = _get_factor("beta", "BETA")
-    gamma = _get_factor("gamma", "GAMMA")
-    d_fraud = _get_factor("delta_fraud", "DELTA_FRAUD")
-    d_decay = _get_factor("delta_decay", "DELTA_DECAY")
-    verif = _get_factor("verification", "VERIFICATION")
-
-    # 提取全部求解器分数
-    solvers = profile.get("solvers", {})
-    def _get_solver(sid_lower, sid_upper):
-        sd = solvers.get(sid_lower) or solvers.get(sid_upper, {})
-        return sd.get("score", 0) if isinstance(sd, dict) else (sd or 0)
-
-    gravity = _get_solver("gravity", "GRAVITY")
-    velocity = _get_solver("velocity", "VELOCITY")
-    structure = _get_solver("structure", "STRUCTURE")
-
-    grade_emoji = GRADE_EMOJI.get(grade, "")
-    signal_emoji = SIGNAL_EMOJI.get(signal, "")
-
-    factor_str = f"α:{alpha:.2f} β:{beta:.2f} γ:{gamma:.2f} δf:{d_fraud:.2f} δd:{d_decay:.2f} V:{verif:.2f}"
-    solver_str = f"G:{gravity:.2f} V:{velocity:.2f} S:{structure:.2f}"
-
-    return f"| {ts_code} | {name} | {industry} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {confidence:.0%} | {factor_str} | {solver_str} |"
-
-
-def _generate_compact_row_v2(profile: Dict[str, Any]) -> str:
-    """生成增强版紧凑表格行 — 包含决策 + 生命周期列（用于 TRUTH 报告 v4.0）"""
-    ts_code = profile.get("ts_code", "")
-    name = (profile.get("name") or "")[:8]
-    industry = (profile.get("industry") or "")[:6]
-    final_score = profile.get("final_score", 0) or 0
-    grade = profile.get("grade", "-")
-    signal = profile.get("signal", "-")
-
-    # 决策 & 生命周期（由 report_truth 预注入）
-    decision = profile.get("_decision", "")
-    lifecycle = profile.get("_lifecycle", "")
-    dec_str = DECISION_EMOJI.get(decision, "") + decision
-    lc_str = LIFECYCLE_LABELS.get(lifecycle, lifecycle)
-
-    # 提取关键因子（精简显示）
-    factors = profile.get("factors", {})
-    def _get_f(fid):
-        fd = factors.get(fid) or factors.get(fid.upper(), {})
-        return fd.get("score", 0) if isinstance(fd, dict) else (fd or 0)
-
-    gamma = _get_f("gamma")
-    d_fraud = _get_f("delta_fraud")
-    d_decay = _get_f("delta_decay")
-    verif = _get_f("verification")
-
-    grade_emoji = GRADE_EMOJI.get(grade, "")
-    signal_emoji = SIGNAL_EMOJI.get(signal, "")
-
-    factor_str = f"γ:{gamma:.2f} δf:{d_fraud:.2f} δd:{d_decay:.2f} V:{verif:.2f}"
-
-    return f"| {ts_code} | {name} | {industry} | {final_score:.1%} | {grade_emoji}{grade} | {signal_emoji}{signal} | {dec_str} | {lc_str} | {factor_str} |"
-
-
-def _get_top_warning(profile: Dict[str, Any]) -> str:
-    """获取最重要的警告信息"""
-    warnings = profile.get("warnings", [])
-    if not warnings:
-        return "-"
-    # 取第一个警告的标题
-    w = warnings[0]
-    title = w.get("title", "") if isinstance(w, dict) else str(w)
-    return title[:20] + "..." if len(title) > 20 else title
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRUTH 决策 & 生命周期推断 — 从八维基因因子推导，与 Evaluator 对齐但独立实现
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1058,13 +960,6 @@ LIFECYCLE_LABELS = {
     "declining": "📉 衰退期",
     "turnaround": "🔄 困境反转",
     "distressed": "⚠️ 严重困境",
-}
-
-DECISION_LABELS = {
-    "quality": "⭐ 优质",
-    "average": "🟡 良好",
-    "poor": "🟠 一般",
-    "veto": "❌ 否决",
 }
 
 DECISION_EMOJI = {"quality": "⭐", "average": "🟡", "poor": "🟠", "veto": "❌"}
@@ -1555,7 +1450,7 @@ def report_truth(
 
     # 写入文件
     try:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
         logger.info(f"✅ TRUTH 报告已生成: {output_path} (约 {len(lines)} 行)")

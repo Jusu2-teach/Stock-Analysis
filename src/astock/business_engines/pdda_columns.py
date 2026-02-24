@@ -12,9 +12,6 @@ trend 层输出格式: {metric}_{feature}，如 roic_slope, roe_cv
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, Optional
-
 
 class PDDAColumns:
     """
@@ -130,86 +127,6 @@ class PDDAColumns:
         return any(column_name.endswith(s) for s in suffixes)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 结构化探针输入 (类似 truth 的 ProbeInput，但更通用)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@dataclass(frozen=True)
-class ProbeData:
-    """单个指标的探针数据（不可变）
-
-    设计原则:
-        1. frozen=True 保证线程安全
-        2. get() 方法提供安全访问
-        3. 保留 metric_name 便于追溯
-
-    Example:
-        >>> probe = ProbeData(metric_name="roic", features={"slope": 0.05, "cv": 0.2})
-        >>> probe.get("slope", 0.0)
-        0.05
-        >>> probe.get("missing", -1.0)
-        -1.0
-    """
-    metric_name: str
-    features: Mapping[str, float] = field(default_factory=dict)
-
-    def get(self, feature: str, default: float = 0.0) -> float:
-        """安全获取特征值"""
-        return self.features.get(feature, default)
-
-    def get_col(self, feature: str, default: float = 0.0) -> float:
-        """通过 PDDAColumns 常量获取特征值
-
-        Example:
-            >>> probe.get_col(PDDAColumns.SLOPE, 0.0)
-        """
-        return self.features.get(feature, default)
-
-    def has(self, feature: str) -> bool:
-        """检查是否有某特征"""
-        return feature in self.features and self.features[feature] is not None
-
-
-@dataclass(frozen=True)
-class CompanyProbes:
-    """单个公司的所有探针数据（不可变）
-
-    Example:
-        >>> probes = CompanyProbes(
-        ...     ts_code="000001.SZ",
-        ...     name="平安银行",
-        ...     industry="银行",
-        ...     metrics={"roic": ProbeData(...), "roe": ProbeData(...)}
-        ... )
-        >>> roic_slope = probes.get_feature("roic", "slope", 0.0)
-    """
-    ts_code: str
-    name: str = ""
-    industry: str = ""
-    metrics: Mapping[str, ProbeData] = field(default_factory=dict)
-
-    def get_probe(self, metric: str) -> Optional[ProbeData]:
-        """获取指定指标的探针数据"""
-        return self.metrics.get(metric)
-
-    def get_feature(self, metric: str, feature: str, default: float = 0.0) -> float:
-        """获取指定指标的指定特征值"""
-        probe = self.metrics.get(metric)
-        if probe is None:
-            return default
-        return probe.get(feature, default)
-
-    def has_metric(self, metric: str) -> bool:
-        """检查是否有某指标"""
-        return metric in self.metrics
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 导出
-# ═══════════════════════════════════════════════════════════════════════════════
-
 __all__ = [
     "PDDAColumns",
-    "ProbeData",
-    "CompanyProbes",
 ]

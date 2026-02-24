@@ -73,6 +73,10 @@ from ..pdda_columns import PDDAColumns
 
 logger = logging.getLogger(__name__)
 
+# 负向因子: raw score 越高越差 → 需要反转
+# α(周期性高=波动大), β(重资产), λ(高杠杆), δ_fraud(欺诈), δ_decay(衰退)
+_NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
+
 
 # ============================================================================
 # 元数据列识别 (使用共享的 PDDAColumns)
@@ -165,10 +169,9 @@ def _inject_actual_values(
 ) -> Dict[SolverId, SolverResult]:
     """注入实际观测值到动态阈值，使 DynamicThreshold.passed 生效
 
-    - Gravity solver: 注入实际 ROIC (weighted_avg) 到 roic 阈值
-      v4.8: 同时注入 roic_latest_value 到 components (供 ROIC 门控使用)
-    - Velocity solver: 注入实际 revenue 增长率到 growth 阈值
-    - Structure solver: 注入实际 gross_margin 到 moat_width 阈值
+    - Gravity: 注入实际 ROIC (weighted_avg/latest) + roic_latest_value 组件
+    - Velocity: 注入实际 revenue 增长率到 growth 阈值
+    - Structure: 注入实际 gross_margin 到 moat_width 阈值
     """
     updated: Dict[SolverId, SolverResult] = {}
 
@@ -179,7 +182,7 @@ def _inject_actual_values(
 
         new_thresholds: Dict[str, DynamicThreshold] = {}
         changed = False
-        # v4.8: 收集额外组件值
+        # 收集额外组件值
         extra_components: Dict[str, float] = {}
 
         for th_name, th in result.thresholds.items():
@@ -190,7 +193,7 @@ def _inject_actual_values(
                 actual = _extract_actual_from_probes(probes, "roic", "weighted_avg")
                 if actual is None:
                     actual = _extract_actual_from_probes(probes, "roic", "latest_value")
-                # v4.8: 同时提取 latest_value (供 ROIC 绝对水平门控使用)
+                # 同时提取 latest_value (供 ROIC 绝对水平门控使用)
                 # weighted_avg 可能掩盖近期恶化 (如: 华宝新能 weighted=34%, latest=3.3%)
                 roic_latest = _extract_actual_from_probes(probes, "roic", "latest_value")
                 if roic_latest is not None:
@@ -221,12 +224,12 @@ def _inject_actual_values(
                 new_thresholds[th_name] = th
 
         if changed:
-            # v4.8: 合并额外组件值到 solver result
+            # 合并额外组件值到 solver result
             merged_components = dict(result.components)
             merged_components.update(extra_components)
             new_score = result.score  # 默认: 保持原始分数
 
-            # ══════ v6.0: Gravity ROIC Excess Return Enhancement ══════
+            # ══════ Gravity ROIC Excess Return Enhancement ══════
             # 问题: 原始 Gravity 分数 = sigmoid(-(threshold-10)/4), 即"门槛高低"
             #       这是因子的非线性变换, 不包含独立信息 (100%依赖因子输入)
             # 解决: 混合"门槛风险分" + "实际超额回报分", 注入真实业绩数据
@@ -241,9 +244,7 @@ def _inject_actual_values(
                 roic_th = new_thresholds.get("roic")
                 if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
                     threshold = result.components.get("roic_threshold", 12.0)
-                    # v6.1: 优先使用 latest_value (当前业绩) 而非 weighted_avg (历史均值)
-                    # weighted_avg 可能掩盖近期恶化 (如华宝新能: weighted=34%, latest=3.3%)
-                    # 而 excess return 应反映 CURRENT 盈利能力 vs 要求
+                    # 优先使用 latest_value (当前业绩) 而非 weighted_avg (历史均值)
                     roic_for_excess = merged_components.get("roic_latest_value", roic_th.actual_value)
                     excess = roic_for_excess - threshold
                     # sigmoid: ±5pp ROIC excess → ±1, 区分度充分
@@ -391,23 +392,14 @@ def _calibrate(
     config: TruthConfig,
     data_years: int = 10,
 ) -> tuple:
-    """v5.0 校准层: 计算原始加权分数
+    """校准层: 计算原始加权分数 → 供百分位排名输入
 
-    v5.0 重大架构变更:
-      - 删除 v4.x 的 6 层门控级联 (δ_decay门控 / ROIC阶梯 / 成长折扣 / 余裕度调整)
-      - 原始得分仅用于 _cross_sectional_normalize() 的百分位排名输入
-      - 所有硬约束 (ROIC地板) 移至 _cross_sectional_normalize()
-      - 仅保留: 熔断 → 0 分
+    原始得分仅作 _cross_sectional_normalize() 的百分位排名输入。
+    所有硬约束 (ROIC地板等) 在 _cross_sectional_normalize() 中实施。
+    熔断项直接返回 0 分。
 
     设计原理 (AQR QMJ / MSCI Quality 方法论):
-      绝对分数的门控 + 阈值会导致:
-        1) 分数聚集 (159家公司在cap值上)
-        2) 阈值附近的排名扭曲 (ROIC=11.9% vs 12.1% 命运迥异)
-        3) 手工调参黑洞 (6层×N参数, 每改一个连锁反应)
-      百分位排名的优势:
-        1) 天然均匀分布 → 无聚集
-        2) 无边界效应 → 排名连续
-        3) 零手工参数 → 数据自适应
+      百分位排名天然均匀分布、无边界效应、零手工参数。
     """
     if is_meltdown:
         return 0.0, TruthSignal.FRAUD_ALERT, TruthGrade.F, 0.0
@@ -415,7 +407,6 @@ def _calibrate(
     scoring = config.scoring
 
     # ── Factor weighted average (raw) ──
-    # v7.3: 清理重复键 (v7.0 新增π时残留了旧权重定义)
     factor_weight_map = {
         FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
         FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
@@ -426,11 +417,6 @@ def _calibrate(
         FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.16),
         FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.12),
     }
-    # 负向因子: score 越高越差 → 反转
-    # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
-    # v7.0: π(盈利能力)是正向因子
-    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
-
     weighted_sum = 0.0
     total_weight = 0.0
     for fid, weight in factor_weight_map.items():
@@ -638,7 +624,7 @@ def _calculate_summary(profiles: List[TruthProfile]) -> Dict[str, Any]:
 
 
 # ============================================================================
-# v5.0 Cross-Sectional Percentile Normalization
+# Cross-Sectional Percentile Normalization
 # ============================================================================
 
 def _percentile_ranks(values: List[Optional[float]]) -> List[float]:
@@ -683,7 +669,7 @@ def _extract_roic_actual(profile: TruthProfile) -> Optional[float]:
     gravity = profile.solvers.get(SolverId.GRAVITY)
     if not gravity:
         return None
-    # 优先 latest (v4.8: 防止 weighted_avg 掩盖近期崩塌)
+    # 优先 latest (防止 weighted_avg 掩盖近期崩塌)
     latest = gravity.components.get("roic_latest_value")
     if latest is not None:
         return float(latest)
@@ -699,22 +685,12 @@ def _cross_sectional_normalize(
     profiles: List[TruthProfile],
     config: TruthConfig,
 ) -> List[TruthProfile]:
-    """v6.0 Cross-Sectional Percentile Normalization + Industry Neutralization + Momentum + Dispersion
+    """Cross-Sectional Percentile Normalization + Industry Neutralization + Momentum + Dispersion
 
     方法论来源: AQR Quality-Minus-Junk (QMJ), MSCI Quality Index, GMO Quality
     核心思路: 原始分数 → 行业内z-score → 全样本百分位排名 → 加权合成 → 百分位评级
 
-    v5.2 新增:
-    ┌─────────────────────────────────────────────────┐
-    │ 行业中性化 (Industry Neutralization)             │
-    │                                                   │
-    │ 问题: 软件业天然ROIC=30%, 钢铁业天然ROIC=5%     │
-    │   → 全市场直接排名导致软件业系统性偏低           │
-    │                                                   │
-    │ 解决: 行业内z-score → 比较的是"同行中的相对位置" │
-    │   z_{i,ind} = (x_i - μ_ind) / σ_ind             │
-    │   然后再做全样本百分位排名                        │
-    └─────────────────────────────────────────────────┘
+    行业中性化: z_{i,ind} = (x_i - μ_ind) / σ_ind, 消除行业间天然差异
     """
     if len(profiles) < 5:
         logger.warning(f"样本量不足 ({len(profiles)} < 5), 跳过 cross-sectional normalization")
@@ -740,7 +716,7 @@ def _cross_sectional_normalize(
             r = p.solvers.get(sid)
             solver_raw[sid].append(r.score if r and r.score is not None else None)
 
-    # ══════ Step 1.5: v5.2 行业中性化 (Industry Neutralization) ══════
+    # ══════ Step 1.5: 行业中性化 (Industry Neutralization) ══════
     # AQR QMJ / MSCI Quality 标准做法:
     #   在行业内做 z-score 标准化, 消除行业系统性差异
     #   z_{i,ind} = (x_i - μ_ind) / σ_ind
@@ -755,12 +731,9 @@ def _cross_sectional_normalize(
         industry_map.setdefault(ind, []).append(i)
 
     def _winsorize_stats(values: list) -> tuple:
-        """v5.5: 计算 winsorized μ/σ (2.5th/97.5th 百分位)
+        """计算 winsorized μ/σ (2.5th/97.5th 百分位)
 
-        防止单个极端异常值扭曲整个行业的 z-score 分布.
-        例: 一家 δ_fraud=0.95 的公司会使行业 σ 膨胀,
-        压缩其余所有公司的 z-score 到接近 0.
-
+        防止单个极端异常值扭曲行业 z-score 分布.
         学术依据: Tukey (1977) fence + MSCI Barra 风险模型标准做法.
         """
         n = len(values)
@@ -778,13 +751,9 @@ def _cross_sectional_normalize(
 
     def _industry_zscore(raw: Dict[Any, List[Optional[float]]]
                          ) -> Dict[Any, List[Optional[float]]]:
-        """对每个因子/求解器, 在行业内做 z-score 标准化
+        """对每个因子/求解器, 在行业内做 winsorized z-score 标准化
 
-        v5.3 改进: 小行业 (<MIN_INDUSTRY_SIZE) 退化为全样本 z-score,
-        而非保留 raw score. 保留 raw score 导致它们与已 z-scored 的
-        大行业数据处于不同尺度, 后续百分位排名时产生偏差.
-
-        v5.5 改进: winsorized z-score (2.5th/97.5th) 防止异常值扭曲行业排名.
+        小行业 (<MIN_INDUSTRY_SIZE) 退化为全样本 z-score (MSCI Barra 做法).
         """
         result = {}
         for key, vals in raw.items():
@@ -801,7 +770,7 @@ def _cross_sectional_normalize(
                 if len(ind_vals) < 3:
                     small_industry_indices.extend(indices)
                     continue
-                # v5.5: winsorized μ/σ 防止异常值扭曲
+                # winsorized μ/σ 防止异常值扭曲
                 mu, sigma = _winsorize_stats(ind_vals)
                 if sigma < 1e-10:
                     continue  # 行业内无方差, 跳过
@@ -809,11 +778,8 @@ def _cross_sectional_normalize(
                     if vals[j] is not None:
                         zscored[j] = (vals[j] - mu) / sigma
 
-            # v6.0: 小行业退化为全样本 z-score (全局池)
-            # v5.3 bug: 仅池化小行业公司(如石油3家+航天2家+白酒3家=8家),
-            #   不同行业混合z-score无意义. v6.0: 使用全样本(1800+家)做global z-score,
-            #   确保小行业公司至少与全市场比较, 而非与随机小行业混合池比较.
-            # 学术参考: MSCI Barra 对小行业使用 sector-level 或 global z-score.
+            # 小行业退化为全样本 z-score (global pool)
+            # 确保小行业公司至少与全市场比较 (MSCI Barra 做法)
             if small_industry_indices:
                 all_valid = [v for v in vals if v is not None]
                 if len(all_valid) >= 5:
@@ -831,7 +797,7 @@ def _cross_sectional_normalize(
 
     n_neutralized = sum(1 for indices in industry_map.values() if len(indices) >= MIN_INDUSTRY_SIZE)
     logger.info(
-        f"v5.2 Industry Neutralization: "
+        f"Industry Neutralization: "
         f"{len(industry_map)} industries, {n_neutralized} neutralized (>={MIN_INDUSTRY_SIZE} members)"
     )
 
@@ -856,18 +822,10 @@ def _cross_sectional_normalize(
         SolverId.STRUCTURE: scoring.solver_weights.get("STRUCTURE", 0.10),
     }
 
-    # 负向因子: raw score 越高越差 → percentile 高 = 差 → 需要反转
-    # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
-    # v7.0: π(盈利能力)是正向因子 — 高π = 高盈利 = 高质量
-    _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
     factor_ratio = scoring.factor_vs_solver_weight
 
-    # ══════ v5.4: 数据驱动衰退惩罚阈值 ══════
-    # v5.3 使用硬编码绝对阈值 (0.60, 0.50), 市场环境变化时可能失效.
-    # v5.4: 用 raw δ_decay 的百分位分布确定惩罚线:
-    #   top 10% → severe_penalty (0.80×)
-    #   top 10-20% + low γ → moderate_penalty (0.85×)
-    # 这样惩罚永远针对"当前宇宙集中衰退最严重的10-20%", 自动适应。
+    # ══════ 数据驱动衰退惩罚阈值 ══════
+    # 用 raw δ_decay 的百分位分布确定惩罚线 (自动适应当前宇宙分布)
     _raw_decays_valid = [
         v for v in factor_raw[FactorId.DELTA_DECAY] if v is not None
     ]
@@ -889,7 +847,7 @@ def _cross_sectional_normalize(
             new_profiles.append(p)
             continue
 
-        # ── Factor percentile composite (v5.2: confidence-weighted) ──
+        # ── Factor percentile composite (confidence-weighted) ──
         f_sum, f_total = 0.0, 0.0
         for fid, w in factor_weight_map.items():
             pct = factor_pct[fid][i]
@@ -904,7 +862,7 @@ def _cross_sectional_normalize(
             f_total += eff_w
         factor_score = f_sum / f_total if f_total > 0 else 0.5
 
-        # ── Solver percentile composite (v5.2: confidence-weighted) ──
+        # ── Solver percentile composite (confidence-weighted) ──
         s_sum, s_total = 0.0, 0.0
         for sid, w in solver_weight_map.items():
             pct = solver_pct[sid][i]
@@ -918,25 +876,9 @@ def _cross_sectional_normalize(
         # ── Combined score ──
         final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
-        # ══════ Hard constraints (v6.2: 扩展ROIC约束 + 绝对水平奖励) ══════
-        #
-        # v5.3: 仅约束 ROIC<3% (3档), 导致 ROIC=3-5% 的低质量公司
-        # 通过趋势信号进入 quality (假阳性). 核心问题:
-        #   - 纯百分位评级 + 弱绝对约束 → ROIC<5% 可排入 top 10%
-        #   - 同时, ROIC>15% 的成熟优质公司因趋势下行被归为 poor (假阴性)
-        #
-        # v6.2 改进 (双向调整):
-        # 1. 向下: 扩展 ROIC 硬约束到 WACC 区域 (3-8%), 消除假阳性
-        #    ROIC < WACC (≈8%) 的公司不可能是"优质"
-        # 2. 向上: 高 ROIC 绝对水平奖励, 缓解假阴性
-        #    AQR QMJ / Novy-Marx (2013): 当前盈利能力是质量的首要维度
-        #    公司赚取远超 WACC 的回报, 即使趋势温和下行, 仍属优质
-        #
-        # 学术参考:
-        #   - AQR "Quality Minus Junk": Profitability = GPOA, ROE, ROA, CFOA
-        #   - GMO Quality: Profitability (ROIC - WACC) 是核心质量维度
-        #   - Greenblatt "Magic Formula": Earnings Yield ∝ ROIC
-        #   - Novy-Marx (2013): Gross profitability 独立于趋势预测回报
+        # ══════ Hard constraints: ROIC 绝对水平约束 ══════
+        # 向下: ROIC < WACC(≈88%) 的公司封顶，消除假阳性
+        # 向上: 高 ROIC 绝对水平溢价，缓解假阴性 (Novy-Marx 2013)
         roic_actual = _extract_roic_actual(p)
         if roic_actual is not None:
             # ── 向下约束: 低 ROIC 硬封顶 (anti-false-positive) ──
@@ -950,13 +892,11 @@ def _cross_sectional_normalize(
                 final_score = min(final_score, 0.35)
                 n_hard_constrained += 1
             elif roic_actual < 5.0:
-                # v6.2 NEW: ROIC 3-5% — 低于任何行业 WACC 下界
-                # cap 0.45 确保无法进入 A+/A 评级 (quality 需 top 10%)
+            # ROIC 3-5% — 低于任何行业 WACC 下界
                 final_score = min(final_score, 0.45)
                 n_hard_constrained += 1
             elif roic_actual < 8.0:
-                # v6.2 NEW: ROIC 5-8% — 接近但可能低于 WACC
-                # 软惩罚 × 0.90, 降低但不封死 (B+ 评级仍可达)
+            # ROIC 5-8% — 接近但可能低于 WACC
                 final_score *= 0.90
                 n_hard_constrained += 1
 
@@ -973,16 +913,10 @@ def _cross_sectional_normalize(
             elif roic_actual >= 10.0:
                 final_score *= 1.02  # 良好: ROIC 10-15% (海康 13%)
 
-        # ══════ v5.4→v7.4: 连续 sigmoid 衰退惩罚 ══════
-        # v5.3 硬编码 δ_decay>=0.60 → 0.80×, 不适应分布变化.
-        # v7.3: 三级硬阈值 (0.35/0.50/0.70) 消除了 decay quality 泄漏,
-        #   但阈值边界处产生 rank discontinuity, 压损 Spearman ρ.
-        # v7.4: 替换硬阈值为连续 sigmoid 函数:
-        #   penalty_mult = 1 - max_penalty / (1 + exp(-steepness*(x - center)))
-        #   center=0.40: 在 decay=0.40 时惩罚达一半
-        #   steepness=8:  过渡带宽 ~0.25 (从 0.28 到 0.52 完成大部分过渡)
-        #   max_penalty=0.55: decay=0.80 → mult ≈ 0.46, decay=0.20 → mult ≈ 0.97
-        # 优势: 完全连续, 保留组内排序信息, 减小 ρ 损失
+        # ══════ 连续 sigmoid 衰退惩罚 ══════
+        # penalty_mult = 1 - max_penalty / (1 + exp(-steepness*(x - center)))
+        # center=0.40, steepness=8, max_penalty=0.55
+        # 完全连续，保留组内排序信息
         # 当 γ_growth 高时 (>0.55), 减弱惩罚 (衰退可能已在修复)
         raw_decay = factor_raw[FactorId.DELTA_DECAY][i]
         raw_gamma = factor_raw[FactorId.GAMMA][i]
@@ -1002,13 +936,9 @@ def _cross_sectional_normalize(
             if raw_decay >= _extreme_threshold:
                 final_score *= 0.85
 
-        # ══════ v6.0: Fundamental Momentum Adjustment ══════
-        # Novy-Marx (2015): "Fundamentally, Momentum is Fundamental"
-        # AQR QMJ 也使用 quality momentum (质量变化率) 作为信号维度
-        # 核心: 近期趋势 vs 长期趋势 → 基本面加速 / 减速
-        #   acceleration > 0: 近期增长快于长期 = 正向动量 (如拐点向上)
-        #   acceleration < 0: 近期增长慢于长期 = 负向动量 (如拐点向下)
-        # 权重保守 (±3%): 动量是辅助信号, 不应覆盖核心因子判断
+        # ══════ Fundamental Momentum Adjustment ══════
+        # Novy-Marx (2015): 近期趋势 vs 长期趋势 → 基本面加速/减速
+        # 权重保守 (±3%): 动量是辅助信号
         gamma_result = p.factors.get(FactorId.GAMMA)
         if gamma_result and gamma_result.components:
             gc = gamma_result.components
@@ -1023,9 +953,8 @@ def _cross_sectional_normalize(
                     # 显著减速: 最高-3%惩罚
                     final_score *= max(0.97, 1.0 + momentum * 0.5)
 
-        # ══════ v6.0: Sustainable Growth Interaction Term ══════
-        # 学术参考: AQR QMJ 将质量分解为 Profitability × Growth × Safety
-        #   线性模型假设因子独立, 但实际中交互效应显著:
+        # ══════ Sustainable Growth Interaction Term ══════
+        # SG = γ × (1 - δ_decay): 高增长+低衰退=持续增长(premium), 高增长+高衰退=价值陷阱(penalty)
         #   - High γ + Low δ_decay = 可持续增长 (premium) → 奖励
         #   - High γ + High δ_decay = 增长在衰退 ("价值陷阱") → 惩罚
         #   - Novy-Marx (2013): Interaction terms improve quality factor IC by 15-20%
@@ -1038,22 +967,17 @@ def _cross_sectional_normalize(
                 # 可持续增长: 最高+2%奖励
                 final_score *= min(1.02, 1.0 + (sustainable_growth - 0.40) * 0.05)
             elif sustainable_growth < 0.15 and raw_gamma > 0.40:
-                # v7.3: 价值陷阱惩罚 -2%→-5%, 有增长但在衰退更危险
+                # 价值陷阱: 有增长但在衰退更危险, 惩罚 -5%
                 final_score *= max(0.95, 1.0 - (0.15 - sustainable_growth) * 0.12)
 
-        # ══════ v6.2: Score Cap ══════
-        # 多重乘法调整 (ROIC bonus × momentum × SG) 可导致 final_score > 1.0
-        # 例: 0.95 × 1.10 × 1.03 × 1.02 = 1.10
-        # cap 在 1.0 确保报告中不出现 >100% 的分数
-        # 不影响 percentile grading (排名不变)
+        # ══════ Score Cap ══════
+        # 多重乘法调整可导致 final_score > 1.0, cap 确保报告中不超 100%
         final_score = min(1.0, final_score)
 
         new_profiles.append(replace(p, final_score=final_score))
 
-    # ══════ Step 4: v5.1 百分位评级 ══════
-    # 用 final_score 排名分配评级，而非绝对阈值
-    # 保证评级分布稳定，不受市场环境偏移影响
-    # 目标分布: A+ top5%, A next5%, B+ next10%, B next15%, C next30%, D next20%, F bottom15%
+    # ══════ Step 4: 百分位评级 ══════
+    # 用 final_score 排名分配评级，保证评级分布稳定
     scored = [(i, p.final_score) for i, p in enumerate(new_profiles)
               if p.signal != TruthSignal.FRAUD_ALERT and p.final_score is not None]
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -1088,10 +1012,8 @@ def _cross_sectional_normalize(
         grade = grade_map.get(i, TruthGrade.C)
         signal = _score_to_signal(p.final_score, scoring)
 
-        # ══════ v6.0: Factor Dispersion Confidence Adjustment ══════
-        # 当因子强烈分歧时 (如高γ但高δ_decay), 合成分数掩盖了不确定性.
-        # 计算因子百分位方差: 高方差 → 冲突信号 → 降低置信度.
-        # 学术参考: Bayesian model uncertainty — conflicting priors increase posterior variance.
+        # ══════ Factor Dispersion Confidence Adjustment ══════
+        # 因子强烈分歧时 (高方差), 降低置信度 (Bayesian model uncertainty)
         factor_pcts_i = []
         for fid in factor_ids:
             pct = factor_pct[fid][i]
@@ -1121,14 +1043,14 @@ def _cross_sectional_normalize(
         final_profiles.append(replace(p, signal=signal, grade=grade, confidence=adjusted_confidence))
 
     logger.info(
-        f"v7.0 Cross-Sectional Normalization: "
+        f"Cross-Sectional Normalization: "
         f"{len(profiles)} companies, "
         f"{n_hard_constrained} hard-constrained (ROIC<8% penalized, ROIC>10% rewarded), "
         f"momentum +{n_momentum_pos}/-{n_momentum_neg}, "
         f"percentile grading applied"
     )
 
-    # v6.1: Score distribution diagnostics (运行时健康检查)
+    # Score distribution diagnostics (运行时健康检查)
     all_scores = sorted([p.final_score for p in final_profiles
                          if p.final_score is not None and p.signal != TruthSignal.FRAUD_ALERT])
     if all_scores:
@@ -1155,7 +1077,7 @@ def _cross_sectional_normalize(
     engine_name="run_truth",
     component_type="business_engine",
     engine_type="truth",
-    description="Run T.R.U.T.H. pipeline with six factors and three solvers.",
+    description="Run T.R.U.T.H. pipeline with eight factors and three solvers.",
 )
 def run_truth(
     aggregated_trends: Dict[str, pd.DataFrame],
@@ -1212,9 +1134,8 @@ def run_truth(
             object.__setattr__(profile, 'industry', info.get('industry', ''))
         profiles.append(profile)
 
-    # ══════ v5.0: Cross-Sectional Percentile Normalization ══════
-    # _process_single 产出原始加权分数, 这里执行全样本百分位排名重评分
-    # 替代了 v4.x 的 6 层门控级联 (δ_decay门控 / ROIC阶梯 / 余裕度调整等)
+    # ══════ Cross-Sectional Percentile Normalization ══════
+    # 原始加权分数 → 全样本百分位排名重评分
     profiles = _cross_sectional_normalize(profiles, config)
 
     profiles_dict = [_profile_to_dict(p) for p in profiles]

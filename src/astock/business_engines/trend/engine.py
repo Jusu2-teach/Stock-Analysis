@@ -103,9 +103,6 @@ def _snapshot_to_row(
     row[f'{prefix}_cagr_approx'] = trend.cagr_approx
     row[f'{prefix}_cagr'] = trend.cagr_approx  # 🌟 标准别名，保持与 FieldRegistry 一致
     row[f'{prefix}_trend_direction'] = "up" if trend.log_slope > 0 else ("down" if trend.log_slope < 0 else "flat")
-    # v4.3: Mann-Kendall tau (非参数趋势显著性)
-    robust = snapshot.robust
-    row[f'{prefix}_robust_slope'] = robust.robust_slope if robust else None
 
     # 波动性指标
     vol = snapshot.volatility
@@ -140,9 +137,9 @@ def _snapshot_to_row(
 
     # 稳健趋势
     robust = snapshot.robust
-    row[f'{prefix}_robust_slope'] = robust.robust_slope
-    row[f'{prefix}_mk_tau'] = robust.mann_kendall_tau
-    row[f'{prefix}_mk_p_value'] = robust.mann_kendall_p_value
+    row[f'{prefix}_robust_slope'] = robust.robust_slope if robust else None
+    row[f'{prefix}_mk_tau'] = robust.mann_kendall_tau if robust else None
+    row[f'{prefix}_mk_p_value'] = robust.mann_kendall_p_value if robust else None
 
     # 加权平均与最新值
     row[f'{prefix}_weighted_avg'] = snapshot.weighted_avg

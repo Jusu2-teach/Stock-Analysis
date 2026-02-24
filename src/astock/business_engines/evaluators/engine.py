@@ -1,42 +1,26 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-AStock Evaluators v3.0 — 精简诚实架构
+AStock Evaluators — Causal Bayesian 评估引擎
 ═══════════════════════════════════════════════════════════════════════════════
 
-v3.0 重构原则:
-    旧 v2.0 拥有 7 个子模块 (因果图/HMM/Copula/D-S/自适应阈值/规则引擎/解释器)
-    但代码审计发现:
-    - 因果图 = DuPont 会计恒等式的 400 行花架子 (内含 dead-code bug)
-    - HMM 状态机 = 无训练数据的伪贝叶斯 (特征范围全硬编码)
-    - Copula + D-S = 双轨融合实际影响 <8 分/100 分
-    - 218 个未经回测验证的超参数
-
-    v3.0 仅保留经过审计确认有效的组件:
-    1. PDDA 特征提取 (完整保留)
-    2. 声明式规则引擎 (核心 — 唯一 VETO 网关)
-    3. 自适应行业阈值 (简化)
-    4. 加权评分 + 排名
-    5. 生命周期推断 (简化为确定性函数, 去伪 HMM)
+核心组件:
+    1. PDDA 特征提取 (来自 trend probes 的聚合数据)
+    2. 声明式规则引擎 (29 条规则, 5 独立因子组 VETO)
+    3. 自适应行业阈值
+    4. 加权评分 + 行业 z-score 归一化
+    5. 生命周期推断 (确定性函数)
     6. 可解释性报告
-
-    删除的组件 (保留源文件但不再调用):
-    - causal_graph.py   → 对评分影响 <7%, 且含 dead-code bug
-    - copula_fusion.py  → 只用了 ESS, 对评分影响 <3%
-    - dempster_shafer.py → 与 Copula 重复, Yager 规则不满足结合律
-    - state_machine.py  → 用确定性函数替代 (同等效果, 0 行废代码)
 
 Pipeline 集成:
     - 输入: aggregated_trends: Dict[str, pd.DataFrame] (来自 PDDA)
     - 输出: Dict[str, Any] 包含评估结果和解释
-    - API 100% 向后兼容
-
-版本: 3.0.0
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1406,16 +1390,11 @@ def run_causal_bayesian_evaluator(
         except Exception as e:
             logger.error(f"Error evaluating {ts_code}: {e}")
 
-    # ══════ v7.4: Post-hoc 行业 z-score 归一化 ══════
-    # 问题: Eval 使用绝对分数阈值 (72/50)，对不同行业天然盈利能力差异无感
-    #   → 软件业 (天然 ROIC~25%) 系统性高分, 钢铁业 (天然 ROIC~5%) 系统性低分
-    #   → TRUTH 行业中性化后两者可能排名相近，但 Eval 差距巨大
-    # 方案: 在全部评估完成后, 按行业计算 z-score, 存入 industry_z_score 字段
-    #   行业内 z-score 用于补充分析视角，不覆盖原有绝对分数和决策
-    #   (遵守 evaluators/ ↔ truth/ 禁止互相 import 约束, 独立实现)
-    from collections import defaultdict as _defaultdict
+    # ══════ Post-hoc 行业 z-score 归一化 ══════
+    # Eval 使用绝对分数阈值 (72/50)，对不同行业天然盈利能力差异无感
+    # 行业内 z-score 用于补充分析视角，不覆盖原有绝对分数和决策
     _MIN_INDUSTRY_SIZE = 8
-    _industry_groups = _defaultdict(list)
+    _industry_groups = defaultdict(list)
     for _idx, _ev in enumerate(evaluations):
         _ind = _ev.get("industry", "__unknown__") or "__unknown__"
         _industry_groups[_ind].append((_idx, _ev["score"]))
@@ -1459,25 +1438,3 @@ def run_causal_bayesian_evaluator(
         "quality_companies": quality_companies,
         "veto_companies": veto_companies,
     }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 便捷函数
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def evaluate_single_company(
-    ts_code: str,
-    trend_data: Dict[str, pd.DataFrame],
-    company_name: Optional[str] = None,
-    industry: Optional[str] = None,
-    market_cap: Optional[float] = None,
-) -> CompanyEvaluation:
-    """便捷函数：评估单个公司"""
-    evaluator = CausalBayesianEvaluator()
-    company_info = {
-        "ts_code": ts_code,
-        "name": company_name,
-        "industry": industry,
-        "market_cap": market_cap or 100.0,
-    }
-    return evaluator.evaluate_company(ts_code, trend_data, company_info)

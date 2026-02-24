@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Iterable, Protocol, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Protocol, TYPE_CHECKING
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -202,16 +202,6 @@ class RollingTrendResult(SerializableResult):
     is_decelerating: bool
     early_3y_slope: float  # 前3年斜率 (年1-3)
     early_3y_r_squared: float  # 前3年R²
-    warnings: List[TrendWarning] = field(default_factory=list)
-
-
-@dataclass
-class LinearTrendResult(SerializableResult):
-    slope: float
-    intercept: float
-    r_squared: float
-    p_value: float
-    std_err: float
     warnings: List[TrendWarning] = field(default_factory=list)
 
 

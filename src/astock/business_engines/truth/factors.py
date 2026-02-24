@@ -1,9 +1,11 @@
-"""T.R.U.T.H. 六维因子计算 - 专业级基因测序实现
+"""T.R.U.T.H. 八维因子计算 - 专业级基因测序实现
 
 实现设计文档中定义的八维基因测序：
     - α (Cyclicality): 周期性 - 业绩对宏观经济的敏感弹性
     - β (Heaviness): 资本密度 - 赚取下一块钱利润所需的"重"度
     - γ (Growth): 原始动能 - 业务表面上的扩张加速度
+    - π (Profitability): 盈利质量 - GP/Assets (Novy-Marx 最强单因子)
+    - λ (Leverage): 杠杆风险 - 资本结构健康度
     - δ_fraud (Fraud Entropy): 欺诈熵 - 财务报表的物理真实性 (熔断项)
     - δ_decay (Decay Entropy): 衰退熵 - 商业模式的恶化趋势 (惩罚项)
     - V (Verification): 真相验证 - 成长的含金量 (照妖镜)
@@ -15,10 +17,6 @@
 架构说明:
     - 使用鸭子类型 (duck typing)，不依赖 ABC 继承
     - 实现 FactorProtocol (typing.Protocol) 即可作为因子
-    - 每个因子提供 explain() 方法生成人类可读解释
-
-版本: 3.3.0
-日期: 2026-01-06
 """
 
 from __future__ import annotations
@@ -312,32 +310,6 @@ class AlphaFactor:
             details={"total_weight": total_weight},
         ), warnings
 
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.5
-        components = result.components or {}
-
-        # 周期性分类
-        if score > 0.7:
-            cycle_type = "强周期 (如钢铁、有色)"
-        elif score > 0.5:
-            cycle_type = "中等周期"
-        elif score > 0.3:
-            cycle_type = "弱周期"
-        else:
-            cycle_type = "非周期 (如消费、医药)"
-
-        # 构建解释
-        parts = [f"α={score:.2f} ({cycle_type})"]
-
-        if "detrended_cv" in components:
-            parts.append(f"变异系数{components['detrended_cv']:.2f}")
-        if "r_squared" in components:
-            parts.append(f"R²={components['r_squared']:.2f}")
-
-        return "，".join(parts)
-
-
 # ============================================================================
 # β 因子: 资本密度 (Heaviness)
 # ============================================================================
@@ -458,31 +430,6 @@ class BetaFactor:
                 "total_weight": total_weight,
             },
         ), warnings
-
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.5
-        components = result.components or {}
-        details = result.details or {}
-
-        # 资产类型
-        asset_type = details.get("asset_type", "unknown")
-        asset_label = {
-            "light": "轻资产 (如软件、互联网)",
-            "heavy": "重资产 (如钢铁、航空)",
-            "moderate": "中等资产",
-            "unknown": "未知",
-        }.get(asset_type, "未知")
-
-        parts = [f"β={score:.2f} ({asset_label})"]
-
-        if "hard_asset_ratio" in components:
-            parts.append(f"硬资产比率{components['hard_asset_ratio']:.1%}")
-        if "intang_ratio" in components:
-            parts.append(f"无形资产{components['intang_ratio']:.1%}")
-
-        return "，".join(parts)
-
 
 # ============================================================================
 # γ 因子: 成长动能 (Growth)
@@ -615,31 +562,6 @@ class GammaFactor:
             components=components,
             details={"growth_type": growth_type},
         ), warnings
-
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.5
-        components = result.components or {}
-        details = result.details or {}
-
-        growth_type = details.get("growth_type", "unknown")
-        growth_label = {
-            "high_growth": "高成长",
-            "moderate_growth": "中等成长",
-            "low_growth": "低成长",
-            "decline": "负增长",
-            "unknown": "未知",
-        }.get(growth_type, "未知")
-
-        parts = [f"γ={score:.2f} ({growth_label})"]
-
-        if "cagr" in components:
-            parts.append(f"CAGR={components['cagr']:.1%}")
-        if "log_slope" in components:
-            parts.append(f"斜率={components['log_slope']:.2f}")
-
-        return "，".join(parts)
-
 
 # ============================================================================
 # π 因子: 盈利能力水平 (Profitability Level) — v7.0 新增
@@ -847,35 +769,6 @@ class PiFactor:
             },
         ), warnings
 
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.5
-        components = result.components or {}
-        details = result.details or {}
-
-        prof_type = details.get("profitability_type", "unknown")
-        prof_label = {
-            "high_profitability": "高盈利",
-            "moderate_profitability": "中盈利",
-            "low_profitability": "低盈利",
-            "poor_profitability": "弱盈利",
-            "unknown": "未知",
-        }.get(prof_type, "未知")
-
-        parts = [f"π={score:.2f} ({prof_label})"]
-
-        if "gp_assets" in components:
-            parts.append(f"GP/A={components['gp_assets']:.3f}")
-        if "roic_level" in components:
-            parts.append(f"ROIC={components['roic_level']:.1f}%")
-        if "roe_level" in components:
-            parts.append(f"ROE={components['roe_level']:.1f}%")
-        if "asset_turnover" in components:
-            parts.append(f"周转率={components['asset_turnover']:.2f}")
-
-        return "，".join(parts)
-
-
 # ============================================================================
 # λ 因子: 杠杆强度 (Leverage Strength) — v4.1 新增
 # ============================================================================
@@ -1031,31 +924,6 @@ class LambdaFactor:
                 "data_available": True,
             },
         ), warnings
-
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.3
-        components = result.components or {}
-        details = result.details or {}
-
-        level = details.get("leverage_level", "unknown")
-        level_label = {
-            "conservative": "低杠杆 (安全)",
-            "moderate": "适度杠杆",
-            "elevated": "偏高杠杆 ⚠️",
-            "dangerous": "危险杠杆 🚨",
-            "unknown": "未知",
-        }.get(level, "未知")
-
-        parts = [f"λ={score:.2f} ({level_label})"]
-
-        if "debt_to_assets" in components:
-            parts.append(f"资产负债率={components['debt_to_assets']:.1%}")
-        if "equity_multiplier" in components:
-            parts.append(f"权益乘数={components['equity_multiplier']:.1f}x")
-
-        return "，".join(parts)
-
 
 # ============================================================================
 # δ_fraud 因子: 欺诈熵 (Fraud Entropy)
@@ -1373,35 +1241,6 @@ class DeltaFraudFactor:
             },
         ), warnings
 
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.0
-        components = result.components or {}
-        details = result.details or {}
-
-        is_meltdown = details.get("is_meltdown", False)
-        hard_kill = details.get("hard_kill_triggered", False)
-
-        if is_meltdown:
-            parts = [f"🚨 δ_fraud={score:.2f} (熔断触发!)"]
-            if hard_kill:
-                if "goodwill_risk" in components:
-                    parts.append("商誉爆雷风险")
-                if "cash_loan_anomaly" in components:
-                    parts.append("存贷双高")
-                if "high_receivable" in components:
-                    parts.append("应收过高")
-        elif score > 0.4:
-            parts = [f"⚠️ δ_fraud={score:.2f} (风险偏高)"]
-        else:
-            parts = [f"δ_fraud={score:.2f} (风险可控)"]
-
-        if "ocf_profit_divergence" in components:
-            parts.append("利润现金流背离")
-
-        return "，".join(parts)
-
-
 # ============================================================================
 # δ_decay 因子: 衰退熵 (Decay Entropy)
 # ============================================================================
@@ -1541,35 +1380,6 @@ class DeltaDecayFactor:
             components=components,
             details={"decay_severity": decay_severity},
         ), warnings
-
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.0
-        components = result.components or {}
-        details = result.details or {}
-
-        severity = details.get("decay_severity", "unknown")
-        severity_label = {
-            "severe": "严重衰退",
-            "moderate": "中度衰退",
-            "mild": "轻微衰退",
-            "none": "无衰退",
-        }.get(severity, "未知")
-
-        parts = [f"δ_decay={score:.2f} ({severity_label})"]
-
-        if "consecutive_decline_years" in components:
-            years = int(components["consecutive_decline_years"])
-            if years > 0:
-                parts.append(f"连跌{years}年")
-
-        if "total_decline_pct" in components:
-            decline = components["total_decline_pct"]
-            if decline < 0:
-                parts.append(f"累计下跌{abs(decline):.1f}%")
-
-        return "，".join(parts)
-
 
 # ============================================================================
 # V 因子: 真相验证 (Verification)
@@ -1752,32 +1562,6 @@ class VerificationFactor:
             details={"growth_quality": growth_quality},
         ), warnings
 
-    def explain(self, result: FactorResult) -> str:
-        """生成人类可读的解释文本"""
-        score = result.score or 0.5
-        components = result.components or {}
-        details = result.details or {}
-
-        quality = details.get("growth_quality", "unknown")
-        quality_label = {
-            "true_growth": "真成长 ✓",
-            "moderate_quality": "中等质量",
-            "low_quality": "低质量",
-            "fake_growth": "假成长 ✗",
-            "unknown": "未知",
-        }.get(quality, "未知")
-
-        parts = [f"V={score:.2f} ({quality_label})"]
-
-        if "v_ratio_revenue" in components:
-            v_ratio = components["v_ratio_revenue"]
-            parts.append(f"OCF/营收增速={v_ratio:.2f}")
-        if "ocf_cagr" in components and "revenue_cagr" in components:
-            parts.append(f"OCF增速{components['ocf_cagr']:.1f}% vs 营收{components['revenue_cagr']:.1f}%")
-
-        return "，".join(parts)
-
-
 # ============================================================================
 # 类型别名 (兼容性)
 # ============================================================================
@@ -1785,41 +1569,13 @@ class VerificationFactor:
 # TruthFactor 现在是一个协议类型别名，保持向后兼容
 # 任何实现了 factor_id, evaluate(), explain() 的类都是有效因子
 from typing import Union
-TruthFactor = Union[AlphaFactor, BetaFactor, GammaFactor, LambdaFactor, DeltaFraudFactor, DeltaDecayFactor, VerificationFactor]
+TruthFactor = Union[AlphaFactor, BetaFactor, GammaFactor, PiFactor, LambdaFactor, DeltaFraudFactor, DeltaDecayFactor, VerificationFactor]
 
 
 # ============================================================================
 # 工厂函数
 # ============================================================================
 
-def get_all_factors() -> List[TruthFactor]:
-    """获取所有因子实例"""
-    return [
-        AlphaFactor(),
-        BetaFactor(),
-        GammaFactor(),
-        LambdaFactor(),
-        DeltaFraudFactor(),
-        DeltaDecayFactor(),
-        VerificationFactor(),
-    ]
-
-
-def get_factor_by_id(factor_id: FactorId) -> TruthFactor:
-    """根据ID获取因子"""
-    mapping = {
-        FactorId.ALPHA: AlphaFactor(),
-        FactorId.BETA: BetaFactor(),
-        FactorId.GAMMA: GammaFactor(),
-        FactorId.LAMBDA: LambdaFactor(),
-        FactorId.DELTA_FRAUD: DeltaFraudFactor(),
-        FactorId.DELTA_DECAY: DeltaDecayFactor(),
-        FactorId.VERIFICATION: VerificationFactor(),
-    }
-    return mapping.get(factor_id, AlphaFactor())
-
-
-# ============================================================================
 # 导出
 # ============================================================================
 
@@ -1834,9 +1590,8 @@ __all__ = [
     "DeltaFraudFactor",
     "DeltaDecayFactor",
     "VerificationFactor",
+    "PiFactor",
     # 工厂函数
-    "get_all_factors",
-    "get_factor_by_id",
     # 辅助函数
     "normalize_score",
     "get_feature",
