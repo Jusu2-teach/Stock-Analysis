@@ -375,8 +375,8 @@ class CausalBayesianEvaluator:
         # Step 4: 生命周期推断
         lifecycle, life_conf = _infer_lifecycle(features)
 
-        # Step 5: 综合决策
-        decision, confidence = self._make_decision(score, rule_result, life_conf)
+        # Step 5: 综合决策 (v7.3: 传入features用于风险硬约束)
+        decision, confidence = self._make_decision(score, rule_result, life_conf, features)
 
         # Step 6: 解释
         explanation = self._generate_explanation(
@@ -1133,12 +1133,15 @@ class CausalBayesianEvaluator:
         score: float,
         rule_result: Optional[RuleEngineResult],
         lifecycle_confidence: float,
+        features: Optional[Dict[str, Any]] = None,
     ) -> Tuple[DecisionType, float]:
         """
-        v3.0 决策 — 纯分数排名, 无隐式否决
+        v7.3 决策 — 分数排名 + 风险硬约束
 
         到达此函数的公司已通过 Step 2 规则引擎否决检查。
-        此处仅做 QUALITY / AVERAGE / POOR 三档排名。
+        v3.0: 纯分数排名 (QUALITY/AVERAGE/POOR)
+        v7.3: 新增风险硬约束 — 消除 "高分但高风险" 的因子-评分矛盾
+              参考 AQR QMJ Safety + Sloan Accruals 研究
         """
         if score >= self.config.quality_threshold:
             decision = DecisionType.QUALITY
@@ -1146,6 +1149,46 @@ class CausalBayesianEvaluator:
             decision = DecisionType.AVERAGE
         else:
             decision = DecisionType.POOR
+
+        # v7.3: 风险硬约束 — QUALITY 级别的额外安全门
+        # 这些检查使用 evaluator 自身的 PDDA 特征, 不依赖 TRUTH
+        if decision == DecisionType.QUALITY and features:
+            downgrade_reasons = []
+
+            # 1. 虚假增长检测 (Sloan 1996 Accruals Anomaly)
+            # 利润强势上行但经营现金流下行 = 高应计利润 = 盈利不可持续
+            profit_trend = features.get("profit_trend", 0.0)
+            ocf_trend = features.get("ocf_trend", 0.0)
+            if profit_trend > 0.08 and ocf_trend < -0.02:
+                downgrade_reasons.append("accrual_divergence")
+
+            # 2. 多指标同步恶化 (≥4个指标恶化 + quality = 逻辑矛盾)
+            deterioration_count = sum(
+                1 for key in features
+                if key.endswith("_has_deterioration") and features[key]
+            )
+            if deterioration_count >= 4:
+                downgrade_reasons.append(f"multi_deterioration({deterioration_count})")
+
+            # 3. 核心盈利能力不足 (ROIC < 8% 的公司不应获得 quality)
+            # 补充 ROIC floor: _compute_score 中已扣分, 但边界情况可能仍越线
+            roic_level = features.get("roic_level")
+            if roic_level is not None and roic_level < 8.0:
+                downgrade_reasons.append(f"roic_insufficient({roic_level:.1f}%)")
+
+            # 4. 趋势全面下行 (所有核心指标方向 = negative → 不应 quality)
+            core_metrics = ["roic", "gross_margin", "revenue", "ocf"]
+            neg_count = sum(
+                1 for m in core_metrics
+                if features.get(f"{m}_direction") == "negative"
+            )
+            if neg_count >= 3:
+                downgrade_reasons.append(f"broad_decline({neg_count}/4)")
+
+            if downgrade_reasons:
+                decision = DecisionType.AVERAGE
+                # 微降置信度以反映不确定性
+                lifecycle_confidence = max(0.40, lifecycle_confidence - 0.10)
 
         # 置信度: 规则引擎覆盖度 + 分数边界距离
         rule_conf = 0.50

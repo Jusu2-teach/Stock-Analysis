@@ -415,12 +415,8 @@ def _calibrate(
     scoring = config.scoring
 
     # ── Factor weighted average (raw) ──
+    # v7.3: 清理重复键 (v7.0 新增π时残留了旧权重定义)
     factor_weight_map = {
-        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.12),
-        FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
-        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.18),
-        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
-        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
         FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
         FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
         FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.14),
@@ -878,10 +874,11 @@ def _cross_sectional_normalize(
     if _raw_decays_valid:
         _raw_decays_sorted = sorted(_raw_decays_valid)
         _n_rd = len(_raw_decays_sorted)
-        _severe_threshold = _raw_decays_sorted[int(_n_rd * 0.90)]  # top 10%
+        _extreme_threshold = _raw_decays_sorted[int(_n_rd * 0.95)]  # top 5%
+        _severe_threshold = _raw_decays_sorted[int(_n_rd * 0.90)]   # top 10%
         _moderate_threshold = _raw_decays_sorted[int(_n_rd * 0.80)]  # top 20%
     else:
-        _severe_threshold, _moderate_threshold = 0.60, 0.50  # fallback
+        _extreme_threshold, _severe_threshold, _moderate_threshold = 0.70, 0.60, 0.50  # fallback
 
     new_profiles: List[TruthProfile] = []
     n_hard_constrained = 0
@@ -976,19 +973,38 @@ def _cross_sectional_normalize(
             elif roic_actual >= 10.0:
                 final_score *= 1.02  # 良好: ROIC 10-15% (海康 13%)
 
-        # ══════ v5.4: 数据驱动衰退惩罚 ══════
+        # ══════ v5.4→v7.3: 数据驱动衰退惩罚 ══════
         # v5.3 硬编码 δ_decay>=0.60 → 0.80×, 不适应分布变化.
-        # v5.4: 使用当前宇宙集的百分位阈值 (top 10%/20%)
+        # v5.4: 使用当前宇宙集的百分位阈值 (top 5%/10%/20%)
+        # v7.3: 大幅强化惩罚力度 — 审计发现 0.80×/0.85× 不足以阻止
+        #   衰退期公司进入 quality (base 0.80 × 0.80 = 0.64 > buy 0.58)
+        #   新方案 (双层防线, 保留排序信息):
+        #     A. 绝对值连续乘法惩罚 (v7.3 NEW):
+        #        raw_decay > 0.70 → ×0.50 (base 0.80 → 0.40, 远低于 buy 0.58)
+        #        raw_decay > 0.50 → ×0.62 (base 0.80 → 0.50, 低于 buy 0.58)
+        #        raw_decay > 0.35 → ×0.78 (base 0.80 → 0.62, 边缘)
+        #     B. 百分位极端约束 (top 5% 额外惩罚):
+        #        top 5% → 额外 ×0.80 (叠加到 A 之后)
+        # 使用连续乘法而非 hard cap, 保留组内排序信息 → 减小 Spearman ρ 损失.
         # RAW (非行业中性化) δ_decay 保留绝对水平信息.
         raw_decay = factor_raw[FactorId.DELTA_DECAY][i]
         raw_gamma = factor_raw[FactorId.GAMMA][i]
         if raw_decay is not None:
-            if raw_decay >= _severe_threshold:
-                # top 10% 衰退: 强惩罚
+            # --- A. 绝对值连续惩罚 (v7.3 — 严重衰退永远被惩罚) ---
+            if raw_decay > 0.70:
+                # 极重度衰退: ×0.50
+                final_score *= 0.50
+            elif raw_decay > 0.50:
+                # 重度衰退: ×0.62
+                final_score *= 0.62
+            elif raw_decay > 0.35:
+                # 中度衰退(无高成长抵消): ×0.78
+                if raw_gamma is None or raw_gamma < 0.55:
+                    final_score *= 0.78
+
+            # --- B. 百分位极端尾部约束 (top 5% 叠加) ---
+            if raw_decay >= _extreme_threshold:
                 final_score *= 0.80
-            elif raw_decay >= _moderate_threshold and (raw_gamma is None or raw_gamma < 0.45):
-                # top 10-20% 衰退 + 低成长: 中等惩罚
-                final_score *= 0.85
 
         # ══════ v6.0: Fundamental Momentum Adjustment ══════
         # Novy-Marx (2015): "Fundamentally, Momentum is Fundamental"
@@ -1026,8 +1042,8 @@ def _cross_sectional_normalize(
                 # 可持续增长: 最高+2%奖励
                 final_score *= min(1.02, 1.0 + (sustainable_growth - 0.40) * 0.05)
             elif sustainable_growth < 0.15 and raw_gamma > 0.40:
-                # 价值陷阱: 有增长但在衰退, 最高-2%惩罚
-                final_score *= max(0.98, 1.0 - (0.15 - sustainable_growth) * 0.05)
+                # v7.3: 价值陷阱惩罚 -2%→-5%, 有增长但在衰退更危险
+                final_score *= max(0.95, 1.0 - (0.15 - sustainable_growth) * 0.12)
 
         # ══════ v6.2: Score Cap ══════
         # 多重乘法调整 (ROIC bonus × momentum × SG) 可导致 final_score > 1.0
