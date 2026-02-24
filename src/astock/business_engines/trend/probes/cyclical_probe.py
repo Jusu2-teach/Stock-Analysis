@@ -212,6 +212,91 @@ class HPFilter:
 
 
 # =============================================================================
+# v9.0: Hamilton (2018) 回归滤波器
+# =============================================================================
+
+class HamiltonFilter:
+    """Hamilton (2018) 回归滤波器 — HP 滤波的专业替代
+
+    Hamilton J.D. (2018) "Why You Should Never Use the
+    Hodrick-Prescott Filter", Review of Economics and Statistics.
+
+    核心问题: HP 滤波在端点产生严重失真 (end-of-sample bias),
+    对 n=5-10 的短序列是致命的。HP 的“周期成分”会反映平滑器的人为设计
+    而非数据中的真实周期。
+
+    Hamilton 的替代:
+        y_t = α + β₁ y_{t-h} + β₂ y_{t-h-1} + ... + β_p y_{t-h-p+1} + ε_t
+        cycle_t = y_t - ŷ_t  (残差 = 周期成分)
+
+    对于年度数据: h=2, p=1 (用 t-2 预测 t)
+    最小数据: n >= h + p + 2 = 5
+
+    优势:
+    1. 无端点失真问题 (纯回归, 不涉及未来信息)
+    2. 结果具有统计可解释性 (可用 R², p-value 评价)
+    3. 不会发明虚假周期
+    """
+
+    def __init__(self, h: int = 2, p: int = 1):
+        """h=预测步长, p=滞后阶数"""
+        self.h = h
+        self.p = p
+
+    def filter(self, y: np.ndarray) -> HPFilterResult:
+        n = len(y)
+        min_obs = self.h + self.p + 2
+
+        if n < min_obs:
+            return HPFilterResult(
+                trend=y.copy(),
+                cycle=np.zeros_like(y),
+                cycle_amplitude=0.0,
+                cycle_volatility=0.0,
+            )
+
+        # 构建回归矩阵: y_t = α + β₁ y_{t-h} + ... + β_p y_{t-h-p+1} + ε
+        start = self.h + self.p - 1
+        y_dep = y[start:]  # 因变量 t = start, ..., n-1
+        T = len(y_dep)
+
+        X = np.ones((T, 1 + self.p))  # 截距 + p 个滞后值
+        for j in range(self.p):
+            lag_idx = self.h + j  # y_{t-h-j}
+            X[:, 1 + j] = y[start - lag_idx : n - lag_idx]
+
+        # OLS: β = (X'X)^{-1} X'y
+        try:
+            beta = np.linalg.lstsq(X, y_dep, rcond=None)[0]
+        except np.linalg.LinAlgError:
+            return HPFilterResult(
+                trend=y.copy(), cycle=np.zeros_like(y),
+                cycle_amplitude=0.0, cycle_volatility=0.0,
+            )
+
+        # 拟合值 = 趋势, 残差 = 周期
+        y_hat = X @ beta
+        residuals = y_dep - y_hat
+
+        # 填充完整序列 (前 start 个点无法计算, 用原始值作趋势)
+        trend = y.copy()
+        cycle = np.zeros_like(y)
+        trend[start:] = y_hat
+        cycle[start:] = residuals
+
+        trend_mean = np.mean(np.abs(trend))
+        cycle_amplitude = np.std(cycle[start:]) / trend_mean if trend_mean > 0 else 0.0
+        cycle_volatility = np.std(cycle[start:])
+
+        return HPFilterResult(
+            trend=trend,
+            cycle=cycle,
+            cycle_amplitude=float(cycle_amplitude),
+            cycle_volatility=float(cycle_volatility),
+        )
+
+
+# =============================================================================
 # 自相关分析器
 # =============================================================================
 
@@ -280,7 +365,23 @@ class AutocorrelationAnalyzer:
 # =============================================================================
 
 class HurstExponentEstimator:
-    """Hurst指数估计器 (R/S分析)"""
+    """Hurst指数估计器 — v9.0: DFA (Peng 1994) + R/S 融合
+
+    v8.0: 纯 R/S 分析 + Bayesian shrinkage
+    v9.0: DFA (Detrended Fluctuation Analysis) 作为主估计,
+          R/S 作为辅助, 贝叶斯融合。
+
+    为什么 DFA 优于 R/S:
+    1. R/S 在短记忆过程中有正偏差 (Lo 1991): H 系统高伀15-25%
+    2. R/S 对序列中的趋势和周期成分不做校正
+    3. DFA 通过多项式去趋势消除了非平稳性的影响
+    4. DFA 在 n=8-20 的财务年度数据上比 R/S 更可靠 (Kantelhardt 2002)
+
+    References:
+        - Peng, C.K. et al. (1994). Physical Review E, 49(2), 1685-1689.
+        - Kantelhardt, J.W. et al. (2002). Physica A, 316(1-4), 87-114.
+        - Lo, A.W. (1991). Econometrica, 59(5), 1279-1313.
+    """
 
     def estimate(self, y: np.ndarray) -> HurstResult:
         n = len(y)
@@ -288,12 +389,117 @@ class HurstExponentEstimator:
         if n < 8:
             return HurstResult(hurst_exponent=0.5, interpretation="unknown", confidence=0.0)
 
+        # ========== DFA 估计 (主) ==========
+        hurst_dfa, conf_dfa = self._dfa_estimate(y)
+
+        # ========== R/S 估计 (辅) ==========
+        hurst_rs, conf_rs = self._rs_estimate(y)
+
+        # ========== 贝叶斯融合 ==========
+        # DFA 权重更高 (更可靠), R/S 作为补充
+        if conf_dfa > 0.1 and conf_rs > 0.1:
+            w_dfa = conf_dfa * 0.7  # DFA 基础权重 70%
+            w_rs = conf_rs * 0.3    # R/S 基础权重 30%
+            total_w = w_dfa + w_rs
+            hurst = (w_dfa * hurst_dfa + w_rs * hurst_rs) / total_w
+            confidence = min((conf_dfa + conf_rs) / 2.0 * 1.1, 1.0)  # 融合提升
+        elif conf_dfa > 0.1:
+            hurst = hurst_dfa
+            confidence = conf_dfa
+        elif conf_rs > 0.1:
+            hurst = hurst_rs
+            confidence = conf_rs
+        else:
+            hurst = 0.5
+            confidence = 0.0
+
+        # v8.0+v9.0: 贝叶斯收缩 — 低信心时拉回先验 H=0.5
+        hurst_shrunk = confidence * hurst + (1.0 - confidence) * 0.5
+
+        if abs(hurst_shrunk - 0.5) < 0.1:
+            interpretation = "random_walk"
+        elif hurst_shrunk < 0.5:
+            interpretation = "mean_reverting"
+        else:
+            interpretation = "trending"
+
+        return HurstResult(
+            hurst_exponent=float(hurst_shrunk),
+            interpretation=interpretation,
+            confidence=float(confidence),
+        )
+
+    def _dfa_estimate(self, y: np.ndarray) -> Tuple[float, float]:
+        """DFA: Detrended Fluctuation Analysis (Peng 1994)
+
+        算法:
+        1. 计算累积偏差序列: Y_k = Σ(y_i - ȳ)
+        2. 将 Y 分成等长窗口, 在每个窗口内拟合多项式并计算残差方差 F(s)
+        3. 拟合 log F(s) ~ H × log(s)
+        """
+        n = len(y)
+        y_mean = np.mean(y)
+        Y = np.cumsum(y - y_mean)  # 累积偏差 (profile)
+
+        # 窗口大小: 从 4 到 n//2
+        min_s = 4
+        max_s = n // 2
+        if max_s < min_s:
+            return 0.5, 0.0
+
+        scales = []
+        fluct = []
+        s = min_s
+        while s <= max_s:
+            n_windows = n // s
+            if n_windows < 1:
+                break
+
+            # 对每个窗口拟合线性趋势并计算残差
+            rms_list = []
+            for w in range(n_windows):
+                segment = Y[w * s : (w + 1) * s]
+                t = np.arange(s)
+                # 二次多项式去趋势 (DFA-2, 比 DFA-1 更稳健)
+                if s >= 6:
+                    coeffs = np.polyfit(t, segment, 2)
+                    trend = np.polyval(coeffs, t)
+                else:
+                    coeffs = np.polyfit(t, segment, 1)
+                    trend = np.polyval(coeffs, t)
+                rms = np.sqrt(np.mean((segment - trend) ** 2))
+                rms_list.append(rms)
+
+            F_s = np.mean(rms_list)
+            if F_s > 0:
+                scales.append(s)
+                fluct.append(F_s)
+
+            s = int(s * 1.5) + 1  # 对数等距缩放
+
+        if len(scales) < 2:
+            return 0.5, 0.0
+
+        log_s = np.log(np.array(scales))
+        log_f = np.log(np.array(fluct))
+
+        slope, _, r_value, _, _ = stats.linregress(log_s, log_f)
+        hurst = max(0.0, min(1.5, float(slope)))  # DFA 可超过 1.0 (非平稳)
+        hurst = min(hurst, 1.0)  # 截断到 [0, 1]
+
+        # 信心: 基于拟合优度和数据量
+        confidence = float(r_value ** 2) * min(n / 15, 1.0)  # DFA 在 n=15 时可靠
+
+        return hurst, confidence
+
+    def _rs_estimate(self, y: np.ndarray) -> Tuple[float, float]:
+        """R/S 分析 (Lo 1991 修正版)"""
+        n = len(y)
         min_chunk = 4
         max_chunk = n // 2
 
         chunk_sizes = []
         rs_values = []
-
         size = min_chunk
         while size <= max_chunk:
             rs = self._compute_rs(y, size)
@@ -303,34 +509,15 @@ class HurstExponentEstimator:
             size = int(size * 1.5) + 1
 
         if len(chunk_sizes) < 2:
-            return HurstResult(hurst_exponent=0.5, interpretation="unknown", confidence=0.0)
+            return 0.5, 0.0
 
         log_sizes = np.log(chunk_sizes)
         log_rs = np.log(rs_values)
-
-        slope, intercept, r_value, p_value, std_err = stats.linregress(log_sizes, log_rs)
+        slope, _, r_value, _, _ = stats.linregress(log_sizes, log_rs)
         hurst = max(0.0, min(1.0, float(slope)))
-
-        if abs(hurst - 0.5) < 0.1:
-            interpretation = "random_walk"
-        elif hurst < 0.5:
-            interpretation = "mean_reverting"
-        else:
-            interpretation = "trending"
-
         confidence = float(r_value ** 2) * min(n / 20, 1.0)
 
-        # v8.0: 贝叶斯收缩 — 将不可靠的Hurst估计拉回先验
-        # 原理: R/S分析在n<20时仅有2-5个分块大小 → 回归近乎退化
-        #        n=10时回归2点, R²总是1.0 → 虚假信心
-        #        Shrink towards prior H=0.5 (random walk, uninformative)
-        #        posterior = confidence × observed + (1 - confidence) × prior
-        # 效果: n=10, R²=1.0 → conf=0.5 → hurst_shrunk = 0.5×observed + 0.5×0.5
-        #        n=20, R²=0.9 → conf=0.9 → hurst_shrunk ≈ observed (基本保留)
-        hurst_shrunk = confidence * hurst + (1.0 - confidence) * 0.5
-        hurst = hurst_shrunk
-
-        return HurstResult(hurst_exponent=hurst, interpretation=interpretation, confidence=float(confidence))
+        return hurst, confidence
 
     def _compute_rs(self, y: np.ndarray, chunk_size: int) -> Optional[float]:
         n = len(y)
@@ -529,6 +716,7 @@ class CyclicalProbe:
     def __init__(self, config=None):
         self.config = config or get_default_config()
         self.hp_filter = HPFilter(lamb=self.config.hp_filter_lambda)
+        self.hamilton_filter = HamiltonFilter(h=2, p=1)  # v9.0
         self.acf_analyzer = AutocorrelationAnalyzer(significance_level=self.config.acf_significance_level)
         self.hurst_estimator = HurstExponentEstimator()
         self.peak_valley_analyzer = PeakValleyAnalyzer()
@@ -573,6 +761,22 @@ class CyclicalProbe:
         cv = abs(std_val / mean_val) if mean_val != 0 else float('inf')
 
         hp_result = self.hp_filter.filter(arr)
+        # v9.0: Hamilton filter 补充 HP (无端点偏差)
+        hamilton_result = self.hamilton_filter.filter(arr)
+        # 融合 HP + Hamilton: n≤8 时 Hamilton 主导, n≥15 时 HP 主导
+        hp_weight = min(max((n - 8) / 7.0, 0.0), 1.0)  # [0.0, 1.0]
+        ham_weight = 1.0 - hp_weight
+        # 融合周期振幅
+        fused_amplitude = hp_weight * hp_result.cycle_amplitude + ham_weight * hamilton_result.cycle_amplitude
+        fused_volatility = hp_weight * hp_result.cycle_volatility + ham_weight * hamilton_result.cycle_volatility
+        # 融合周期成分 (用于周期位置判断)
+        fused_cycle = hp_weight * hp_result.cycle + ham_weight * hamilton_result.cycle
+        hp_result = HPFilterResult(
+            trend=hp_weight * hp_result.trend + ham_weight * hamilton_result.trend,
+            cycle=fused_cycle,
+            cycle_amplitude=float(fused_amplitude),
+            cycle_volatility=float(fused_volatility),
+        )
         acf_result = self.acf_analyzer.analyze(arr)
         hurst_result = self.hurst_estimator.estimate(arr)
         pv_result = self.peak_valley_analyzer.analyze(arr)

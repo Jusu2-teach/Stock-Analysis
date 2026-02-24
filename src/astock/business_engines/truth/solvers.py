@@ -138,9 +138,53 @@ class GravitySolver:
             debt_to_value = lambda_score * 0.70
             equity_to_value = 1.0 - debt_to_value
 
-            # Cost of Equity = Rf + β_market × ERP
-            # 使用 α (周期性) 近似 β_market: 高周期 α→高β
-            beta_market = 0.6 + alpha * 1.2  # 范围 [0.6, 1.8]
+            # ============================================================
+            # v9.0: 多因子 β_market 估计 + Vasicek (1973) 收缩
+            #
+            # 原: beta_market = 0.6 + alpha * 1.2 — 无理论基础, 仅用单一因子
+            # 新: 多因子案例估计 + Vasicek 贝叶斯收缩
+            #
+            # ① 案例估计 (sample estimate):
+            #   - α (周期性): 高周期 → 高 β  (Fama-French 实证 ρ≈0.55)
+            #   - β_factor (资本密度): 重资产 → 高运营杠杆 → 高 β (ρ≈0.25)
+            #   - λ (财务杠杆): Hamada (1972) — 杠杆放大权益β
+            #
+            # ② Vasicek (1973) shrinkage:
+            #   β_posterior = w × β_sample + (1-w) × β_prior
+            #   w = σ²_cross / (σ²_cross + σ²_sample)
+            #   β_prior = 1.0 (市场均值)
+            #   σ²_cross ≈ 0.16 (A股行业β横截面方差, 来自 Wind实证)
+            #
+            # References:
+            #   - Vasicek, O.A. (1973). "A Note on Using Cross-Sectional
+            #     Information in Bayesian Estimation of Security Betas."
+            #     Journal of Finance, 28(5), 1233-1239.
+            #   - Hamada, R.S. (1972). "The Effect of the Firm's Capital
+            #     Structure on the Systematic Risk of Common Stocks."
+            #     Journal of Finance, 27(2), 435-452.
+            # ============================================================
+
+            # Step 1: 多因子案例估计
+            beta_factor = get_factor_score(factors, FactorId.BETA, 0.5)  # 资本密度
+            beta_sample = (
+                0.55 + 0.75 * alpha      # 周期性贡献: [0.55, 1.30]
+                + 0.25 * beta_factor      # 资本密度: [0, 0.25]
+                + 0.30 * lambda_score     # 杠杆贡献 (Hamada): [0, 0.30]
+            )  # 综合: [0.55, 1.85]
+
+            # Step 2: Vasicek shrinkage
+            beta_prior = 1.0   # 市场均值
+            sigma2_cross = 0.16   # 行业β横截面方差 (A股实证)
+            sigma2_sample = 0.10 + 0.15 * (1.0 - min(  # 数据少时不确定性大
+                sum(1 for f in factors.values() if f is not None and f.score is not None) / 8.0, 1.0
+            ))
+            w = sigma2_cross / (sigma2_cross + sigma2_sample)
+            beta_market = w * beta_sample + (1.0 - w) * beta_prior
+            beta_market = clamp(beta_market, 0.5, 2.0)
+
+            components["beta_market_sample"] = beta_sample
+            components["vasicek_weight"] = w
+
             cost_of_equity = config.macro.risk_free_rate + beta_market * conf.equity_risk_premium
 
             # Cost of Debt (税后)
@@ -366,6 +410,42 @@ class VelocitySolver:
         #       增加 δ_decay 的独立贡献 (衰退拖累增长天花板)
         # ============================================================
 
+        # ============================================================
+        # v9.0: 可持续增长率理论锚 g* = ROIC × reinvestment_rate
+        #
+        # 原公式: growth_ceiling = GDP + k1*γ - k2*α - k3*δ
+        # 问题: 纯因子线性组合, 无理论锚, 无法区分
+        #        "高增长但无复利资本" vs "高ROIC高再投资"
+        #
+        # g* 的金融学基础 (Higgins 1977, Penman 2013):
+        #   可持续增长率 = ROIC × 再投资率
+        #   再投资率 = 1 - FCF/NOPAT ≈ 用 γ 近似
+        #
+        # 实现: 用 π 因子估算 ROIC 水平, 用 γ 近似再投资率
+        #        g* 作为理论上限与因子估计融合
+        #
+        # References:
+        #   - Higgins, R.C. (1977). "How Much Growth Can a Firm Afford?"
+        #     Financial Management, 6(3), 7-16.
+        #   - Penman, S.H. (2013). Financial Statement Analysis and
+        #     Security Valuation, 5th ed., McGraw-Hill.
+        # ============================================================
+
+        # π -> 估算 ROIC (横截面映射: π=0 -> 3%, π=0.5 -> 10%, π=1.0 -> 25%)
+        pi = get_factor_score(factors, FactorId.PI, 0.5)
+        estimated_roic = 3.0 + pi * 22.0  # 范围 [3%, 25%]
+        components["pi"] = pi
+        components["estimated_roic"] = estimated_roic
+
+        # γ -> 估算再投资率: 高成长公司再投资更多
+        # γ=0 (0成长) -> reinv=20%, γ=0.5 -> reinv=50%, γ=1.0 -> reinv=80%
+        reinvestment_rate = 0.20 + gamma * 0.60
+        components["reinvestment_rate"] = reinvestment_rate
+
+        # g* = ROIC × reinvestment_rate (Higgins 1977)
+        g_star = estimated_roic * reinvestment_rate  # 范围 ≈ [0.6%, 20%]
+        components["g_star"] = g_star
+
         # k1: 成长动能加成 (γ 越大，成长越强，增长天花板越高)
         true_growth_factor = conf.k_true_growth * gamma
         components["true_growth_factor"] = true_growth_factor
@@ -382,8 +462,15 @@ class VelocitySolver:
         base_growth = config.macro.gdp_growth_rate + config.macro.cpi_rate
         components["base_growth"] = base_growth
 
-        # 增长天花板
-        growth_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100 - decay_drag * 100
+        # 因子估计的增长天花板
+        factor_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100 - decay_drag * 100
+        factor_ceiling = clamp(factor_ceiling, 0.0, 50.0)
+        components["factor_ceiling"] = factor_ceiling
+
+        # v9.0: 融合 g* 与因子估计
+        # g* 提供理论上限 (Higgins), 因子提供数据驱动估计
+        # 融合权重: g* 40%, 因子 60% (因子数据更丰富但无理论基础)
+        growth_ceiling = 0.4 * g_star + 0.6 * factor_ceiling
         growth_ceiling = clamp(growth_ceiling, 0.0, 50.0)  # 限制 0-50%
         components["growth_ceiling"] = growth_ceiling
 

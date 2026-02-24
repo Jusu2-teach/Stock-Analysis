@@ -267,6 +267,75 @@ def durbin_watson(residuals: np.ndarray) -> float:
     return dw
 
 
+def newey_west_se(x: np.ndarray, residuals: np.ndarray, max_lag: int = None) -> float:
+    """完整 Newey-West HAC 标准误 (替代 v5.3 的粗略近似)
+
+    v9.0: 实现完整的核估计 HAC 标准误, 替代 sqrt(1 + 2ρ) 近似。
+    近似在 ρ>0.5 时偏差可达 30% (Andrews 1991)。
+
+    使用 Bartlett kernel 和 automatic bandwidth selection:
+        m = floor(4 × (n/100)^(2/9))   — Newey-West (1994) optimal bandwidth
+
+    公式:
+        Var_HAC(β̂) = (X'X)^{-1} × Ω̂ × (X'X)^{-1}
+        Ω̂ = Σ_{j=-m}^{m} w(j) × Σ_{t=|j|+1}^{n} û_t û_{t-|j|} x_t x_{t-|j|}'
+        w(j) = 1 - |j|/(m+1)  (Bartlett kernel)
+
+    对简单回归 y = α + βx 化简为标量形式。
+
+    References:
+        - Newey, W.K. & West, K.D. (1987). Econometrica, 55, 703-708.
+        - Andrews, D.W.K. (1991). Econometrica, 59, 817-858.
+        - Newey, W.K. & West, K.D. (1994). Review of Economic Studies, 61(4), 631-653.
+
+    Args:
+        x: 自变量 (时间索引)
+        residuals: OLS 残差
+        max_lag: 最大滞后阶数 (None = 自动选择)
+
+    Returns:
+        HAC-adjusted 标准误 for slope coefficient
+    """
+    n = len(x)
+    if n < 4:
+        # 数据不足, 退回 OLS
+        x_mean = x.mean()
+        var_x = np.sum((x - x_mean) ** 2)
+        if var_x < 1e-10:
+            return float('inf')
+        mse = np.sum(residuals ** 2) / max(n - 2, 1)
+        return float(np.sqrt(mse / var_x))
+
+    # 自动 bandwidth: Newey-West (1994) 最优选择
+    if max_lag is None:
+        max_lag = max(1, int(np.floor(4.0 * (n / 100.0) ** (2.0 / 9.0))))
+    max_lag = min(max_lag, n - 2)  # 安全上限
+
+    x_mean = x.mean()
+    x_centered = x - x_mean
+    var_x_sq = np.sum(x_centered ** 2)
+    if var_x_sq < 1e-10:
+        return float('inf')
+
+    # 核心: 计算 Ω̂ 的标量形式
+    # Γ(0) = Σ û²_t × x̃²_t
+    u_x = residuals * x_centered
+    gamma_0 = np.sum(u_x ** 2)
+
+    # Γ(j) = Σ_{t=j+1}^{n} û_t x̃_t × û_{t-j} x̃_{t-j}  (Bartlett kernel)
+    omega_hat = gamma_0
+    for j in range(1, max_lag + 1):
+        bartlett_weight = 1.0 - j / (max_lag + 1.0)
+        gamma_j = np.sum(u_x[j:] * u_x[:-j])
+        omega_hat += 2.0 * bartlett_weight * gamma_j  # 双侧对称
+
+    # HAC 方差 = Ω̂ / (X'X)²
+    hac_var = omega_hat / (var_x_sq ** 2) * n  # 有限样本修正 ×n
+    hac_se = float(np.sqrt(max(0.0, hac_var)))
+
+    return hac_se
+
+
 class LogTrendProbe:
     """Log trend probe with adaptive transformation.
 
@@ -422,16 +491,19 @@ class LogTrendProbe:
         ols_residuals = transformed - (log_slope * years + log_intercept)
         has_heteroscedasticity, hetero_corr = detect_heteroscedasticity(ols_residuals, years)
 
-        # ========== 3.5. v5.3 Durbin-Watson 序列相关检测 ==========
-        # 财务时序常有趋势惯性(正自相关), DW<1.5 时 OLS std_err 低估
+        # ========== 3.5. v5.3→v9.0 序列相关检测 + 完整 Newey-West HAC ==========
+        # v5.3: 使用 sqrt(1+2ρ) 近似 — 在 ρ>0.5 时偏差可达 30%
+        # v9.0: 完整 Newey-West HAC with Bartlett kernel + automatic bandwidth
+        #       (Andrews 1991, Newey-West 1994)
         dw_stat = durbin_watson(ols_residuals)
         has_autocorrelation = dw_stat < 1.5 or dw_stat > 2.5
 
-        # Newey-West 近似调整: DW 偏离2.0时放大 std_err
-        # NW_factor = sqrt(1 + 2*ρ), ρ ≈ 1 - DW/2
-        rho_hat = 1.0 - dw_stat / 2.0
-        nw_factor = max(1.0, (1.0 + 2.0 * abs(rho_hat)) ** 0.5)
-        adjusted_std_err = std_err * nw_factor
+        # 完整 Newey-West HAC 标准误 (替代粗略近似)
+        hac_se = newey_west_se(years, ols_residuals)
+        # NW factor = HAC_SE / OLS_SE — 度量自相关对推断的影响
+        nw_factor = hac_se / std_err if std_err > 1e-10 else 1.0
+        nw_factor = max(1.0, nw_factor)  # HAC 只放大, 不缩小
+        adjusted_std_err = hac_se if hac_se > std_err else std_err
 
         # ========== 4. Bootstrap 置信区间 ==========
         # 对于小样本，Bootstrap 比 t 分布更可靠
@@ -452,13 +524,30 @@ class LogTrendProbe:
             fused_slope = 0.6 * log_slope + 0.4 * wls_slope
             slope_method = "ols_dominant"
 
-        # ========== 6. v7.2 Empirical Bayes Shrinkage ==========
+        # ========== 6. v7.2→v9.0 Empirical Bayes Shrinkage ==========
         # 高噪声序列 (std_err 大) 将斜率收缩向零 (保守先验)
-        # ROIIC (CV=1.188) 的 slope 估计本质是噪声, 需要正则化
-        # shrunk_slope = (1 - B) * fused_slope + B * 0
+        # shrunk_slope = (1 - B) × fused_slope + B × 0
         # B = σ²_slope / (σ²_slope + τ²)
-        # τ² = 全市场 log_slope 方差的经验估计 ≈ 0.04
-        tau_squared = 0.04  # 先验: 全市场 log_slope 标准差 ≈ 0.20
+        #
+        # v9.0: τ² 从数据自适应估计 (Morris 1983 Parametric EB)
+        # 原: τ²=0.04 硬编码 — 不知道全样本实际方差
+        # 改: τ² = max(Var(slopes) - median(σ²_i), ε)
+        #     Var(slopes) = OLS/WLS 斜率在 bootstrap 内的分散度
+        #     median(σ²_i) = 典型测量误差
+        # 当无外部信息时, 用 bootstrap slopes 的方差作为 τ² 的上界估计
+        # References:
+        #   - Morris, C.N. (1983). JASA, 78(381), 47-55.
+        #   - Efron, B. (2010). Large-Scale Inference. Cambridge University Press.
+        tau_squared_bootstrap = float(np.var(slopes)) if 'slopes' in dir() and len(slopes) > 10 else None
+        if tau_squared_bootstrap is not None and tau_squared_bootstrap > 1e-6:
+            # 数据驱动的 τ²: bootstrap 分散度扣除测量噪声
+            # τ² = max(Var_bootstrap - σ²_ols, floor)
+            # floor = 0.001 防止退化 (完全收缩)
+            noise_var = adjusted_std_err ** 2
+            tau_squared = max(tau_squared_bootstrap - noise_var * 0.5, 0.001)
+        else:
+            # 退回保守先验 (bootstrap 未产出足够样本)
+            tau_squared = 0.04
         slope_var = adjusted_std_err ** 2
         shrinkage_B = slope_var / (slope_var + tau_squared)
         shrunk_slope = (1.0 - shrinkage_B) * fused_slope
