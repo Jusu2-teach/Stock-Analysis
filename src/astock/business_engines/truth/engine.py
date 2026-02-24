@@ -236,7 +236,11 @@ def _inject_actual_values(
                 roic_th = new_thresholds.get("roic")
                 if roic_th and hasattr(roic_th, 'actual_value') and roic_th.actual_value is not None:
                     threshold = result.components.get("roic_threshold", 12.0)
-                    excess = roic_th.actual_value - threshold
+                    # v6.1: 优先使用 latest_value (当前业绩) 而非 weighted_avg (历史均值)
+                    # weighted_avg 可能掩盖近期恶化 (如华宝新能: weighted=34%, latest=3.3%)
+                    # 而 excess return 应反映 CURRENT 盈利能力 vs 要求
+                    roic_for_excess = merged_components.get("roic_latest_value", roic_th.actual_value)
+                    excess = roic_for_excess - threshold
                     # sigmoid: ±5pp ROIC excess → ±1, 区分度充分
                     # 例: ROIC=20%, threshold=12% → excess=8pp → sigmoid(1.6)=0.83
                     #     ROIC=5%, threshold=12% → excess=-7pp → sigmoid(-1.4)=0.20
@@ -903,24 +907,60 @@ def _cross_sectional_normalize(
         # ── Combined score ──
         final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
-        # ══════ Hard constraints (v5.3: 分级ROIC约束) ══════
-        # v5.1 binary cap: ROIC<3% → 统一cap=0.40 (42%宇宙集)
-        #   问题: ROIC=-10%与ROIC=2.9%同等处理, 底部42%失去区分度
-        # v5.3 graduated: 按价值毁灭严重程度分3档, 保留底部区分度
-        #   ROIC<0%  → cap=0.25 (负回报, 严重价值毁灭)
-        #   0%~1.5% → cap=0.30 (远低于任何行业WACC)
-        #   1.5%~3% → cap=0.40 (接近但仍低于WACC下界)
+        # ══════ Hard constraints (v6.2: 扩展ROIC约束 + 绝对水平奖励) ══════
+        #
+        # v5.3: 仅约束 ROIC<3% (3档), 导致 ROIC=3-5% 的低质量公司
+        # 通过趋势信号进入 quality (假阳性). 核心问题:
+        #   - 纯百分位评级 + 弱绝对约束 → ROIC<5% 可排入 top 10%
+        #   - 同时, ROIC>15% 的成熟优质公司因趋势下行被归为 poor (假阴性)
+        #
+        # v6.2 改进 (双向调整):
+        # 1. 向下: 扩展 ROIC 硬约束到 WACC 区域 (3-8%), 消除假阳性
+        #    ROIC < WACC (≈8%) 的公司不可能是"优质"
+        # 2. 向上: 高 ROIC 绝对水平奖励, 缓解假阴性
+        #    AQR QMJ / Novy-Marx (2013): 当前盈利能力是质量的首要维度
+        #    公司赚取远超 WACC 的回报, 即使趋势温和下行, 仍属优质
+        #
+        # 学术参考:
+        #   - AQR "Quality Minus Junk": Profitability = GPOA, ROE, ROA, CFOA
+        #   - GMO Quality: Profitability (ROIC - WACC) 是核心质量维度
+        #   - Greenblatt "Magic Formula": Earnings Yield ∝ ROIC
+        #   - Novy-Marx (2013): Gross profitability 独立于趋势预测回报
         roic_actual = _extract_roic_actual(p)
         if roic_actual is not None:
+            # ── 向下约束: 低 ROIC 硬封顶 (anti-false-positive) ──
             if roic_actual < 0.0:
-                final_score = min(final_score, 0.25)
+                final_score = min(final_score, 0.20)
                 n_hard_constrained += 1
             elif roic_actual < 1.5:
-                final_score = min(final_score, 0.30)
+                final_score = min(final_score, 0.28)
                 n_hard_constrained += 1
             elif roic_actual < 3.0:
-                final_score = min(final_score, 0.40)
+                final_score = min(final_score, 0.35)
                 n_hard_constrained += 1
+            elif roic_actual < 5.0:
+                # v6.2 NEW: ROIC 3-5% — 低于任何行业 WACC 下界
+                # cap 0.45 确保无法进入 A+/A 评级 (quality 需 top 10%)
+                final_score = min(final_score, 0.45)
+                n_hard_constrained += 1
+            elif roic_actual < 8.0:
+                # v6.2 NEW: ROIC 5-8% — 接近但可能低于 WACC
+                # 软惩罚 × 0.90, 降低但不封死 (B+ 评级仍可达)
+                final_score *= 0.90
+                n_hard_constrained += 1
+
+            # ── 向上奖励: 高 ROIC 绝对水平溢价 (anti-false-negative) ──
+            # 公司赚取远超 WACC 的回报 = 结构性竞争优势
+            # 即使趋势温和下行 (如海康 ROIC 20%→13%), 绝对水平仍优秀
+            # 奖励幅度保守 (2-8%), 不应覆盖严重衰退信号
+            if roic_actual >= 25.0:
+                final_score *= 1.10  # 极优: ROIC > 25% (如锦波, 特宝)
+            elif roic_actual >= 20.0:
+                final_score *= 1.08  # 卓越: ROIC 20-25%
+            elif roic_actual >= 15.0:
+                final_score *= 1.05  # 优秀: ROIC 15-20%
+            elif roic_actual >= 10.0:
+                final_score *= 1.02  # 良好: ROIC 10-15% (海康 13%)
 
         # ══════ v5.4: 数据驱动衰退惩罚 ══════
         # v5.3 硬编码 δ_decay>=0.60 → 0.80×, 不适应分布变化.
@@ -974,6 +1014,13 @@ def _cross_sectional_normalize(
             elif sustainable_growth < 0.15 and raw_gamma > 0.40:
                 # 价值陷阱: 有增长但在衰退, 最高-2%惩罚
                 final_score *= max(0.98, 1.0 - (0.15 - sustainable_growth) * 0.05)
+
+        # ══════ v6.2: Score Cap ══════
+        # 多重乘法调整 (ROIC bonus × momentum × SG) 可导致 final_score > 1.0
+        # 例: 0.95 × 1.10 × 1.03 × 1.02 = 1.10
+        # cap 在 1.0 确保报告中不出现 >100% 的分数
+        # 不影响 percentile grading (排名不变)
+        final_score = min(1.0, final_score)
 
         new_profiles.append(replace(p, final_score=final_score))
 
@@ -1048,12 +1095,29 @@ def _cross_sectional_normalize(
         final_profiles.append(replace(p, signal=signal, grade=grade, confidence=adjusted_confidence))
 
     logger.info(
-        f"v6.0 Cross-Sectional Normalization: "
+        f"v6.2 Cross-Sectional Normalization: "
         f"{len(profiles)} companies, "
-        f"{n_hard_constrained} hard-constrained (ROIC<3%), "
+        f"{n_hard_constrained} hard-constrained (ROIC<8% penalized, ROIC>10% rewarded), "
         f"momentum +{n_momentum_pos}/-{n_momentum_neg}, "
         f"percentile grading applied"
     )
+
+    # v6.1: Score distribution diagnostics (运行时健康检查)
+    all_scores = sorted([p.final_score for p in final_profiles
+                         if p.final_score is not None and p.signal != TruthSignal.FRAUD_ALERT])
+    if all_scores:
+        n = len(all_scores)
+        p5 = all_scores[int(n * 0.05)]
+        p25 = all_scores[int(n * 0.25)]
+        p50 = all_scores[int(n * 0.50)]
+        p75 = all_scores[int(n * 0.75)]
+        p95 = all_scores[min(n - 1, int(n * 0.95))]
+        avg = sum(all_scores) / n
+        logger.info(
+            f"  Score distribution: "
+            f"avg={avg:.3f} | p5={p5:.3f} p25={p25:.3f} p50={p50:.3f} p75={p75:.3f} p95={p95:.3f}"
+        )
+
     return final_profiles
 
 
@@ -1132,7 +1196,7 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "6.0.0",
+            "algo_version": "6.2.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
             "factor_count": 7,
