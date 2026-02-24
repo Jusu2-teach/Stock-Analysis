@@ -297,14 +297,14 @@ class ScoringConfig:
       原阈值导致0家A+/A, 现在top 5%能拿到A
     """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ALPHA": 0.10,             # v7.0 ↓ 0.12→0.10: π因子分离出盈利水平后减少
-        "BETA": 0.08,              # v4.6 ↑ 0.07→0.08: 轻微提升
-        "GAMMA": 0.14,             # v7.0 ↓ 0.18→0.14: 成长趋势vs盈利水平分离
-        "PI": 0.15,                # v7.0 新增: 盈利能力水平 (Novy-Marx最强因子)
-        "LAMBDA": 0.10,            # v7.0 ↓ 0.12→0.10: 轻微调整
-        "DELTA_FRAUD": 0.15,       # v7.0 ↓ 0.16→0.15: 轻微调整
-        "DELTA_DECAY": 0.16,       # v7.0 ↓ 0.18→0.16: 轻微调整
-        "VERIFICATION": 0.12,      # v7.0 ↓ 0.16→0.12: OCF质量与π部分重叠
+        "ALPHA": 0.13,             # v10.0 ↑ 0.10→0.13: IC=0.36, 回测验证周期性因子高预测力
+        "BETA": 0.06,              # v10.0 ↓ 0.08→0.06: IC=0.11, 资本结构预测力最弱
+        "GAMMA": 0.14,             # v10.0 ≈ 0.14: IC=0.32, 成长趋势稳定
+        "PI": 0.23,                # v10.0 ↑ 0.15→0.23: IC=0.70(!), 盈利水平是最强预测因子
+        "LAMBDA": 0.08,            # v10.0 ↓ 0.10→0.08: IC=0.15
+        "DELTA_FRAUD": 0.12,       # v10.0 ↓ 0.15→0.12: IC=0.21
+        "DELTA_DECAY": 0.16,       # v10.0 ≈ 0.16: IC=0.37, 质量衰退检测稳定
+        "VERIFICATION": 0.08,      # v10.0 ↓ 0.12→0.08: IC=0.12, 与π部分重叠
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
         "GRAVITY": 0.50,     # v5.1: ↑ 0.35→0.50 (ROIC阈值推导, 核心价值锚)
