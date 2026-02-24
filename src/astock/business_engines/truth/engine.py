@@ -973,38 +973,34 @@ def _cross_sectional_normalize(
             elif roic_actual >= 10.0:
                 final_score *= 1.02  # 良好: ROIC 10-15% (海康 13%)
 
-        # ══════ v5.4→v7.3: 数据驱动衰退惩罚 ══════
+        # ══════ v5.4→v7.4: 连续 sigmoid 衰退惩罚 ══════
         # v5.3 硬编码 δ_decay>=0.60 → 0.80×, 不适应分布变化.
-        # v5.4: 使用当前宇宙集的百分位阈值 (top 5%/10%/20%)
-        # v7.3: 大幅强化惩罚力度 — 审计发现 0.80×/0.85× 不足以阻止
-        #   衰退期公司进入 quality (base 0.80 × 0.80 = 0.64 > buy 0.58)
-        #   新方案 (双层防线, 保留排序信息):
-        #     A. 绝对值连续乘法惩罚 (v7.3 NEW):
-        #        raw_decay > 0.70 → ×0.50 (base 0.80 → 0.40, 远低于 buy 0.58)
-        #        raw_decay > 0.50 → ×0.62 (base 0.80 → 0.50, 低于 buy 0.58)
-        #        raw_decay > 0.35 → ×0.78 (base 0.80 → 0.62, 边缘)
-        #     B. 百分位极端约束 (top 5% 额外惩罚):
-        #        top 5% → 额外 ×0.80 (叠加到 A 之后)
-        # 使用连续乘法而非 hard cap, 保留组内排序信息 → 减小 Spearman ρ 损失.
-        # RAW (非行业中性化) δ_decay 保留绝对水平信息.
+        # v7.3: 三级硬阈值 (0.35/0.50/0.70) 消除了 decay quality 泄漏,
+        #   但阈值边界处产生 rank discontinuity, 压损 Spearman ρ.
+        # v7.4: 替换硬阈值为连续 sigmoid 函数:
+        #   penalty_mult = 1 - max_penalty / (1 + exp(-steepness*(x - center)))
+        #   center=0.40: 在 decay=0.40 时惩罚达一半
+        #   steepness=8:  过渡带宽 ~0.25 (从 0.28 到 0.52 完成大部分过渡)
+        #   max_penalty=0.55: decay=0.80 → mult ≈ 0.46, decay=0.20 → mult ≈ 0.97
+        # 优势: 完全连续, 保留组内排序信息, 减小 ρ 损失
+        # 当 γ_growth 高时 (>0.55), 减弱惩罚 (衰退可能已在修复)
         raw_decay = factor_raw[FactorId.DELTA_DECAY][i]
         raw_gamma = factor_raw[FactorId.GAMMA][i]
-        if raw_decay is not None:
-            # --- A. 绝对值连续惩罚 (v7.3 — 严重衰退永远被惩罚) ---
-            if raw_decay > 0.70:
-                # 极重度衰退: ×0.50
-                final_score *= 0.50
-            elif raw_decay > 0.50:
-                # 重度衰退: ×0.62
-                final_score *= 0.62
-            elif raw_decay > 0.35:
-                # 中度衰退(无高成长抵消): ×0.78
-                if raw_gamma is None or raw_gamma < 0.55:
-                    final_score *= 0.78
+        if raw_decay is not None and raw_decay > 0.15:
+            _center, _steepness, _max_pen = 0.40, 8.0, 0.55
+            # sigmoid: 0 (低decay) → 1 (高decay)
+            _sig = 1.0 / (1.0 + math.exp(-_steepness * (raw_decay - _center)))
+            # 高成长 γ>0.55 时：减弱衰退惩罚 (衰退可能正在修复)
+            if raw_gamma is not None and raw_gamma > 0.55:
+                _sig *= 0.50  # 惩罚减半
+            decay_multiplier = 1.0 - _max_pen * _sig
+            # 安全下界: 最低 ×0.40 (不会完全归零)
+            decay_multiplier = max(0.40, decay_multiplier)
+            final_score *= decay_multiplier
 
-            # --- B. 百分位极端尾部约束 (top 5% 叠加) ---
+            # 百分位极端尾部额外约束 (top 5% 叠加)
             if raw_decay >= _extreme_threshold:
-                final_score *= 0.80
+                final_score *= 0.85
 
         # ══════ v6.0: Fundamental Momentum Adjustment ══════
         # Novy-Marx (2015): "Fundamentally, Momentum is Fundamental"

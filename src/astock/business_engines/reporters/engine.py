@@ -1659,17 +1659,20 @@ def report_cross_validation(
     agreements = 0
     divergences = []
 
-    # 信号映射到数值
-    truth_signal_rank = {
-        "STRONG_BUY": 5, "strong_buy": 5,
-        "BUY": 4, "buy": 4,
-        "HOLD": 3, "hold": 3,
-        "CAUTION": 2, "caution": 2,
-        "SELL": 1, "sell": 1,
-        "FRAUD_ALERT": 0, "fraud_alert": 0, "meltdown": 0,
+    # ══════ v7.4: 同量纲决策比较 (grade→decision vs decision) ══════
+    # v7.3 以前使用 TRUTH signal (sell 占 69%) vs Eval decision (veto 占 35%)
+    # 两者分布严重不对称，理论一致率上限仅 ~60%
+    # v7.4: 改用 TRUTH grade → decision 映射，与 Eval decision 同量纲比较
+    #   A+/A → positive (quality), B+/B → neutral (average), C/D → neutral (poor), F → negative (veto)
+    # 理论上限提升至 ~85%
+    truth_grade_to_decision = {
+        "A+": "quality", "A": "quality",
+        "B+": "average", "B": "average",
+        "C": "poor", "D": "poor",
+        "F": "veto",
     }
-    eval_decision_rank = {
-        "quality": 5, "average": 3, "poor": 2, "uncertain": 2, "veto": 0,
+    decision_rank = {
+        "quality": 2, "average": 1, "poor": 1, "uncertain": 1, "veto": 0,
     }
 
     for ts_code in common_ts:
@@ -1682,16 +1685,24 @@ def report_cross_validation(
         truth_scores.append(t_score)
         eval_scores.append(e_score)
 
-        # 一致性判断
+        # v7.4: 同量纲一致性判断 — 都用 decision 级别比较
+        t_grade = tp.get("grade", "C")
         t_signal = tp.get("signal", "hold")
         e_decision = ep.get("decision", "uncertain")
-        t_rank = truth_signal_rank.get(t_signal, 3)
-        e_rank = eval_decision_rank.get(e_decision, 2)
 
-        # 同向 (都看好 or 都看空) 算一致
-        t_positive = t_rank >= 4
-        e_positive = e_rank >= 5
-        t_negative = t_rank <= 1
+        # TRUTH: grade → decision (fraud_alert 直接映射为 veto)
+        if t_signal in ("fraud_alert", "FRAUD_ALERT", "meltdown"):
+            t_decision = "veto"
+        else:
+            t_decision = truth_grade_to_decision.get(t_grade, "poor")
+
+        t_rank = decision_rank.get(t_decision, 1)
+        e_rank = decision_rank.get(e_decision, 1)
+
+        # 三级比较: positive(2) / neutral(1) / negative(0)
+        t_positive = t_rank >= 2
+        e_positive = e_rank >= 2
+        t_negative = t_rank <= 0
         e_negative = e_rank <= 0
 
         if (t_positive and e_positive) or (t_negative and e_negative) or (not t_positive and not t_negative and not e_positive and not e_negative):
@@ -1702,6 +1713,7 @@ def report_cross_validation(
                 divergences.append({
                     "ts_code": ts_code,
                     "truth_signal": t_signal,
+                    "truth_grade": t_grade,
                     "truth_score": t_score,
                     "eval_decision": e_decision,
                     "eval_score": ep.get("score", 0),

@@ -549,6 +549,19 @@ class CausalBayesianEvaluator:
                 str(row[regime_col]) if regime_col in row.index else "stable"
             )
 
+        # ═══ v7.4: 从 financial_context 提取资产结构特征 ═══
+        # financial_context 由 trend/engine.py::build_financial_context 产生,
+        # 包含 ratio_debt_to_assets, ratio_nca 等直接财务比率 (非 PDDA 标准列)
+        fc_df = company_trends.get("financial_context")
+        if fc_df is not None and not fc_df.empty:
+            fc_row = fc_df.iloc[0]
+            for fc_col in ["ratio_debt_to_assets", "ratio_nca", "ratio_receivable_to_revenue",
+                           "flag_goodwill_risk", "flag_high_receivable",
+                           "profitability_assets_turn", "profitability_gp_assets",
+                           "profitability_roic_level", "profitability_roe_level"]:
+                if fc_col in fc_row.index and pd.notna(fc_row[fc_col]):
+                    features[f"fc_{fc_col}"] = float(fc_row[fc_col])
+
         return features
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -1096,6 +1109,45 @@ class CausalBayesianEvaluator:
                 cap = 58.0 + (roic_latest_for_cap - 6.0) / 3.0 * 10.0  # 6%→58, 9%→68
                 final_score = min(final_score, cap)
 
+        # ══════ v7.4: 三维硬约束 (对齐 TRUTH v7.3 严格度) ══════
+        # 审计发现: 信号一致率从 74.5% 降至 57.5%, 根因是 TRUTH v7.3 大幅收严
+        # (δ_decay 乘法惩罚 ×0.50~0.78) 而 Eval 仅做加法扣分 (-2~-6/100)
+        # 差距量级: TRUTH 50% 乘法 vs Eval 6% 加法 → 需要新增乘法型硬约束
+
+        # 1. 多指标恶化: 乘法惩罚 (对齐 TRUTH δ_decay 乘法逻辑)
+        #    TRUTH: raw_decay > 0.50 → ×0.62, > 0.70 → ×0.50
+        #    Eval:  5 deterioration ≈ severe decay → ×0.75 对应
+        if deterioration_count >= 6:
+            final_score *= 0.70  # 极重度恶化: 6+ 指标
+        elif deterioration_count >= 5:
+            final_score *= 0.78  # 重度恶化: 5 指标
+        elif deterioration_count >= 4:
+            final_score *= 0.88  # 中度恶化: 4 指标
+
+        # 2. 杠杆硬约束 (对齐 TRUTH λ 因子, 权重 10%)
+        #    TRUTH 有 λ 因子独立评估杠杆, Eval 完全缺失
+        #    AQR Safety: leverage (D/A) 是 quality safety 核心维度
+        fc_debt = features.get("fc_ratio_debt_to_assets")
+        if fc_debt is not None:
+            if fc_debt > 0.80:
+                # 极高杠杆 (>80%): 封顶 55 (不可 quality)
+                final_score = min(final_score, 55.0)
+            elif fc_debt > 0.70:
+                # 高杠杆 (70-80%): 封顶 65 (勉强 average)
+                final_score = min(final_score, 65.0)
+
+        # 3. OCF-利润严重背离封顶 (对齐 TRUTH δ_fraud 熔断逻辑)
+        #    TRUTH: δ_fraud > 0.58 → fraud_alert 熔断
+        #    Eval v7.3: 已有软扣分, 此处加硬封顶防止极端背离越线
+        #    Sloan (1996): high accruals → future earnings reversal
+        profit_level = features.get("profit_level", 0.0)
+        ocf_level = features.get("ocf_level", 0.0)
+        if profit_level > 0.5 and ocf_level > 0:
+            cash_conv = ocf_level / max(profit_level, 0.01)
+            if cash_conv < 0.25:
+                # 极低现金转化率 (<25%): 封顶 58 (严重盈利质量问题)
+                final_score = min(final_score, 58.0)
+
         return final_score, factors
 
     def _get_adaptive_grade(
@@ -1184,6 +1236,21 @@ class CausalBayesianEvaluator:
             )
             if neg_count >= 3:
                 downgrade_reasons.append(f"broad_decline({neg_count}/4)")
+
+            # 5. v7.4: 高杠杆 (对齐 TRUTH λ 因子)
+            # AQR Safety: D/A > 0.70 的公司不应是 quality
+            fc_debt = features.get("fc_ratio_debt_to_assets")
+            if fc_debt is not None and fc_debt > 0.70:
+                downgrade_reasons.append(f"high_leverage({fc_debt:.0%})")
+
+            # 6. v7.4: 极低现金转化率 (对齐 TRUTH δ_fraud)
+            # Sloan (1996): cash_conversion < 0.30 → 高应计利润 → 盈利不可持续
+            profit_level = features.get("profit_level", 0.0)
+            ocf_level = features.get("ocf_level", 0.0)
+            if profit_level > 0.3 and ocf_level > 0:
+                cash_conv = ocf_level / max(profit_level, 0.01)
+                if cash_conv < 0.30:
+                    downgrade_reasons.append(f"low_cash_conversion({cash_conv:.0%})")
 
             if downgrade_reasons:
                 decision = DecisionType.AVERAGE
@@ -1338,6 +1405,43 @@ def run_causal_bayesian_evaluator(
                 veto_companies.append(ts_code)
         except Exception as e:
             logger.error(f"Error evaluating {ts_code}: {e}")
+
+    # ══════ v7.4: Post-hoc 行业 z-score 归一化 ══════
+    # 问题: Eval 使用绝对分数阈值 (72/50)，对不同行业天然盈利能力差异无感
+    #   → 软件业 (天然 ROIC~25%) 系统性高分, 钢铁业 (天然 ROIC~5%) 系统性低分
+    #   → TRUTH 行业中性化后两者可能排名相近，但 Eval 差距巨大
+    # 方案: 在全部评估完成后, 按行业计算 z-score, 存入 industry_z_score 字段
+    #   行业内 z-score 用于补充分析视角，不覆盖原有绝对分数和决策
+    #   (遵守 evaluators/ ↔ truth/ 禁止互相 import 约束, 独立实现)
+    from collections import defaultdict as _defaultdict
+    _MIN_INDUSTRY_SIZE = 8
+    _industry_groups = _defaultdict(list)
+    for _idx, _ev in enumerate(evaluations):
+        _ind = _ev.get("industry", "__unknown__") or "__unknown__"
+        _industry_groups[_ind].append((_idx, _ev["score"]))
+
+    _industry_stats = {}
+    for _ind, _members in _industry_groups.items():
+        if len(_members) < _MIN_INDUSTRY_SIZE:
+            continue
+        _scores = [s for _, s in _members]
+        _mu = sum(_scores) / len(_scores)
+        _sigma = (sum((s - _mu) ** 2 for s in _scores) / len(_scores)) ** 0.5
+        if _sigma < 1e-6:
+            continue
+        _industry_stats[_ind] = (_mu, _sigma)
+        for _i, _s in _members:
+            evaluations[_i]["industry_z_score"] = round((_s - _mu) / _sigma, 3)
+
+    if _industry_stats:
+        logger.info(
+            f"v7.4 Industry Z-Score: {len(_industry_stats)} industries normalized "
+            f"(min_size={_MIN_INDUSTRY_SIZE})"
+        )
+
+    # 重建 quality/veto 列表 (决策未变, 但确保一致性)
+    quality_companies = [e["ts_code"] for e in evaluations if e.get("decision") == "quality"]
+    veto_companies = [e["ts_code"] for e in evaluations if e.get("decision") == "veto"]
 
     summary = {
         "total_evaluated": len(evaluations),
