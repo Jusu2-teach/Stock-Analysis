@@ -498,8 +498,8 @@ class LogTrendProbe:
 
         if transform_method == 'log':
             # 回归法: log_slope = d(log Y)/dt ≈ 连续 CAGR
-            # 使用 fused_slope (OLS+WLS 融合) 获得更稳健的估计
-            log_slope = trend_metrics.get('fused_slope', trend_metrics.get('log_slope', 0.0))
+            # v7.5: 使用 shrunk_slope (Empirical Bayes 收缩) — 高噪声估计收敛向零
+            log_slope = trend_metrics.get('shrunk_slope', trend_metrics.get('fused_slope', 0.0))
             cagr = math.exp(log_slope) - 1.0
         else:
             # arcsinh 变换不能直接转 CAGR，回退端点法
@@ -618,10 +618,15 @@ class LogTrendProbe:
                 "low": trend_metrics.get('bootstrap_ci_low'),
                 "high": trend_metrics.get('bootstrap_ci_high'),
             },
+            # v7.5: Empirical Bayes shrinkage 诊断
+            "shrunk_slope": trend_metrics.get('shrunk_slope'),
+            "shrinkage_intensity": trend_metrics.get('shrinkage_intensity'),
         }
 
         return LogTrendResult(
-            log_slope=trend_metrics['fused_slope'],  # v4.3: 使用 OLS+WLS 融合斜率
+            # v7.5: 使用 shrunk_slope 替代 fused_slope — 高噪声估计自动收缩
+            # fused_slope 仍保留在 metadata["fused_slope"] 中供诊断
+            log_slope=trend_metrics.get('shrunk_slope', trend_metrics['fused_slope']),
             slope=trend_metrics['linear_slope'],
             intercept=trend_metrics['log_intercept'],
             r_squared=trend_metrics['r_squared'],
