@@ -514,7 +514,7 @@ class StructureSolver:
     护城河维度:
         1. 盈利稳定性: 低 α (周期性)
         2. 资本效率: 低 β (轻资产) - 轻资产更需要护城河
-        3. 成长质量: 高 V (验证因子)
+        3. 盈利质量: 高 π (盈利能力) — v8.1: γ→π 正交化, 消除与 Velocity 的双重计数
         4. 可持续性: 低 δ_decay (衰退)
 
     输出:
@@ -536,14 +536,17 @@ class StructureSolver:
         # 获取因子分数
         alpha = get_factor_score(factors, FactorId.ALPHA, 0.5)
         beta = get_factor_score(factors, FactorId.BETA, 0.5)
-        gamma = get_factor_score(factors, FactorId.GAMMA, 0.5)
+        # v8.1: γ→π 因子正交化
+        # 原: gamma (成长动能) — 但 Velocity 已用 γ 计算增长天花板, 此处重复 = 双重计数
+        # 改: pi (盈利能力) — GP/Assets, ROIC水平, ROE, 资产周转 = 护城河经济质量的直接度量
+        pi = get_factor_score(factors, FactorId.PI, 0.5)
         delta_fraud = get_factor_score(factors, FactorId.DELTA_FRAUD, 0.0)
         delta_decay = get_factor_score(factors, FactorId.DELTA_DECAY, 0.0)
         verification = get_factor_score(factors, FactorId.VERIFICATION, 0.5)
 
         components["alpha"] = alpha
         components["beta"] = beta
-        components["gamma"] = gamma
+        components["pi"] = pi
         components["delta_fraud"] = delta_fraud
         components["delta_decay"] = delta_decay
         components["verification"] = verification
@@ -571,13 +574,16 @@ class StructureSolver:
         components["scrutiny_adjustment"] = scrutiny_adjustment
 
         # ============================================================
-        # 维度3: 成长动能 (高成长 = 护城河有经济动力支撑)
-        # 注意: 之前使用 verification (V因子), 但 V 已在 factor 层级
-        #       有 20% 权重, 在此重复使用会导致双重计算。
-        #       改用 gamma (成长因子) 更合理: 正在扩张的公司护城河有底气
+        # 维度3: 盈利质量 (v8.1 正交化: γ→π)
+        # 原: gamma (成长动能) — Velocity solver 已以 γ 计算增长天花板,
+        #     此处重复使用 = 系统性双重编码, 违反因子正交设计
+        # 改: pi (盈利能力因子) — GP/Assets(0.35) + ROIC水平(0.30)
+        #     + ROE水平(0.20) + 资产周转(0.15)
+        # 理据: 护城河的经济本质 = 持续超额盈利能力 (Greenwald 2005),
+        #       π 直接度量 "赚取超额回报的能力", 是护城河质量的最佳代理变量
         # ============================================================
 
-        quality_score = gamma
+        quality_score = pi
         components["quality_score"] = quality_score
 
         # ============================================================
@@ -742,7 +748,7 @@ class StructureSolver:
         if stability > 0.7:
             parts.append("盈利稳定")
         if quality > 0.7:
-            parts.append("成长质量高")
+            parts.append("盈利质量高")
 
         if "interpretation" in details:
             parts.append(details["interpretation"])

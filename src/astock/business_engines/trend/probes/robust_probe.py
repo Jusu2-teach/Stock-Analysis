@@ -47,6 +47,45 @@ logger = logging.getLogger(__name__)
 # Mann-Kendall 趋势检验 (专业实现)
 # ============================================================================
 
+def _mk_exact_p_value(s: int, n: int) -> float:
+    """Mann-Kendall S 统计量的精确双侧 p 值 (n ≤ 10, 无 ties)
+
+    v8.1: 使用 Kendall (1975) 递推计数算法替代正态近似。
+    对于 n≤10，正态近似可能产生显著偏差（例如 n=5 时误差可达 15%）。
+    精确测试通过枚举所有排列的 S 分布来完成。
+
+    算法: 动态规划计算 S 在 H0 (无趋势) 下的精确分布
+    - count(k, s) = 前 k 个元素排列中 S=s 的排列数
+    - 当第 k 个元素插入排名 r 时, 贡献 c = 2r - k - 1
+    时间复杂度: O(n² × max_S), n=10 时 max_S=45, 完全可行
+
+    References:
+        - Kendall, M. G. (1975). Rank Correlation Methods, 4th ed. Griffin.
+        - Gilbert, R. O. (1987). Statistical Methods for Environmental Pollution Monitoring.
+    """
+    # 动态规划: 逐步构建 S 的精确分布
+    prev: dict[int, int] = {0: 1}  # count(1, 0) = 1
+
+    for k in range(2, n + 1):
+        curr: dict[int, int] = {}
+        for s_prev, cnt in prev.items():
+            for r in range(1, k + 1):
+                # 第 k 个元素排名为 r 时对 S 的贡献
+                contribution = 2 * r - k - 1
+                s_new = s_prev + contribution
+                curr[s_new] = curr.get(s_new, 0) + cnt
+        prev = curr
+
+    # 总排列数 = n! (校验一致性)
+    total = sum(prev.values())
+
+    # 双侧 p 值: P(|S| >= |s_observed|)
+    abs_s = abs(s)
+    count_extreme = sum(cnt for s_val, cnt in prev.items() if abs(s_val) >= abs_s)
+
+    return count_extreme / total
+
+
 def mann_kendall_test(y: np.ndarray) -> Tuple[float, float, str]:
     """
     Mann-Kendall 趋势检验
@@ -128,10 +167,15 @@ def mann_kendall_test(y: np.ndarray) -> Tuple[float, float, str]:
     else:
         z = 0.0
 
-    # 步骤5: 计算双侧 p 值（正态近似）
-    # 对于 n >= 10，正态近似足够准确
-    # 对于 n < 10，可以使用精确分布，但正态近似误差在可接受范围内
-    p_value = 2 * norm.sf(abs(z))  # 双侧检验
+    # 步骤5: 计算双侧 p 值
+    # v8.1: n ≤ 10 且无 ties 时使用精确分布 (Kendall 1975)
+    # 正态近似在 n < 10 时误差可达 15% (Gilbert 1987, Table A18)
+    # 有 ties 时精确分布改变, 退回正态近似 + ties 修正 (仍然合理)
+    if n <= 10 and len(tie_groups) == 0:
+        p_value = _mk_exact_p_value(s, n)
+    else:
+        # n > 10 或有 ties: 正态近似足够准确
+        p_value = 2 * norm.sf(abs(z))  # 双侧检验
 
     # 确定趋势方向（基于显著性水平 0.05）
     if p_value < 0.05:

@@ -1005,6 +1005,36 @@ class CausalBayesianEvaluator:
             if features.get(f"{metric_key.replace('_trend', '')}_has_deterioration", False)
         )
 
+        # ══════ v8.1: 动量信号整合 (latest_vs_weighted momentum) ══════
+        # latest_vs_weighted = 最新值 / 时间加权平均
+        # 该比率自 v3.1 起提取但从未使用 — 这浪费了一个强信号:
+        #   ratio >> 1.0: 最近表现远超历史均值 → 强改善动量
+        #   ratio << 1.0: 最近表现远低于历史均值 → 恶化动量
+        # 实现: 对核心盈利指标(ROIC, ROE, gross_margin, net_margin)计算中位动量
+        # 理论基础: Novy-Marx (2013) 证明盈利动量(profitability momentum)
+        #          是独立于价格动量的 alpha 来源, IC ≈ 0.04-0.06/month
+        # ================================================================
+        _momentum_metrics = ["roic", "roe", "gross_margin", "net_margin"]
+        _momentum_ratios = []
+        for _m in _momentum_metrics:
+            _ratio = features.get(f"{_m}_latest_vs_weighted", None)
+            if _ratio is not None and 0.1 < _ratio < 10.0:  # 排除明显异常值
+                _momentum_ratios.append(_ratio)
+
+        if len(_momentum_ratios) >= 2:
+            median_momentum = float(np.median(_momentum_ratios))
+            # 双向调整: 正向改善奖励, 负向恶化惩罚
+            if median_momentum > 1.15:
+                # 核心盈利指标中位数显著高于均值 → 改善动量
+                # 1.15 → +1, 1.30 → +2.5, 1.50+ → +3 (封顶)
+                momentum_bonus = min(3.0, (median_momentum - 1.15) * 7.0 + 1.0)
+                base_score += momentum_bonus
+            elif median_momentum < 0.85:
+                # 核心盈利指标中位数显著低于均值 → 恶化动量
+                # 0.85 → -1, 0.70 → -2.5, 0.50- → -3 (封顶)
+                momentum_penalty = min(3.0, (0.85 - median_momentum) * 7.0 + 1.0)
+                base_score -= momentum_penalty
+
         # v4.4: 多指标恶化调降 (降低力度，避免与规则P3三重惩罚)
         # 旧版 -12/-8/-5 加上规则P3逐指标扣分 + base_score已含低趋势，导致三重打击
         # 新版仅作为"多指标联动"信号的边际调整，核心惩罚由规则P3承担
