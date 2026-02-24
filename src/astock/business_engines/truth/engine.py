@@ -1,27 +1,31 @@
 """
 ═══════════════════════════════════════════════════════════════════════════════
-T.R.U.T.H. v3.0 - 六维基因测序 × 三大物理求解器
+T.R.U.T.H. v7.0 - 八维基因测序 × 三大物理求解器
 ═══════════════════════════════════════════════════════════════════════════════
 
 精简扁平架构:
 
     truth/
     ├── engine.py       # 主入口 (run_truth)
-    ├── factors.py      # 6 个因子 (α/β/γ/δ_fraud/δ_decay/V)
+    ├── factors.py      # 8 个因子 (α/β/γ/π/λ/δ_fraud/δ_decay/V)
     ├── solvers.py      # 3 个求解器 (Gravity/Velocity/Structure)
     ├── models.py       # 领域模型
     └── config.py       # 配置
 
 设计理念:
-    - 去标签化: 用数据驱动的六维基因描述公司特征
+    - 去标签化: 用数据驱动的八维基因描述公司特征
     - 动态阈值: 求解器输出阈值而非简单分数
     - 物理隐喻: 重力场/速度场/结构场
+
+v7.0 新增:
+    - π (Pi) 盈利能力因子: GP/Assets (Novy-Marx) + ROIC/ROE水平 + 资产周转率
+    - 填补 AQR QMJ Profitability、MSCI Quality ROE Level 维度缺失
 
 Pipeline 集成:
     - 输入: aggregated_trends (来自 PDDA)
     - 输出: profiles + summary
 
-版本: 3.0.0
+版本: 7.0.0
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
@@ -53,6 +57,7 @@ from .factors import (
     AlphaFactor,
     BetaFactor,
     GammaFactor,
+    PiFactor,
     LambdaFactor,
     DeltaFraudFactor,
     DeltaDecayFactor,
@@ -289,6 +294,7 @@ def _process_single(ts_code: str, probes: List[ProbeInput], config: TruthConfig)
         AlphaFactor(),
         BetaFactor(),
         GammaFactor(),
+        PiFactor(),
         LambdaFactor(),
         DeltaFraudFactor(),
         DeltaDecayFactor(),
@@ -415,11 +421,18 @@ def _calibrate(
         FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.18),
         FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
         FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
-        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.18),
-        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
+        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
+        FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
+        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.14),
+        FactorId.PI: scoring.factor_weights.get("PI", 0.15),
+        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.10),
+        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.15),
+        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.16),
+        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.12),
     }
     # 负向因子: score 越高越差 → 反转
     # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
+    # v7.0: π(盈利能力)是正向因子
     _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
 
     weighted_sum = 0.0
@@ -715,8 +728,8 @@ def _cross_sectional_normalize(
 
     # ══════ Step 1: 提取原始分数矩阵 ══════
     factor_ids = [
-        FactorId.ALPHA, FactorId.BETA, FactorId.GAMMA, FactorId.LAMBDA,
-        FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.VERIFICATION,
+        FactorId.ALPHA, FactorId.BETA, FactorId.GAMMA, FactorId.PI,
+        FactorId.LAMBDA, FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.VERIFICATION,
     ]
     solver_ids = [SolverId.GRAVITY, SolverId.VELOCITY, SolverId.STRUCTURE]
 
@@ -832,13 +845,14 @@ def _cross_sectional_normalize(
 
     # ══════ Step 3: 加权合成 + 硬约束 → 评级 ══════
     factor_weight_map = {
-        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.12),
+        FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
         FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
-        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.18),
-        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.12),
-        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.16),
-        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.18),
-        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.16),
+        FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.14),
+        FactorId.PI: scoring.factor_weights.get("PI", 0.15),
+        FactorId.LAMBDA: scoring.factor_weights.get("LAMBDA", 0.10),
+        FactorId.DELTA_FRAUD: scoring.factor_weights.get("DELTA_FRAUD", 0.15),
+        FactorId.DELTA_DECAY: scoring.factor_weights.get("DELTA_DECAY", 0.16),
+        FactorId.VERIFICATION: scoring.factor_weights.get("VERIFICATION", 0.12),
     }
     solver_weight_map = {
         SolverId.GRAVITY: scoring.solver_weights.get("GRAVITY", 0.50),
@@ -848,7 +862,7 @@ def _cross_sectional_normalize(
 
     # 负向因子: raw score 越高越差 → percentile 高 = 差 → 需要反转
     # v5.2: β加入负向 — 重资产(高β)在质量因子中应为负面，轻资产=高质量
-    # Structure solver 的 capital_barrier 维度已单独捕获重资产护城河效应
+    # v7.0: π(盈利能力)是正向因子 — 高π = 高盈利 = 高质量
     _NEGATIVE_FACTORS = {FactorId.DELTA_FRAUD, FactorId.DELTA_DECAY, FactorId.LAMBDA, FactorId.ALPHA, FactorId.BETA}
     factor_ratio = scoring.factor_vs_solver_weight
 
@@ -1095,7 +1109,7 @@ def _cross_sectional_normalize(
         final_profiles.append(replace(p, signal=signal, grade=grade, confidence=adjusted_confidence))
 
     logger.info(
-        f"v6.2 Cross-Sectional Normalization: "
+        f"v7.0 Cross-Sectional Normalization: "
         f"{len(profiles)} companies, "
         f"{n_hard_constrained} hard-constrained (ROIC<8% penalized, ROIC>10% rewarded), "
         f"momentum +{n_momentum_pos}/-{n_momentum_neg}, "
@@ -1196,10 +1210,10 @@ def run_truth(
 
     return {
         "metadata": {
-            "algo_version": "6.2.0",
+            "algo_version": "7.0.0",
             "config_version": config.config_version,
             "universe_size": len(profiles),
-            "factor_count": 7,
+            "factor_count": 8,
             "solver_count": 3,
             "has_financial_context": has_financial_context,
         },

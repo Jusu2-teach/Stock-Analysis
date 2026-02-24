@@ -791,8 +791,30 @@ def _extract_ratios_from_indicators(df_sorted: pd.DataFrame) -> pd.DataFrame:
         if not pd.isna(roic_val):
             features["valuation_spread"] = roic_val / 100.0 - 0.08
 
+        # ── v7.0: π因子盈利能力特征 (Novy-Marx / AQR QMJ / MSCI Quality) ──
+        assets_turn_val = _get("assets_turn")
+        gm_val = _get("grossprofit_margin")
+
+        # 资产周转率 (DuPont分解核心, Piotroski #9)
+        if not pd.isna(assets_turn_val) and assets_turn_val > 0:
+            features["profitability_assets_turn"] = assets_turn_val
+
+        # GP/Assets (Novy-Marx 2013: 最强单一质量因子)
+        # GP/A = (Gross Profit / Revenue) × (Revenue / Assets) = GM × Asset Turnover
+        if not pd.isna(gm_val) and not pd.isna(assets_turn_val) and assets_turn_val > 0:
+            gp_assets = (gm_val / 100.0) * assets_turn_val
+            features["profitability_gp_assets"] = gp_assets
+
+        # ROIC 水平 (GMO Quality 核心)
+        if not pd.isna(roic_val):
+            features["profitability_roic_level"] = roic_val
+
+        # ROE 水平 (MSCI Quality 核心)
+        if not pd.isna(roe_val):
+            features["profitability_roe_level"] = roe_val
+
         # 数据完整度
-        expected_fields = 11
+        expected_fields = 15
         actual_fields = sum(1 for k in features if k.startswith(("ratio_", "flag_")))
         features["data_completeness"] = min(0.85, actual_fields / expected_fields)
 

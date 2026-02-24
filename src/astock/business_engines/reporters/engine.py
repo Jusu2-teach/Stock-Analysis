@@ -462,6 +462,11 @@ def report_comprehensive(
                 gamma_fd = factors.get("gamma", {})
                 if isinstance(gamma_fd, dict):
                     gamma_s = gamma_fd.get("score", 0)
+                # v7.0: π因子盈利能力
+                pi_s = 0
+                pi_fd = factors.get("pi_profitability", {})
+                if isinstance(pi_fd, dict):
+                    pi_s = pi_fd.get("score", 0)
                 gq = _get_factor_detail(factors, "verification", "growth_quality", "")
                 consensus_quality.append({
                     "ts_code": ts,
@@ -473,6 +478,7 @@ def report_comprehensive(
                     "e_lifecycle": e.get("company_state", ""),
                     "t_lifecycle": t_lc,
                     "gamma": gamma_s,
+                    "pi": pi_s,
                     "growth_quality": gq,
                 })
             elif t_dec == "poor":
@@ -497,13 +503,13 @@ def report_comprehensive(
             consensus_quality.sort(key=lambda x: -(x["e_score"] + x["t_score"] * 100) / 2)
             lines.append("### ⭐ 双引擎共识优质 (最高信度)")
             lines.append("")
-            lines.append("| 代码 | 名称 | 行业 | E评分 | T评分 | T评级 | E周期 | T周期 | γ | 成长质量 |")
-            lines.append("|------|------|------|-------|-------|-------|-------|-------|---|----------|")
+            lines.append("| 代码 | 名称 | 行业 | E评分 | T评分 | T评级 | E周期 | T周期 | γ | π | 成长质量 |")
+            lines.append("|------|------|------|-------|-------|-------|-------|-------|---|---|----------|")
             for item in consensus_quality:
                 lines.append(f"| {item['ts_code']} | {item['name']} | {item['industry']} | "
                            f"{item['e_score']:.1f} | {item['t_score']:.1%} | {item['t_grade']} | "
                            f"{item['e_lifecycle']} | {item['t_lifecycle']} | "
-                           f"{item['gamma']:.2f} | {item['growth_quality']} |")
+                           f"{item['gamma']:.2f} | {item['pi']:.2f} | {item['growth_quality']} |")
             lines.append("")
 
         if e_quality_t_poor:
@@ -564,7 +570,7 @@ def report_comprehensive(
     lines.append("")
     lines.append("**免责声明**: 本报告仅供参考，不构成投资建议。投资有风险，决策需谨慎。")
     lines.append("")
-    lines.append("> 如需 T.R.U.T.H. 数据驱动报告（六维基因+动态阈值），请使用 `report_truth` 方法。")
+    lines.append("> 如需 T.R.U.T.H. 数据驱动报告（八维基因+动态阈值），请使用 `report_truth` 方法。")
 
     content = "\n".join(lines)
 
@@ -588,6 +594,10 @@ FACTOR_NAMES = {
     "DELTA_FRAUD": "δ_fraud 欺诈熵",
     "delta_decay": "δ_decay 衰退熵",
     "DELTA_DECAY": "δ_decay 衰退熵",
+    "pi_profitability": "π 盈利能力",
+    "PI": "π 盈利能力",
+    "lambda_leverage": "λ 杠杆风险",
+    "LAMBDA": "λ 杠杆风险",
     "verification": "V 验证因子",
     "VERIFICATION": "V 验证因子",
 }
@@ -682,10 +692,10 @@ def _generate_profile_section(profile: Dict[str, Any]) -> List[str]:
         lines.append(f"**综合评分**: {final_score:.2%} | **评级**: {grade} | **信号**: {signal} | **置信度**: {confidence:.0%}")
         lines.append("")
 
-    # 六维因子表
+    # 八维因子表
     factors = profile.get("factors", {})
     if factors:
-        lines.append("#### 六维基因图谱")
+        lines.append("#### 八维基因图谱")
         lines.append("")
         lines.append("| 因子 | 分数 | 置信度 | 关键组件 |")
         lines.append("|------|------|--------|----------|")
@@ -852,7 +862,7 @@ def _get_top_warning(profile: Dict[str, Any]) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TRUTH 决策 & 生命周期推断 — 从六维基因因子推导，与 Evaluator 对齐但独立实现
+# TRUTH 决策 & 生命周期推断 — 从八维基因因子推导，与 Evaluator 对齐但独立实现
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
@@ -1075,7 +1085,7 @@ def report_truth(
 
     v3.1 改进（参照 evaluators 报告格式）：
     - 分层展示：汇总 → 完整列表(表格) → Top10详细 → 按评级分组
-    - 只对精选(A+/A)和Top10展开详细六维基因
+    - 只对精选(A+/A)和Top10展开详细八维基因
     - 其余股票用紧凑表格展示
     - 大幅减少报告行数（从7万行降到约2000行）
 
@@ -1104,7 +1114,7 @@ def report_truth(
     lines.append("")
     lines.append("> **T**ransparent **R**isk-adjusted **U**nified **T**hreshold **H**euristic")
     lines.append(">")
-    lines.append("> 六维基因测序 × 三大物理求解器 × 动态阈值决策系统")
+    lines.append("> 八维基因测序 × 三大物理求解器 × 动态阈值决策系统")
     lines.append("")
 
     # ============================================================
@@ -1468,11 +1478,11 @@ def report_truth(
 
     lines.append("## 📖 方法论说明")
     lines.append("")
-    lines.append("### T.R.U.T.H. 六维基因模型")
+    lines.append("### T.R.U.T.H. 八维基因模型")
     lines.append("")
     lines.append("```")
     lines.append("┌─────────────────────────────────────────────────────────┐")
-    lines.append("│                  六维基因图谱                            │")
+    lines.append("│                  八维基因图谱                            │")
     lines.append("├─────────────────────────────────────────────────────────┤")
     lines.append("│  α (Alpha)     : 周期性因子 - 业务稳定性                 │")
     lines.append("│  β (Beta)      : 资本密度因子 - 资本效率                 │")
@@ -1827,10 +1837,10 @@ def report_cross_validation(
             lines.append(f"#### {ts_code} (共识分: {item['consensus_score']:.1%})")
             lines.append("")
 
-            # T.R.U.T.H. 六维基因
+            # T.R.U.T.H. 八维基因
             factors = tp.get("factors", {})
             if factors:
-                lines.append("**六维基因图谱:**")
+                lines.append("**八维基因图谱:**")
                 lines.append("")
                 lines.append("| 因子 | 分数 | 说明 |")
                 lines.append("|------|------|------|")

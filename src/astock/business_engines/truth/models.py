@@ -1,4 +1,4 @@
-"""T.R.U.T.H. 领域模型 - 专业级六维基因量化系统
+"""T.R.U.T.H. 领域模型 - 专业级八维基因量化系统
 
 设计理念：
     1. 语义化命名：每个枚举/类名直接表达业务含义
@@ -22,14 +22,15 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Any
 # ============================================================================
 
 class FactorId(str, Enum):
-    """七维基因因子标识
+    """八维基因因子标识
 
-    T.R.U.T.H. 系统的核心：彻底去标签化，用数据驱动的七维基因描述公司特征
+    T.R.U.T.H. 系统的核心：彻底去标签化，用数据驱动的八维基因描述公司特征
 
     属性基因（描述公司特质）:
         - ALPHA (α): 周期性 - 业绩对宏观经济的敏感弹性
         - BETA (β): 资本密度 - 赚取下一块钱利润所需的"重"度
         - GAMMA (γ): 成长动能 - 业务表面上的扩张加速度
+        - PI (π): 盈利能力 - 当前资本回报绝对水平 (v7.0 新增)
         - LAMBDA (λ): 杠杆强度 - 偿债安全边际与资本结构健康度
 
     风险基因（识别隐患）:
@@ -42,6 +43,7 @@ class FactorId(str, Enum):
     ALPHA = "alpha"                   # α: 周期性
     BETA = "beta"                     # β: 资本密度
     GAMMA = "gamma"                   # γ: 成长动能
+    PI = "pi_profitability"           # π: 盈利能力水平 (v7.0 新增)
     LAMBDA = "lambda_leverage"        # λ: 杠杆强度 (v4.1 新增)
     DELTA_FRAUD = "delta_fraud"       # δ_fraud: 欺诈熵 (熔断项)
     DELTA_DECAY = "delta_decay"       # δ_decay: 衰退熵 (惩罚项)
@@ -54,6 +56,7 @@ class FactorId(str, Enum):
             "alpha": "α 周期性",
             "beta": "β 资本密度",
             "gamma": "γ 成长动能",
+            "pi_profitability": "π 盈利能力",
             "lambda_leverage": "λ 杠杆强度",
             "delta_fraud": "δ_fraud 欺诈熵",
             "delta_decay": "δ_decay 衰退熵",
@@ -64,7 +67,7 @@ class FactorId(str, Enum):
     @property
     def category(self) -> str:
         """因子类别"""
-        if self.value in ("alpha", "beta", "gamma", "lambda_leverage"):
+        if self.value in ("alpha", "beta", "gamma", "pi_profitability", "lambda_leverage"):
             return "attribute"  # 属性基因
         elif self.value in ("delta_fraud", "delta_decay"):
             return "risk"  # 风险基因
@@ -232,7 +235,7 @@ class FactorResult:
 class DynamicThreshold:
     """动态阈值 - T.R.U.T.H. 核心创新
 
-    阈值由六维基因决定，而非静态配置
+    阈值由八维基因决定，而非静态配置
     """
     name: str                        # 阈值名称
     value: float                     # 阈值值
@@ -324,7 +327,7 @@ class TruthProfile:
     """单只股票的 TRUTH 完整画像
 
     这是 TRUTH 系统的最终输出，包含：
-    1. 六维基因向量
+    1. 八维基因向量
     2. 三大求解器结果 (含动态阈值)
     3. 综合评分/评级/信号
     4. 预警列表
@@ -376,7 +379,7 @@ class TruthProfile:
         return None
 
     def get_genome_vector(self) -> Dict[str, float]:
-        """获取六维基因向量"""
+        """获取八维基因向量"""
         return {fid.value: fr.score for fid, fr in self.factors.items()}
 
     def get_all_thresholds(self) -> Dict[str, DynamicThreshold]:

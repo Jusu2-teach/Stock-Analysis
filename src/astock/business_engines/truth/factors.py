@@ -1,6 +1,6 @@
 """T.R.U.T.H. 六维因子计算 - 专业级基因测序实现
 
-实现设计文档中定义的六维基因测序：
+实现设计文档中定义的八维基因测序：
     - α (Cyclicality): 周期性 - 业绩对宏观经济的敏感弹性
     - β (Heaviness): 资本密度 - 赚取下一块钱利润所需的"重"度
     - γ (Growth): 原始动能 - 业务表面上的扩张加速度
@@ -33,6 +33,7 @@ from .config import (
     AlphaFactorConfig,
     BetaFactorConfig,
     GammaFactorConfig,
+    PiFactorConfig,
     LambdaFactorConfig,
     DeltaFraudFactorConfig,
     DeltaDecayFactorConfig,
@@ -636,6 +637,241 @@ class GammaFactor:
             parts.append(f"CAGR={components['cagr']:.1%}")
         if "log_slope" in components:
             parts.append(f"斜率={components['log_slope']:.2f}")
+
+        return "，".join(parts)
+
+
+# ============================================================================
+# π 因子: 盈利能力水平 (Profitability Level) — v7.0 新增
+# ============================================================================
+
+@dataclass
+class PiFactor:
+    """π 因子: 盈利能力水平 - 当前资本回报绝对水平
+
+    v7.0 新增: 填补 AQR QMJ / MSCI Quality / Novy-Marx 三大框架的核心维度缺失。
+
+    学术依据:
+        - Novy-Marx (2013): GP/Assets 是最强单一质量因子
+          (Gross Profitability = GP/TA, 独立于 BM 和 momentum predict returns)
+        - AQR QMJ: Profitability = GPOA + ROE + ROA + CFOA (四支柱首位)
+        - MSCI Quality: ROE level 是三大成分之一
+        - DuPont分解: ROE = Margin × Turnover × Leverage (本因子覆盖前两项)
+
+    数据源:
+        - financial_context 探针: profitability_gp_assets, profitability_assets_turn,
+          profitability_roic_level, profitability_roe_level
+        - 趋势探针: roic_latest_value, roe_latest_value (fallback)
+
+    组件 (权重设计):
+        1. GP/Assets (0.35): Novy-Marx 核心 — 用总资产归一化比净利更robust (不受杠杆/税影响)
+        2. ROIC Level (0.30): 投入资本回报 — GMO Quality 核心, 含杠杆信息
+        3. ROE Level (0.20): 股东权益回报 — MSCI Quality 核心, 反映股东价值创造
+        4. Asset Turnover (0.15): DuPont分解 — 资本效率维度, 覆盖 Piotroski F-Score #9
+
+    评分极性: **正向** (高π = 高盈利 = 高质量)
+    """
+
+    factor_id: FactorId = FactorId.PI
+
+    def evaluate(self,
+                 ts_code: str,
+                 probes: Sequence[ProbeInput],
+                 config: TruthConfig) -> Tuple[FactorResult, List[TruthWarning]]:
+
+        warnings: List[TruthWarning] = []
+        components: Dict[str, float] = {}
+        conf = config.pi_config
+        weights = conf.component_weights
+
+        score = 0.0
+        total_weight = 0.0
+
+        # ================================================================
+        # 数据源 1: financial_context 探针 (首选 — 最新年度数据)
+        # ================================================================
+        gp_assets = get_financial_context(probes, "profitability_gp_assets", -1.0)
+        roic_level = get_financial_context(probes, "profitability_roic_level", float('nan'))
+        roe_level = get_financial_context(probes, "profitability_roe_level", float('nan'))
+        assets_turn = get_financial_context(probes, "profitability_assets_turn", -1.0)
+
+        # ================================================================
+        # Fallback: 从趋势探针获取 latest_value (时间序列最新值)
+        # ================================================================
+        if math.isnan(roic_level):
+            roic_latest = get_feature(probes, "latest_value", metric_filter="roic")
+            if roic_latest is not None:
+                roic_level = roic_latest
+        if math.isnan(roe_level):
+            roe_latest = get_feature(probes, "latest_value", metric_filter="roe")
+            if roe_latest is not None:
+                roe_level = roe_latest
+
+        # ================================================================
+        # 1. GP/Assets — Novy-Marx (2013) 核心信号 (权重 0.35)
+        #
+        # GP/A = Gross Profit / Total Assets
+        # = (Gross Margin) × (Revenue / Assets)
+        # = grossprofit_margin/100 × assets_turn
+        #
+        # Sigmoid 归一化:
+        #   GP/A = 0.05 (低) → ~0.27
+        #   GP/A = 0.15 (中) → 0.50
+        #   GP/A = 0.25 (高) → ~0.73
+        #   GP/A = 0.40 (极高) → ~0.92
+        # ================================================================
+        if gp_assets >= 0:
+            centered = (gp_assets - conf.gpa_center) / conf.gpa_scale
+            gpa_score = 1.0 / (1.0 + math.exp(-centered))
+            w = weights.get("gp_assets", 0.35)
+            score += w * gpa_score
+            total_weight += w
+            components["gp_assets"] = gp_assets
+            components["gp_assets_score"] = gpa_score
+
+        # ================================================================
+        # 2. ROIC Level — GMO Quality 核心 (权重 0.30)
+        #
+        # 投入资本回报率: 衡量公司用全部投入资本 (debt + equity) 创造价值的能力
+        # 比 ROE 更全面 (不受杠杆扭曲), 是 Gravity solver 的核心输入
+        #
+        # Sigmoid 归一化 (center=10%, scale=5%):
+        #   ROIC = 0% → ~0.12
+        #   ROIC = 5% → ~0.27
+        #   ROIC = 10% → 0.50
+        #   ROIC = 15% → ~0.73
+        #   ROIC = 25% → ~0.95
+        # ================================================================
+        if not math.isnan(roic_level):
+            centered = (roic_level - conf.roic_center) / conf.roic_scale
+            roic_score = 1.0 / (1.0 + math.exp(-centered))
+            w = weights.get("roic_level", 0.30)
+            score += w * roic_score
+            total_weight += w
+            components["roic_level"] = roic_level
+            components["roic_level_score"] = roic_score
+
+        # ================================================================
+        # 3. ROE Level — MSCI Quality 核心 (权重 0.20)
+        #
+        # 股东权益回报率: 直接反映股东价值创造能力
+        # 与 ROIC 部分相关但捕获杠杆效应信号 (DuPont ROE = margin×turn×leverage)
+        #
+        # Sigmoid 归一化 (center=12%, scale=6%):
+        #   ROE = 0% → ~0.12
+        #   ROE = 6% → ~0.27
+        #   ROE = 12% → 0.50
+        #   ROE = 18% → ~0.73
+        #   ROE = 30% → ~0.95
+        # ================================================================
+        if not math.isnan(roe_level):
+            centered = (roe_level - conf.roe_center) / conf.roe_scale
+            roe_score = 1.0 / (1.0 + math.exp(-centered))
+            w = weights.get("roe_level", 0.20)
+            score += w * roe_score
+            total_weight += w
+            components["roe_level"] = roe_level
+            components["roe_level_score"] = roe_score
+
+        # ================================================================
+        # 4. Asset Turnover — DuPont分解, Piotroski #9 (权重 0.15)
+        #
+        # 资产周转率 = Revenue / Total Assets
+        # 高周转 = 资本效率高 (轻资产模式, 存货管理优秀)
+        # 与 β 因子反向互补: β 度量"重度", π.AT 度量"效率"
+        #
+        # 归一化 (min-max):
+        #   AT = 0.1 (极低) → ~0.10
+        #   AT = 0.5 (中等) → ~0.45
+        #   AT = 1.0 (高效) → ~0.75
+        #   AT = 1.5 (极高) → ~1.00
+        # ================================================================
+        if assets_turn > 0:
+            at_score = min(1.0, max(0.0, (assets_turn - 0.05) / 1.45))
+            w = weights.get("asset_turnover", 0.15)
+            score += w * at_score
+            total_weight += w
+            components["asset_turnover"] = assets_turn
+            components["asset_turnover_score"] = at_score
+
+        # ================================================================
+        # 最终分数计算
+        # ================================================================
+        if total_weight > 0:
+            score = score / total_weight
+        else:
+            score = 0.5  # 无数据时中性
+
+        score = max(0.0, min(1.0, score))
+
+        # 置信度: 基于可用组件数
+        n_components = len([k for k in components if k.endswith("_score")])
+        confidence = min(0.95, 0.3 + n_components * 0.18)
+
+        # 盈利能力分类
+        if score > 0.70:
+            profitability_type = "high_profitability"
+        elif score > 0.50:
+            profitability_type = "moderate_profitability"
+        elif score > 0.30:
+            profitability_type = "low_profitability"
+        else:
+            profitability_type = "poor_profitability"
+
+        # 警告: 高 ROIC 但低 GP/A → 可能是杠杆或税收扭曲
+        if ("roic_level" in components and "gp_assets" in components
+                and components.get("roic_level", 0) > 15
+                and components.get("gp_assets", 1) < 0.08):
+            warnings.append(TruthWarning(
+                code="PI_ROIC_GPA_DIVERGENCE",
+                level=WarningLevel.WARNING,
+                title="ROIC与GP/A背离",
+                message=f"ROIC={components['roic_level']:.1f}%高但GP/A={components['gp_assets']:.3f}低，"
+                        f"可能存在杠杆扭曲或非经常性损益",
+                source="pi_factor",
+                values={
+                    "roic_level": components.get("roic_level", 0),
+                    "gp_assets": components.get("gp_assets", 0),
+                },
+            ))
+
+        return FactorResult(
+            factor_id=self.factor_id,
+            ts_code=ts_code,
+            score=score,
+            confidence=confidence,
+            components=components,
+            details={
+                "profitability_type": profitability_type,
+                "n_components": n_components,
+            },
+        ), warnings
+
+    def explain(self, result: FactorResult) -> str:
+        """生成人类可读的解释文本"""
+        score = result.score or 0.5
+        components = result.components or {}
+        details = result.details or {}
+
+        prof_type = details.get("profitability_type", "unknown")
+        prof_label = {
+            "high_profitability": "高盈利",
+            "moderate_profitability": "中盈利",
+            "low_profitability": "低盈利",
+            "poor_profitability": "弱盈利",
+            "unknown": "未知",
+        }.get(prof_type, "未知")
+
+        parts = [f"π={score:.2f} ({prof_label})"]
+
+        if "gp_assets" in components:
+            parts.append(f"GP/A={components['gp_assets']:.3f}")
+        if "roic_level" in components:
+            parts.append(f"ROIC={components['roic_level']:.1f}%")
+        if "roe_level" in components:
+            parts.append(f"ROE={components['roe_level']:.1f}%")
+        if "asset_turnover" in components:
+            parts.append(f"周转率={components['asset_turnover']:.2f}")
 
         return "，".join(parts)
 

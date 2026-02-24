@@ -145,6 +145,44 @@ class VerificationFactorConfig:
     fake_growth_threshold: float = 0.3
 
 
+@dataclass(frozen=True)
+class PiFactorConfig:
+    """π 因子 (盈利能力水平) - 当前资本回报绝对水平
+
+    v7.0 新增:
+    填补 AQR QMJ Profitability、MSCI Quality ROE Level、
+    Novy-Marx (2013) GP/Assets 三大框架的核心维度缺失。
+
+    学术依据:
+        - Novy-Marx (2013): GP/Assets 是最强单一质量因子 (IC 独立于 BM 和 Momentum)
+        - AQR QMJ: Profitability = GPOA + ROE + ROA + CFOA (四支柱之首)
+        - MSCI Quality: ROE level 是三大成分之一
+        - DuPont分解: ROE = Margin × Turnover × Leverage (覆盖全三维)
+
+    组件:
+        gp_assets: 毛利/总资产 (Novy-Marx 核心, 最强单因子)
+        roic_level: 投入资本回报率水平 (GMO Quality 核心)
+        roe_level: 股东权益回报率水平 (MSCI Quality)
+        asset_turnover: 资本效率 (DuPont分解, Piotroski #9)
+    """
+    component_weights: Mapping[str, float] = field(default_factory=lambda: {
+        "gp_assets": 0.35,          # Novy-Marx GP/A — 最强单因子
+        "roic_level": 0.30,         # 投入资本回报率水平
+        "roe_level": 0.20,          # 股东权益回报率水平
+        "asset_turnover": 0.15,     # 资本效率 (DuPont)
+    })
+    # GP/Assets sigmoid 归一化参数 (center=0.15, scale=0.10)
+    # GP/A=0.05 → 0.27, GP/A=0.15 → 0.50, GP/A=0.25 → 0.73, GP/A=0.40 → 0.92
+    gpa_center: float = 0.15
+    gpa_scale: float = 0.10
+    # ROIC sigmoid 归一化参数 (center=10%, scale=5%)
+    roic_center: float = 10.0
+    roic_scale: float = 5.0
+    # ROE sigmoid 归一化参数 (center=12%, scale=6%)
+    roe_center: float = 12.0
+    roe_scale: float = 6.0
+
+
 # ============================================================================
 # 宏观经济参数
 # ============================================================================
@@ -259,13 +297,14 @@ class ScoringConfig:
       原阈值导致0家A+/A, 现在top 5%能拿到A
     """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ALPHA": 0.12,             # v4.6 ↑ 0.08→0.12: 周期性识别更重要
+        "ALPHA": 0.10,             # v7.0 ↓ 0.12→0.10: π因子分离出盈利水平后减少
         "BETA": 0.08,              # v4.6 ↑ 0.07→0.08: 轻微提升
-        "GAMMA": 0.18,             # v4.6 ↓ 0.22→0.18: 减少成长偏好
-        "LAMBDA": 0.12,            # v4.1 不变
-        "DELTA_FRAUD": 0.16,       # 不变
-        "DELTA_DECAY": 0.18,       # v4.6 ↑ 0.12→0.18: 衰退惩罚严重不足
-        "VERIFICATION": 0.16,      # v4.6 ↓ 0.23→0.16: V修复后给真实值,降低权重
+        "GAMMA": 0.14,             # v7.0 ↓ 0.18→0.14: 成长趋势vs盈利水平分离
+        "PI": 0.15,                # v7.0 新增: 盈利能力水平 (Novy-Marx最强因子)
+        "LAMBDA": 0.10,            # v7.0 ↓ 0.12→0.10: 轻微调整
+        "DELTA_FRAUD": 0.15,       # v7.0 ↓ 0.16→0.15: 轻微调整
+        "DELTA_DECAY": 0.16,       # v7.0 ↓ 0.18→0.16: 轻微调整
+        "VERIFICATION": 0.12,      # v7.0 ↓ 0.16→0.12: OCF质量与π部分重叠
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
         "GRAVITY": 0.50,     # v5.1: ↑ 0.35→0.50 (ROIC阈值推导, 核心价值锚)
@@ -294,16 +333,17 @@ class ScoringConfig:
 @dataclass(frozen=True)
 class TruthConfig:
     """T.R.U.T.H. 系统主配置"""
-    algo_version: str = "6.2.0"
+    algo_version: str = "7.0.0"
     config_version: str = "default"
 
     # Layer 0
     time_decay: TimeDecayConfig = field(default_factory=TimeDecayConfig)
 
-    # Layer 1 (七维因子)
+    # Layer 1 (八维因子)
     alpha_config: AlphaFactorConfig = field(default_factory=AlphaFactorConfig)
     beta_config: BetaFactorConfig = field(default_factory=BetaFactorConfig)
     gamma_config: GammaFactorConfig = field(default_factory=GammaFactorConfig)
+    pi_config: PiFactorConfig = field(default_factory=PiFactorConfig)
     lambda_config: LambdaFactorConfig = field(default_factory=LambdaFactorConfig)
     delta_fraud_config: DeltaFraudFactorConfig = field(default_factory=DeltaFraudFactorConfig)
     delta_decay_config: DeltaDecayFactorConfig = field(default_factory=DeltaDecayFactorConfig)
@@ -374,6 +414,7 @@ __all__ = [
     "AlphaFactorConfig",
     "BetaFactorConfig",
     "GammaFactorConfig",
+    "PiFactorConfig",
     "LambdaFactorConfig",
     "DeltaFraudFactorConfig",
     "DeltaDecayFactorConfig",
