@@ -1274,20 +1274,61 @@ class DeltaDecayFactor:
         decay_score = 0.0
         total_weight = 0.0
 
-        # 效率指标 (ROIC, ROE, 毛利率)
-        efficiency_metrics = ["roic", "roe", "gross_margin"]
+        # ═══════════════════════════════════════════════════════════════════
+        # v8.0: 双层衰退监测 (Two-Tier Decay Detection)
+        # ═══════════════════════════════════════════════════════════════════
+        #
+        # 传统方法仅监控3个效率指标 (ROIC/ROE/毛利率)，存在致命盲区:
+        #   当营收崩塌但利润率暂时维持时（典型衰退初期），系统完全失聪。
+        #
+        # Howard Marks 第一多米诺骨牌原理:
+        #   需求↓ → 营收↓ → 产能利用率↓ → 单位成本↑ → 利润率压缩 → ROIC↓
+        #   等到效率指标恶化时,商业模式衰退已进入中后期。
+        #
+        # 设计: Tier 1 (效率层 65%) + Tier 2 (量价层 35%)
+        #   效率衰退 = 竞争优势侵蚀 (护城河正在失守)
+        #   量价衰退 = 需求/增长恶化 (先导信号, 提前预警)
+        #
+        # Monotonic Amplification 原则:
+        #   量价层只能放大衰退信号, 永远不能稀释效率层信号。
+        #   这确保扩展后的模型严格不弱于原始模型。
+        # ═══════════════════════════════════════════════════════════════════
+        efficiency_metrics = ["roic", "roe", "gross_margin"]          # Tier 1: 核心质量
+        volume_metrics = ["revenue", "profit", "net_margin", "ocf"]   # Tier 2: 先导信号
+        _EFF_W, _VOL_W = 0.65, 0.35
+
+        def _tiered_agg(feature: str, agg_fn: str) -> Optional[float]:
+            """双层加权聚合 + 单调放大约束
+
+            量价层可以发现效率层遗漏的衰退信号,
+            但在任何情况下都不会稀释已检测到的效率层衰退。
+            """
+            eff = aggregate_feature(probes, feature, agg_fn, efficiency_metrics)
+            vol = aggregate_feature(probes, feature, agg_fn, volume_metrics)
+            if eff is not None and vol is not None:
+                blend = eff * _EFF_W + vol * _VOL_W
+                # Monotonic Amplification: 取"更恶化方向"的值
+                if agg_fn == "max":   # 高 = 更恶化 (has_deterioration, consecutive)
+                    return max(eff, blend)
+                else:                 # 低 = 更恶化 (total_decline, log_slope)
+                    return min(eff, blend)
+            return eff if eff is not None else vol
 
         # 1. 是否存在恶化
-        has_deterioration = aggregate_feature(probes, "has_deterioration", "max", efficiency_metrics)
+        has_deterioration = _tiered_agg("has_deterioration", "max")
         if has_deterioration is not None:
-            det_score = 1.0 if has_deterioration > 0.5 else 0.0
+            # v8.0: 阶梯式衰退评分 (替代硬阈值0.5的二元判断)
+            # 纯效率衰退: val≥1.0 → score=1.0 (不变)
+            # 纯量价衰退: val=0.35 → score=0.54 (适度预警)
+            # 双层衰退:   val=1.0 → score=1.0 (最强信号)
+            det_score = min(1.0, has_deterioration / _EFF_W) if has_deterioration > 0.2 else 0.0
             w = weights.get("has_deterioration", 0.25)
             decay_score += w * det_score
             total_weight += w
             components["has_deterioration"] = has_deterioration
 
         # 2. 连续下跌年数
-        consecutive = aggregate_feature(probes, "consecutive_decline_years", "max", efficiency_metrics)
+        consecutive = _tiered_agg("consecutive_decline_years", "max")
         if consecutive is not None:
             # 3年以上连跌 = 危险
             consec_score = min(1.0, consecutive / 5.0)
@@ -1301,13 +1342,13 @@ class DeltaDecayFactor:
                     code="DECAY_CONSECUTIVE",
                     level=WarningLevel.WARNING,
                     title="连续下跌",
-                    message=f"效率指标连续{int(consecutive)}年下跌",
+                    message=f"核心指标连续{int(consecutive)}年下跌",
                     source="delta_decay_factor",
                     values={"consecutive_years": consecutive},
                 ))
 
         # 3. 总下跌百分比
-        total_decline = aggregate_feature(probes, "total_decline_pct", "min", efficiency_metrics)
+        total_decline = _tiered_agg("total_decline_pct", "min")
         if total_decline is not None:
             # 下跌幅度 (负数表示下跌)
             decline_pct = abs(min(0, total_decline))  # total_decline 为百分数 (如 -30 表示跌30%)
@@ -1318,7 +1359,7 @@ class DeltaDecayFactor:
             total_weight += w
             components["total_decline_pct"] = total_decline
 
-        # 4. 恶化加速度
+        # 4. 恶化加速度 (已全指标聚合, 无需分层)
         det_accel = aggregate_feature(probes, "deterioration_acceleration", "max")
         if det_accel is not None and det_accel > 0:
             accel_score = min(1.0, det_accel / 0.1)
@@ -1328,7 +1369,7 @@ class DeltaDecayFactor:
             components["deterioration_acceleration"] = det_accel
 
         # 5. 负斜率惩罚
-        log_slope = aggregate_feature(probes, "log_slope", "mean", efficiency_metrics)
+        log_slope = _tiered_agg("log_slope", "mean")
         if log_slope is not None and log_slope < 0:
             slope_penalty = min(1.0, abs(log_slope) / 0.1)
             w = weights.get("negative_slope", 0.15)

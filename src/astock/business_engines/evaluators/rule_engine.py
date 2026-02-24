@@ -15,7 +15,9 @@ AStock Evaluators v2.0 - 声明式规则引擎
 
 from __future__ import annotations
 
+import ast
 import logging
+import operator
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +26,78 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v8.0: AST 安全表达式评估器 (替代 eval())
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 允许的 AST 节点类型白名单
+_SAFE_NODE_TYPES = (
+    ast.Expression, ast.Module,
+    ast.BinOp, ast.UnaryOp, ast.Compare, ast.BoolOp,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+    ast.USub, ast.UAdd,
+    ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.Eq, ast.NotEq,
+    ast.And, ast.Or, ast.Not,
+    ast.IfExp,  # 三元表达式: x if cond else y
+    ast.Call,   # 函数调用 (仅限白名单函数)
+    ast.Name, ast.Constant, ast.Num, ast.Str,  # Num/Str for Python < 3.8 compat
+    ast.Load,
+)
+
+# 允许调用的安全函数白名单
+_SAFE_FUNCTIONS = {"min", "max", "abs", "round", "int", "float"}
+
+
+def _validate_ast(node: ast.AST) -> bool:
+    """递归验证 AST 树中所有节点是否在安全白名单内"""
+    if not isinstance(node, _SAFE_NODE_TYPES):
+        return False
+    # 函数调用: 只允许白名单函数
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name) or node.func.id not in _SAFE_FUNCTIONS:
+            return False
+    # 禁止属性访问 (防止 __class__.__subclasses__() 等逃逸)
+    if isinstance(node, ast.Attribute):
+        return False
+    return all(_validate_ast(child) for child in ast.iter_child_nodes(node))
+
+
+def safe_eval(formula: str, variables: Dict[str, float]) -> float:
+    """安全表达式评估器 — AST白名单验证 + 受限执行
+
+    v8.0 安全改进: 替代原始 eval()
+    1. 解析公式为 AST
+    2. 递归验证所有节点在白名单内 (无属性访问、无 import、无 lambda)
+    3. 在受限命名空间中执行
+
+    Args:
+        formula: 数学表达式字符串 (如 "min(15, abs(log_slope) * 20)")
+        variables: 变量字典 (如 {"log_slope": -0.05, "r_squared": 0.8})
+
+    Returns:
+        计算结果 (float)
+
+    Raises:
+        ValueError: 公式包含不安全的节点
+    """
+    try:
+        tree = ast.parse(formula, mode='eval')
+    except SyntaxError as e:
+        raise ValueError(f"Invalid formula syntax: {formula}") from e
+
+    if not _validate_ast(tree):
+        raise ValueError(f"Unsafe formula rejected by AST whitelist: {formula}")
+
+    safe_ns = {
+        "__builtins__": {},
+        "min": min, "max": max, "abs": abs,
+        "round": round, "int": int, "float": float,
+    }
+    safe_ns.update({k: v for k, v in variables.items() if isinstance(v, (int, float))})
+
+    return float(eval(compile(tree, "<formula>", "eval"), safe_ns))  # noqa: S307 - AST validated
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -378,18 +452,14 @@ class RuleEngine:
         # 公式计算
         if "score_formula" in rule:
             try:
-                # 安全执行简单公式
+                # v8.0: AST安全评估器 (替代裸eval)
                 formula = rule["score_formula"]
-                # 创建安全的执行环境
-                safe_dict = {
-                    "min": min, "max": max, "abs": abs,
-                    **{k: v for k, v in features.items() if isinstance(v, (int, float))}
-                }
-                score = eval(formula, {"__builtins__": {}}, safe_dict)
+                variables = {k: v for k, v in features.items() if isinstance(v, (int, float))}
+                score = safe_eval(formula, variables)
                 max_score = rule.get("max_score", float('inf'))
                 return min(float(score), max_score)
             except Exception as e:
-                logger.warning(f"Failed to evaluate formula '{formula}': {e}")
+                logger.warning(f"Failed to evaluate formula '{rule.get('score_formula', '')}': {e}")
                 return 0.0
 
         # 分数映射
@@ -429,12 +499,12 @@ class RuleEngine:
         formula = strategy.get("confidence_formula")
         if formula:
             try:
-                safe_dict = {
-                    "min": min, "max": max, "abs": abs,
+                # v8.0: AST安全评估器 (替代裸eval)
+                variables = {
                     "threshold": thresholds.get(strategy.get("applies_to", [""])[0] + "_threshold", 10),
                     **{k: v for k, v in features.items() if isinstance(v, (int, float))}
                 }
-                confidence = eval(formula, {"__builtins__": {}}, safe_dict)
+                confidence = safe_eval(formula, variables)
                 confidence = max(0.0, min(1.0, float(confidence)))
             except Exception:
                 confidence = 0.5

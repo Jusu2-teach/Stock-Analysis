@@ -320,6 +320,16 @@ class HurstExponentEstimator:
 
         confidence = float(r_value ** 2) * min(n / 20, 1.0)
 
+        # v8.0: 贝叶斯收缩 — 将不可靠的Hurst估计拉回先验
+        # 原理: R/S分析在n<20时仅有2-5个分块大小 → 回归近乎退化
+        #        n=10时回归2点, R²总是1.0 → 虚假信心
+        #        Shrink towards prior H=0.5 (random walk, uninformative)
+        #        posterior = confidence × observed + (1 - confidence) × prior
+        # 效果: n=10, R²=1.0 → conf=0.5 → hurst_shrunk = 0.5×observed + 0.5×0.5
+        #        n=20, R²=0.9 → conf=0.9 → hurst_shrunk ≈ observed (基本保留)
+        hurst_shrunk = confidence * hurst + (1.0 - confidence) * 0.5
+        hurst = hurst_shrunk
+
         return HurstResult(hurst_exponent=hurst, interpretation=interpretation, confidence=float(confidence))
 
     def _compute_rs(self, y: np.ndarray, chunk_size: int) -> Optional[float]:

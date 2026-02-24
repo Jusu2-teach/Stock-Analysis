@@ -92,7 +92,7 @@ class ThresholdSet:
     def scale(self, multiplier: float) -> 'ThresholdSet':
         """按乘数缩放所有阈值"""
         if multiplier is None:
-            return None
+            return self  # v8.0 fix: None乘数→恒等变换 (防止下游NoneType crash)
         return ThresholdSet(
             metric=self.metric,
             excellent=self.excellent * multiplier,
@@ -215,7 +215,7 @@ class AdaptiveContext:
             "建筑": IndustryCategory.INDUSTRIALS,
             "装饰": IndustryCategory.INDUSTRIALS,
             "环保": IndustryCategory.INDUSTRIALS,
-            "公用事业": IndustryCategory.INDUSTRIALS,
+            "公用事业": IndustryCategory.UTILITIES,  # v8.0 fix: 公用事业→UTILITIES (非INDUSTRIALS)
             "综合": IndustryCategory.INDUSTRIALS,
             # MATERIALS — 材料
             "化工": IndustryCategory.MATERIALS,

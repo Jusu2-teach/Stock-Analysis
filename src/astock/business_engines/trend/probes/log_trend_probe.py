@@ -200,8 +200,10 @@ def detect_heteroscedasticity(residuals: np.ndarray, x: np.ndarray) -> Tuple[boo
     abs_residuals = np.abs(residuals)
     correlation, p_value = stats.spearmanr(x, abs_residuals)
 
-    # 相关系数 > 0.5 且 p < 0.3（宽松阈值，因为样本小）
-    has_hetero = abs(correlation) > 0.5 and p_value < 0.3
+    # v8.0: 相关系数 > 0.5 且 p < 0.10 (标准统计显著性)
+    # 修正: 原p<0.30过松(~30%假阳性率), 即使小样本也应使用p<0.10
+    # Breusch-Pagan/White检验的标准阈值是0.05, 我们用0.10适度放宽
+    has_hetero = abs(correlation) > 0.5 and p_value < 0.10
 
     return bool(has_hetero), float(correlation)
 
