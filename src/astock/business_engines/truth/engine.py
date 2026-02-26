@@ -828,7 +828,7 @@ def _cross_sectional_normalize(
     solver_pct = {sid: _percentile_ranks(solver_adj[sid]) for sid in solver_ids}
 
     # ══════ Step 3: 加权合成 + 硬约束 → 评级 ══════
-    factor_weight_map = {
+    _base_factor_weight_map = {
         FactorId.ALPHA: scoring.factor_weights.get("ALPHA", 0.10),
         FactorId.BETA: scoring.factor_weights.get("BETA", 0.08),
         FactorId.GAMMA: scoring.factor_weights.get("GAMMA", 0.14),
@@ -845,6 +845,66 @@ def _cross_sectional_normalize(
     }
 
     factor_ratio = scoring.factor_vs_solver_weight
+
+    # ══════ v12.0: 行业原型因子权重调整 (Industry Archetype Weight Tilts) ══════
+    # 学术依据:
+    #   - MSCI Quality Index: 行业内权重差异化 (金融 vs 科技 vs 周期)
+    #   - Fama-French (1997): 行业因子暴露异质性 → 统一权重次优
+    #   - AQR (2019): "Quality Minus Junk" 在不同行业板块 IC 差异显著
+    # 实现: 12 个 A 股行业分为 4 个原型, 各原型对因子权重施加乘数调整
+    #   制造周期: α(周期)↑ β(资本)↑ δ_decay(衰退)↑ — 周期波动是核心风险
+    #   科技成长: γ(增长)↑ π(盈利)↑ V(验证)↑ — 增长质量是核心价值
+    #   医药健康: V(验证)↑ δ_fraud(欺诈)↑ π(盈利)↑ — R&D会计需严审
+    #   新能源:   γ(增长)↑ α(周期)↓ — 政策驱动, 周期因子噪音大
+    _INDUSTRY_ARCHETYPES: Dict[str, Dict[str, float]] = {
+        # archetype → {factor_name: weight_multiplier}
+        "manufacturing_cyclical": {
+            "ALPHA": 1.25, "BETA": 1.15, "GAMMA": 0.90, "PI": 1.00,
+            "LAMBDA": 1.10, "DELTA_FRAUD": 1.00, "DELTA_DECAY": 1.20, "VERIFICATION": 0.85,
+        },
+        "tech_growth": {
+            "ALPHA": 0.80, "BETA": 0.85, "GAMMA": 1.25, "PI": 1.20,
+            "LAMBDA": 0.90, "DELTA_FRAUD": 1.00, "DELTA_DECAY": 0.90, "VERIFICATION": 1.20,
+        },
+        "healthcare": {
+            "ALPHA": 0.90, "BETA": 0.90, "GAMMA": 1.05, "PI": 1.15,
+            "LAMBDA": 0.95, "DELTA_FRAUD": 1.25, "DELTA_DECAY": 1.00, "VERIFICATION": 1.25,
+        },
+        "new_energy": {
+            "ALPHA": 0.75, "BETA": 1.10, "GAMMA": 1.20, "PI": 1.05,
+            "LAMBDA": 1.10, "DELTA_FRAUD": 1.00, "DELTA_DECAY": 1.05, "VERIFICATION": 1.00,
+        },
+    }
+    _INDUSTRY_TO_ARCHETYPE: Dict[str, str] = {
+        "电气设备": "manufacturing_cyclical", "元器件": "manufacturing_cyclical",
+        "专用机械": "manufacturing_cyclical", "汽车整车": "manufacturing_cyclical",
+        "小金属": "manufacturing_cyclical",
+        "软件服务": "tech_growth", "半导体": "tech_growth", "IT设备": "tech_growth",
+        "医疗保健": "healthcare", "化学制药": "healthcare", "生物制药": "healthcare",
+        "新型电力": "new_energy",
+    }
+
+    def _get_archetype_weights(
+        industry: str, base_weights: Dict[FactorId, float]
+    ) -> Dict[FactorId, float]:
+        """根据行业原型调整因子权重并重新归一化"""
+        archetype = _INDUSTRY_TO_ARCHETYPE.get(industry)
+        if not archetype:
+            return base_weights
+        multipliers = _INDUSTRY_ARCHETYPES[archetype]
+        adjusted = {}
+        for fid, w in base_weights.items():
+            mult = multipliers.get(fid.name, 1.0)
+            adjusted[fid] = w * mult
+        # 重新归一化: 确保总权重不变
+        total = sum(adjusted.values())
+        orig_total = sum(base_weights.values())
+        if total > 0:
+            for fid in adjusted:
+                adjusted[fid] *= orig_total / total
+        return adjusted
+
+    n_archetype_adjusted = 0
 
     # ══════ 数据驱动衰退惩罚阈值 ══════
     # 用 raw δ_decay 的百分位分布确定惩罚线 (自动适应当前宇宙分布)
@@ -881,6 +941,12 @@ def _cross_sectional_normalize(
         if p.signal == TruthSignal.FRAUD_ALERT:
             new_profiles.append(p)
             continue
+
+        # ── v12.0: 行业原型权重调整 ──
+        _industry_i = getattr(p, 'industry', '') or ''
+        factor_weight_map = _get_archetype_weights(_industry_i, _base_factor_weight_map)
+        if _industry_i in _INDUSTRY_TO_ARCHETYPE:
+            n_archetype_adjusted += 1
 
         # ── Factor percentile composite (confidence-weighted) ──
         f_sum, f_total = 0.0, 0.0
@@ -1010,22 +1076,93 @@ def _cross_sectional_normalize(
                     # 显著减速: 最高-3%惩罚
                     final_score *= max(0.97, 1.0 + momentum * 0.5)
 
-        # ══════ Sustainable Growth Interaction Term ══════
-        # SG = γ × (1 - δ_decay): 高增长+低衰退=持续增长(premium), 高增长+高衰退=价值陷阱(penalty)
-        #   - High γ + Low δ_decay = 可持续增长 (premium) → 奖励
-        #   - High γ + High δ_decay = 增长在衰退 ("价值陷阱") → 惩罚
+        # ══════ v12.0: Cross-Factor Interaction Engine (5 项交互) ══════
+        # 学术依据:
+        #   - Asness, Frazzini & Pedersen (2019): "Quality Minus Junk" 因子交互提升 IC
         #   - Novy-Marx (2013): Interaction terms improve quality factor IC by 15-20%
-        # 实现: SG = γ × (1 - δ_decay), raw scores [0,1]
-        #   SG > 0.40 → sustainable growth premium (+2%)
-        #   SG < 0.15 且 γ > 0.40 → value trap penalty (-2%)
+        #   - Jensen (1986): Free Cash Flow Theory → 杠杆×欺诈非线性放大
+        #   - Penman (2013): Mean-reversion in profitability → 高盈利+衰退=假阳性
+        #   - Altman (1968): 杠杆+衰退 → 违约概率指数级增加
+        #
+        # 原系统仅有 SG = γ×(1-δ) 一个交互项, 丢失了大量非线性信号:
+        #   1. Moat Strength    (MS): π × (1-α) — 持久竞争优势
+        #   2. Financial Danger  (FD): λ × δ_fraud — 杠杆+欺诈共振
+        #   3. Verified Growth   (VG): γ × V × (1-δ) — 三因子验证增长
+        #   4. Dying Franchise   (DF): π × δ_decay — 正在死亡的特许权
+        #   5. Leverage Amplifier(LA): λ × δ_decay — 杠杆放大衰退
+        # ═══════════════════════════════════════════════════════════════════
+
+        # 提取所有原始因子分数 (用于交互计算)
+        raw_pi = factor_raw[FactorId.PI][i]
+        raw_alpha = factor_raw[FactorId.ALPHA][i]
+        raw_lambda = factor_raw[FactorId.LAMBDA][i]
+        raw_fraud = factor_raw[FactorId.DELTA_FRAUD][i]
+        raw_verification = factor_raw[FactorId.VERIFICATION][i]
+
+        # ── Interaction 1: Moat Strength (护城河强度) ──
+        # MS = π × (1 - α): 高盈利 + 低周期 = 真正的持久竞争优势
+        # Buffett "durable competitive advantage" 的量化表达
+        # Greenwald (2005): 护城河 = 持续超额盈利 × 需求稳定性
+        if raw_pi is not None and raw_alpha is not None:
+            moat_strength = raw_pi * (1.0 - raw_alpha)
+            if moat_strength > 0.50:
+                # 强护城河: 最高+4%奖励
+                final_score *= min(1.04, 1.0 + (moat_strength - 0.50) * 0.08)
+            elif moat_strength < 0.15:
+                # 无护城河: 最高-3%惩罚
+                final_score *= max(0.97, 1.0 - (0.15 - moat_strength) * 0.06)
+
+        # ── Interaction 2: Financial Danger (财务危险) ──
+        # FD = λ × δ_fraud: 高杠杆 + 高欺诈信号 = 极度危险
+        # Jensen (1986): 高杠杆公司更容易通过会计手段粉饰报表
+        # 两者同时高 → 非线性放大风险 (乘法效应, 非加法)
+        if raw_lambda is not None and raw_fraud is not None:
+            financial_danger = raw_lambda * raw_fraud
+            if financial_danger > 0.25:
+                # 高危: 最高-15%惩罚
+                danger_penalty = min(0.15, (financial_danger - 0.25) * 0.30)
+                final_score *= (1.0 - danger_penalty)
+
+        # ── Interaction 3: Verified Growth (验证增长) ──
+        # VG = γ × V × (1 - δ_decay): 三因子交叉验证
+        # 增长趋势强 + 现金流验证 + 无衰退 = 最高质量的成长信号
+        # 等于真正的 "True Growth" — 同时通过三道关卡
+        if raw_gamma is not None and raw_verification is not None and raw_decay is not None:
+            verified_growth = raw_gamma * raw_verification * (1.0 - raw_decay)
+            if verified_growth > 0.25:
+                # 三重验证增长: 最高+5%奖励
+                final_score *= min(1.05, 1.0 + (verified_growth - 0.25) * 0.10)
+
+        # ── SG: Sustainable Growth (可持续增长 — v11.0 保留) ──
+        # SG = γ × (1 - δ_decay): 增长持续性检验
         if raw_gamma is not None and raw_decay is not None:
             sustainable_growth = raw_gamma * (1.0 - raw_decay)
             if sustainable_growth > 0.40:
-                # 可持续增长: 最高+2%奖励
                 final_score *= min(1.02, 1.0 + (sustainable_growth - 0.40) * 0.05)
             elif sustainable_growth < 0.15 and raw_gamma > 0.40:
-                # 价值陷阱: 有增长但在衰退更危险, 惩罚 -5%
                 final_score *= max(0.95, 1.0 - (0.15 - sustainable_growth) * 0.12)
+
+        # ── Interaction 4: Dying Franchise (正在死亡的特许权) ──
+        # DF = π × δ_decay: 高盈利能力 + 高衰退 = 曾经辉煌但正在衰亡
+        # 这类公司最具迷惑性: 历史ROIC极高但趋势恶化 → 假阳性温床
+        # Penman (2013): Mean-reversion in profitability → past profitability misleads
+        if raw_pi is not None and raw_decay is not None:
+            dying_franchise = raw_pi * raw_decay
+            if dying_franchise > 0.30:
+                # 衰亡特许权: 最高-8%惩罚
+                df_penalty = min(0.08, (dying_franchise - 0.30) * 0.16)
+                final_score *= (1.0 - df_penalty)
+
+        # ── Interaction 5: Leverage Amplifier (杠杆放大器) ──
+        # LA = λ × δ_decay: 高杠杆 + 衰退 = 财务困境概率非线性增加
+        # Altman (1968) Z-Score: 高杠杆公司在衰退期违约概率指数级增加
+        # Merton (1974): Distance to Default 随杠杆×波动率下降
+        if raw_lambda is not None and raw_decay is not None:
+            leverage_amplifier = raw_lambda * raw_decay
+            if leverage_amplifier > 0.20:
+                # 杠杆放大衰退: 最高-10%惩罚
+                la_penalty = min(0.10, (leverage_amplifier - 0.20) * 0.20)
+                final_score *= (1.0 - la_penalty)
 
         # ══════ Score Cap ══════
         # 多重乘法调整可导致 final_score > 1.0, cap 确保报告中不超 100%
@@ -1105,6 +1242,8 @@ def _cross_sectional_normalize(
         f"{n_hard_constrained} hard-constrained (ROIC<8% penalized, ROIC>10% rewarded), "
         f"{n_multi_dim_veto} multi-dim-veto (≥3/4 groups bottom 20%), "
         f"momentum +{n_momentum_pos}/-{n_momentum_neg}, "
+        f"{n_archetype_adjusted} archetype-adjusted, "
+        f"5 cross-factor interactions applied, "
         f"percentile grading applied"
     )
 

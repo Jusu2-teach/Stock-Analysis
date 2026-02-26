@@ -1658,8 +1658,9 @@ def report_cross_validation(
     lines.append("> 两个独立引擎都给出积极评价的股票")
     lines.append("")
 
-    # v11.1: 使用 compute_consensus_meta_score (TRUTH×45%+Eval×35%+F-Score×20%+Beneish)
-    # 替代旧版简单 50/50 平均
+    # v12.0: 使用增强版 compute_consensus_meta_score
+    # 改进: 置信度自适应权重 (TRUTH×50%base + Eval×30%base + F-Score×20%base)
+    # 每个公司的实际权重基于引擎内部置信度动态调整
     from ..backtest.engine import compute_consensus_meta_score, compute_piotroski_fscore
 
     consensus_list = []
@@ -1673,6 +1674,17 @@ def report_cross_validation(
         e_score = (ep.get("score", 0) or 0)
         t_grade = tp.get("grade", "C")
         e_decision = ep.get("decision", "uncertain")
+
+        # v12.0: 提取引擎置信度
+        # TRUTH confidence: 基于 final_score 在分布中的位置
+        # 极端分数 (>0.8 或 <0.1) 置信度更高 (模型更确定)
+        # 中间分数 (0.3-0.6) 置信度较低 (模型不确定)
+        _t_raw = max(0, min(1.0, t_score))
+        _t_extremity = abs(_t_raw - 0.40) / 0.60  # 离中心越远→越确定
+        _t_confidence = 0.30 + 0.70 * min(1.0, _t_extremity)
+
+        # Eval confidence: 直接从评估结果获取
+        _e_confidence = ep.get("confidence", 0.50) or 0.50
 
         # 提取 F-Score 和 Beneish (从 Eval factors)
         _fscore = 0
@@ -1692,6 +1704,8 @@ def report_cross_validation(
             eval_decision=e_decision,
             fscore=_fscore,
             beneish_manipulator=_beneish_flag,
+            truth_confidence=_t_confidence,
+            eval_confidence=_e_confidence,
         )
 
         if _beneish_flag:
@@ -1712,7 +1726,7 @@ def report_cross_validation(
     consensus_list.sort(key=lambda x: -x["consensus_score"])
 
     # 共识统计
-    lines.append(f"- **Meta-Score 引擎**: TRUTH×45% + Eval×35% + F-Score×20% + Beneish惩罚")
+    lines.append(f"- **Meta-Score 引擎**: v12.0 置信度自适应 (TRUTH×50%base + Eval×30%base + F-Score×20%base, 动态调权)")
     lines.append(f"- **强共识 (双引擎同看好)**: {_n_strong_consensus} 家")
     lines.append(f"- **Beneish 疑似操纵**: {_n_manipulators} 家")
     lines.append("")

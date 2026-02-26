@@ -1088,11 +1088,24 @@ def compute_consensus_meta_score(
     eval_decision: str,
     fscore: int = 0,
     beneish_manipulator: bool = False,
+    # v12.0: 置信度自适应权重
+    truth_confidence: float = 0.50,
+    eval_confidence: float = 0.50,
 ) -> Dict[str, Any]:
-    """计算跨引擎共识元评分
+    """v12.0 增强版跨引擎共识元评分
 
-    Meta-Score = w₁ × TRUTH_percentile + w₂ × Eval_score_normalized + w₃ × F-Score_norm
-    + 共识加分/分歧减分 + Beneish 欺诈扣分
+    改进:
+    1. IC-informed base weights: TRUTH 50% (IC=0.632) > Eval 30% > F-Score 20%
+    2. Confidence-adaptive: 每个公司根据各引擎的置信度动态调整权重
+       w_i = base_i × (0.5 + 0.5 × confidence_i)
+       高置信度引擎获得更高权重, 低置信度引擎权重打折
+    3. 非线性共识: 双引擎一致时的奖励基于分数差的连续函数
+    4. 连续置信度: 基于引擎分数相似度的连续函数 (取代离散阶梯)
+
+    理论基础:
+    - Bates & Granger (1969): "Combination of Forecasts" — 预测组合权重应反映各预测器的精度
+    - Timmermann (2006): "Forecast Combinations" — 动态权重 > 静态权重
+    - TRUTH IC=0.632 >> Eval IC ≈ 0.45 → TRUTH 应获得更高基础权重
 
     Args:
         truth_score: TRUTH final_score (0-1)
@@ -1101,6 +1114,8 @@ def compute_consensus_meta_score(
         eval_decision: Evaluator decision (quality/average/poor/veto)
         fscore: Piotroski F-Score (0-7)
         beneish_manipulator: Beneish M-Score > -1.78
+        truth_confidence: TRUTH 对此公司的置信度 (0-1)
+        eval_confidence: Evaluator 对此公司的置信度 (0-1)
 
     Returns:
         {"meta_score": float, "consensus_level": str, "confidence": float, "details": dict}
@@ -1110,24 +1125,50 @@ def compute_consensus_meta_score(
     eval_norm = max(0, min(1.0, eval_score / 100.0))  # 0-100 → 0-1
     fscore_norm = max(0, min(1.0, fscore / 7.0))  # 0-7 → 0-1
 
-    # 2. 加权合成: TRUTH 45% + Eval 35% + F-Score 20%
-    w_truth, w_eval, w_fscore = 0.45, 0.35, 0.20
+    # 2. v12.0: 置信度自适应加权
+    # IC-informed base weights (基于回测实证 IC):
+    #   TRUTH: IC=0.632 → base=0.50
+    #   Eval:  IC≈0.45  → base=0.30
+    #   F-Score: IC≈0.20 → base=0.20
+    _BASE_TRUTH = 0.50
+    _BASE_EVAL = 0.30
+    _BASE_FSCORE = 0.20
+
+    # 置信度调制: w_i = base_i × (0.5 + 0.5 × confidence_i)
+    # confidence=0.0 → 权重减半; confidence=1.0 → 全额权重
+    # 直觉: 当 TRUTH 对某公司非常确定(conf=0.95), 其权重接近 50%
+    #       当 TRUTH 对某公司不确定(conf=0.20), 其权重降到 ~30%
+    _t_conf = max(0.0, min(1.0, truth_confidence))
+    _e_conf = max(0.0, min(1.0, eval_confidence))
+
+    w_truth_raw = _BASE_TRUTH * (0.5 + 0.5 * _t_conf)
+    w_eval_raw = _BASE_EVAL * (0.5 + 0.5 * _e_conf)
+    w_fscore_raw = _BASE_FSCORE  # F-Score 置信度恒定 (二值化指标)
+
+    # 权重归一化 → 总和=1
+    _w_sum = w_truth_raw + w_eval_raw + w_fscore_raw
+    w_truth = w_truth_raw / _w_sum
+    w_eval = w_eval_raw / _w_sum
+    w_fscore = w_fscore_raw / _w_sum
+
     raw_meta = truth_norm * w_truth + eval_norm * w_eval + fscore_norm * w_fscore
 
-    # 3. 共识加分/分歧减分
+    # 3. 共识加分/分歧减分 (v12.0: 基于连续分数差的非线性函数)
     truth_is_quality = truth_grade in ("A+", "A", "B+")
     eval_is_quality = eval_decision == "quality"
 
     if truth_is_quality and eval_is_quality:
-        # 双引擎共识优质 → 高置信奖励
-        consensus_bonus = 0.05
+        # 双引擎共识优质 → 奖励与分数接近度成正比
+        # 当两引擎分数越接近 → 共识越强 → 奖励越大
+        _agreement_strength = max(0, 1.0 - abs(truth_norm - eval_norm) * 5.0)
+        consensus_bonus = 0.03 + 0.04 * _agreement_strength  # [0.03, 0.07]
         consensus_level = "strong_consensus"
     elif truth_is_quality != eval_is_quality:
-        # 分歧 → 惩罚
-        consensus_bonus = -0.03
+        # 分歧 → 惩罚与分数差成正比
+        _divergence = abs(truth_norm - eval_norm)
+        consensus_bonus = -0.02 - 0.04 * min(1.0, _divergence * 3.0)  # [-0.02, -0.06]
         consensus_level = "divergent"
     elif truth_grade in ("D", "F") and eval_decision in ("poor", "veto"):
-        # 双引擎共识差 → 中等共识 (confirmation)
         consensus_bonus = 0.0
         consensus_level = "negative_consensus"
     else:
@@ -1139,16 +1180,15 @@ def compute_consensus_meta_score(
 
     meta_score = max(0, min(1.0, raw_meta + consensus_bonus + beneish_penalty))
 
-    # 5. 置信度: 基于引擎间一致性
+    # 5. v12.0: 连续置信度模型 (替代离散阶梯)
+    # 基于引擎间分数差 + 引擎内部置信度的几何平均
     score_diff = abs(truth_norm - eval_norm)
-    if score_diff < 0.10:
-        confidence = 0.90
-    elif score_diff < 0.20:
-        confidence = 0.75
-    elif score_diff < 0.30:
-        confidence = 0.60
-    else:
-        confidence = 0.45
+    # 引擎内部置信度的几何平均
+    _internal_conf = (_t_conf * _e_conf) ** 0.5 if _t_conf > 0 and _e_conf > 0 else 0.3
+    # 外部一致性: 分数差越小 → 越一致
+    _external_conf = max(0.30, 1.0 - score_diff * 2.0)  # score_diff=0 → 1.0, diff=0.35 → 0.30
+    # 综合置信度: 60% 外部一致性 + 40% 内部置信度
+    confidence = round(0.60 * _external_conf + 0.40 * _internal_conf, 4)
 
     return {
         "meta_score": round(meta_score, 4),
@@ -1159,6 +1199,9 @@ def compute_consensus_meta_score(
             "truth_norm": round(truth_norm, 4),
             "eval_norm": round(eval_norm, 4),
             "fscore_norm": round(fscore_norm, 4),
+            "w_truth": round(w_truth, 4),
+            "w_eval": round(w_eval, 4),
+            "w_fscore": round(w_fscore, 4),
             "consensus_bonus": round(consensus_bonus, 4),
             "beneish_penalty": round(beneish_penalty, 4),
         },

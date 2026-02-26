@@ -329,6 +329,9 @@ class CausalBayesianEvaluator:
         # Step 1: PDDA 特征提取
         features = self._extract_features_from_pdda(company_trends)
 
+        # v12.0: 注入行业信息到特征字典 (供交互引擎使用)
+        features["_industry"] = company_info.get("industry", "")
+
         # Step 2: 规则引擎
         context = self._create_adaptive_context(company_info)
         rule_result = self._run_rule_engine(features, context)
@@ -1223,6 +1226,118 @@ class CausalBayesianEvaluator:
                 cap = 58.0 + (roic_latest_for_cap - 6.0) / 3.0 * 10.0  # 6%→58, 9%→68
                 final_score = min(final_score, cap)
 
+        # ══════ v12.0: Cross-Factor Interaction Engine (5 项交互) ══════
+        # 学术依据:
+        #   - Asness, Frazzini & Pedersen (2019): 因子交互提升 IC
+        #   - Jensen (1986): 杠杆×欺诈非线性放大
+        #   - Penman (2013): 高盈利+衰退=假阳性
+        #   - Altman (1968): 杠杆+衰退→违约风险指数增加
+        #   - Greenwald (2005): 护城河=持续超额盈利×需求稳定
+
+        # 提取 π 分数 (已在上面计算)
+        _pi_for_interaction = _pi_score if _pi_components else None
+
+        # 提取周期性代理 (使用 ROIC 波动率)
+        _alpha_proxy = features.get("roic_volatility", features.get("gross_margin_volatility", 0.3))
+        if _alpha_proxy is not None:
+            _alpha_proxy = min(1.0, max(0.0, _alpha_proxy / 0.50))  # 归一化到 [0,1]
+
+        # 杠杆代理
+        _lambda_proxy = features.get("fc_ratio_debt_to_assets", 0.40)
+        if _lambda_proxy is not None:
+            _lambda_proxy = min(1.0, max(0.0, _lambda_proxy))
+
+        # 欺诈代理 (从 Beneish 结果)
+        _fraud_proxy = 0.0
+        if _bn_result["confidence"] in ("high", "medium") and _bn_result["is_manipulator"]:
+            _fraud_proxy = min(1.0, max(0.0, (_bn_result["m_score"] + 1.78) / 2.0 + 0.50))
+
+        # 衰退代理
+        _decay_proxy = min(1.0, max(0.0, deterioration_count / 6.0))
+
+        # 增长代理
+        _gamma_proxy = features.get("revenue_trend", 0.0)
+        if _gamma_proxy is not None:
+            _gamma_proxy = min(1.0, max(0.0, (_gamma_proxy + 0.10) / 0.30))
+
+        # 验证代理 (OCF/利润一致性)
+        _verify_proxy = 0.5
+        if profit_level > 0.3 and ocf_level > 0:
+            _verify_proxy = min(1.0, ocf_level / max(profit_level, 0.01))
+
+        # ── Interaction 1: Moat Strength (护城河强度) ──
+        # MS = π × (1 - α): 高盈利 + 低周期 = 持久竞争优势
+        if _pi_for_interaction is not None and _alpha_proxy is not None:
+            _moat = _pi_for_interaction * (1.0 - _alpha_proxy)
+            if _moat > 0.50:
+                _moat_bonus = min(4.0, (_moat - 0.50) * 8.0)
+                final_score += _moat_bonus
+            elif _moat < 0.15:
+                _moat_penalty = min(3.0, (0.15 - _moat) * 6.0)
+                final_score -= _moat_penalty
+
+        # ── Interaction 2: Financial Danger (财务危险) ──
+        # FD = λ × δ_fraud: 高杠杆 + 欺诈信号 = 极度危险
+        if _lambda_proxy is not None and _fraud_proxy > 0.1:
+            _fin_danger = _lambda_proxy * _fraud_proxy
+            if _fin_danger > 0.25:
+                _fd_penalty = min(8.0, (_fin_danger - 0.25) * 16.0)
+                final_score -= _fd_penalty
+
+        # ── Interaction 3: Verified Growth (验证增长) ──
+        # VG = γ × V × (1 - δ_decay): 三因子交叉验证
+        if _gamma_proxy > 0.2 and _verify_proxy > 0.3:
+            _vg = _gamma_proxy * _verify_proxy * (1.0 - _decay_proxy)
+            if _vg > 0.25:
+                _vg_bonus = min(5.0, (_vg - 0.25) * 10.0)
+                final_score += _vg_bonus
+
+        # ── Interaction 4: Dying Franchise (正在死亡的特许权) ──
+        # DF = π × δ_decay: 高盈利 + 高衰退 = 曾经辉煌但正在衰亡
+        if _pi_for_interaction is not None and _decay_proxy > 0.2:
+            _dying = _pi_for_interaction * _decay_proxy
+            if _dying > 0.30:
+                _dying_penalty = min(6.0, (_dying - 0.30) * 12.0)
+                final_score -= _dying_penalty
+
+        # ── Interaction 5: Leverage Amplifier (杠杆放大器) ──
+        # LA = λ × δ_decay: 高杠杆 + 衰退 = 财务困境
+        if _lambda_proxy is not None and _decay_proxy > 0.2:
+            _la = _lambda_proxy * _decay_proxy
+            if _la > 0.20:
+                _la_penalty = min(5.0, (_la - 0.20) * 10.0)
+                final_score -= _la_penalty
+
+        # 记录交互效应
+        _interaction_total = 0.0  # 简化: 求和统计
+        factors.append(Factor(
+            name="cross_factor_interactions",
+            display_name="v12.0 因子交互引擎",
+            value=final_score - float(np.clip(base_score + rule_adjustment, 0, 100)),
+            contribution=0.0,
+            direction="neutral",
+            explanation="MS+FD+VG+DF+LA 5项非线性交互",
+        ))
+
+        # ══════ v12.0: 行业原型权重微调 ══════
+        # 不同行业板块的评分偏置调整 (±3分)
+        _EVAL_INDUSTRY_BIAS: Dict[str, float] = {
+            # 制造周期: 对衰退更敏感, 基准线下移
+            "电气设备": -1.0, "元器件": -1.0, "专用机械": -1.0,
+            "汽车整车": -1.5, "小金属": -2.0,
+            # 科技成长: 允许更高波动, 基准线上移
+            "软件服务": 1.0, "半导体": 1.5, "IT设备": 0.5,
+            # 医药: 中性(已有 δ_fraud 保护)
+            "医疗保健": 0.0, "化学制药": 0.0, "生物制药": 0.5,
+            # 新能源: 政策驱动, 周期噪音豁免
+            "新型电力": 1.0,
+        }
+        _eval_industry = features.get("_industry", "")
+        _ind_bias = _EVAL_INDUSTRY_BIAS.get(_eval_industry, 0.0)
+        final_score += _ind_bias
+
+        final_score = float(np.clip(final_score, 0, 100))
+
         # ══════ v7.4: 三维硬约束 (对齐 TRUTH v7.3 严格度) ══════
         # 审计发现: 信号一致率从 74.5% 降至 57.5%, 根因是 TRUTH v7.3 大幅收严
         # (δ_decay 乘法惩罚 ×0.50~0.78) 而 Eval 仅做加法扣分 (-2~-6/100)
@@ -1520,53 +1635,108 @@ def run_causal_bayesian_evaluator(
         except Exception as e:
             logger.error(f"Error evaluating {ts_code}: {e}")
 
-    # ══════ v11.0: 真正的行业中性化 (学习自 TRUTH cross-sectional normalization) ══════
-    # v7.4 的行业 z-score 是"事后分析不改决策"——形同虚设
-    # 升级: 行业内 z-score → 分数软调整 → 重新决策
-    # 原理: AQR QMJ / MSCI Quality 标准做法:
-    #   在行业内做 z-score, 消除行业系统性差异
-    #   例: 白酒行业天然 ROIC 高 → 绝对评分偏高 → 需要行业内竞争排名
-    #        钢铁行业天然 ROIC 低 → 绝对评分偏低 → 行业内优秀者应被公平对待
-    # 实现: 行业内 z-score → 乘法调整 (±10%), 然后重新决策
+    # ══════ v12.0: 贝叶斯后验更新 + 行业中性化 ══════
+    # v11.0: 简单 z-score 调整 (±5分) — 统计正确但非贝叶斯
+    # v12.0: 真正的 Bayesian 后验更新 (这次名副其实):
+    #
+    # 理论基础:
+    #   - James & Stein (1961): 当维度≥3时, 收缩估计量的风险严格
+    #     小于最大似然估计 — 也就是说, 往均值收缩永远更好
+    #   - Efron & Morris (1973): "Stein's Estimation Rule and Its
+    #     Competitors — An Empirical Bayes Approach"
+    #   - Vasicek (1973): 在 β 估计中首次应用贝叶斯收缩
+    #
+    # 实现:
+    #   Prior: 行业均值和方差 → Beta(a, b) 分布
+    #     μ_prior = μ_industry (行业均分)
+    #     σ²_prior = σ²_industry (行业内方差)
+    #   Likelihood: 公司自身评分
+    #     μ_data = company_score
+    #     σ²_data = 1 / confidence (置信度的倒数作为数据方差)
+    #   Posterior (正态-正态共轭):
+    #     μ_posterior = w × μ_data + (1-w) × μ_prior
+    #     w = σ²_prior / (σ²_prior + σ²_data)  ← 精度加权
+    #
+    # 关键洞察: 数据不确定性高(低置信度)时 → 更多收缩到行业均值
+    #           数据确定性高(高置信度)时 → 更多保留原始评分
+    # 这解决了"低数据公司被评分噪声误导"的系统性问题
     _MIN_INDUSTRY_SIZE = 8
     _industry_groups = defaultdict(list)
     for _idx, _ev in enumerate(evaluations):
         _ind = _ev.get("industry", "__unknown__") or "__unknown__"
-        _industry_groups[_ind].append((_idx, _ev["score"]))
+        _industry_groups[_ind].append((_idx, _ev["score"], _ev.get("confidence", 0.5)))
 
     _industry_stats = {}
-    _n_ind_adjusted = 0
+    _n_bayes_updated = 0
+    _total_shrinkage = 0.0
+
+    # Step 1: 计算行业先验 (Prior)
     for _ind, _members in _industry_groups.items():
         if len(_members) < _MIN_INDUSTRY_SIZE:
             continue
-        _scores = [s for _, s in _members]
-        _mu = sum(_scores) / len(_scores)
-        _sigma = (sum((_s - _mu) ** 2 for _s in _scores) / len(_scores)) ** 0.5
-        if _sigma < 1e-6:
+        _scores = [s for _, s, _ in _members]
+        _mu_prior = sum(_scores) / len(_scores)
+        _var_prior = sum((_s - _mu_prior) ** 2 for _s in _scores) / len(_scores)
+        _sigma_prior = _var_prior ** 0.5
+        if _sigma_prior < 1e-6:
             continue
-        _industry_stats[_ind] = (_mu, _sigma)
-        for _i, _s in _members:
-            _z = (_s - _mu) / _sigma
+        _industry_stats[_ind] = (_mu_prior, _var_prior, _sigma_prior)
+
+    # Step 2: 贝叶斯后验更新 (每个公司)
+    for _ind, _members in _industry_groups.items():
+        stats = _industry_stats.get(_ind)
+        if stats is None:
+            # 小行业: 回退到全样本先验
+            _all_scores = [_ev["score"] for _ev in evaluations]
+            _global_mu = sum(_all_scores) / len(_all_scores) if _all_scores else 50.0
+            _global_var = sum((_s - _global_mu) ** 2 for _s in _all_scores) / len(_all_scores) if _all_scores else 400.0
+            stats = (_global_mu, _global_var, _global_var ** 0.5)
+
+        _mu_prior, _var_prior, _sigma_prior = stats
+
+        for _i, _s, _conf in _members:
+            # ── 数据方差模型 (修正) ──
+            # 正态-正态共轭: posterior mean = w×data + (1-w)×prior
+            # w = σ²_prior / (σ²_prior + σ²_data)
+            #   → w高 = 保留原始分数 (prior不确定)
+            #   → w低 = 收缩到行业均值 (data不确定)
+            #
+            # 置信度高 → σ²_data 小 → w 大 → 保留原始
+            # 置信度低 → σ²_data 大 → w 小 → 收缩到先验
+            #
+            # 公式: σ²_data = σ²_prior × SHRINKAGE × (1-conf)/conf
+            # SHRINKAGE = 0.5: 温和收缩, 避免过度平滑
+            _SHRINKAGE_FACTOR = 0.5
+            _var_data = _var_prior * _SHRINKAGE_FACTOR * (1.0 - _conf) / max(0.10, _conf)
+
+            # James-Stein 收缩权重 (Bayesian 精度加权)
+            # w = σ²_prior / (σ²_prior + σ²_data)
+            # w 高 → 保留原始分数; w 低 → 收缩到行业均值
+            _w = _var_prior / (_var_prior + _var_data) if (_var_prior + _var_data) > 0 else 0.5
+
+            # 后验均值
+            _mu_posterior = _w * _s + (1.0 - _w) * _mu_prior
+
+            # 后验方差 (更新置信度)
+            _var_posterior = 1.0 / (1.0 / _var_prior + 1.0 / _var_data) if _var_data > 0 else _var_prior
+            _posterior_confidence = min(0.95, _conf * (1.0 + 0.10 * (1.0 - _w)))
+
+            # z-score (在行业内的相对位置)
+            _z = (_s - _mu_prior) / _sigma_prior if _sigma_prior > 0 else 0.0
             evaluations[_i]["industry_z_score"] = round(_z, 3)
+            evaluations[_i]["bayesian_shrinkage_w"] = round(_w, 3)
 
-            # v11.0: z-score 驱动的分数软调整
-            # z > +1.0 (行业内 top ~16%) → 奖励 +3~5 分
-            # z < -1.0 (行业内 bottom ~16%) → 惩罚 -3~5 分
-            # 中间区域 (-1, +1) → 线性调整 ±3 分
-            # 调整幅度保守: 最多 ±5 分, 不覆盖核心绝对评分
-            if _z > 1.0:
-                _ind_bonus = min(5.0, 3.0 + (_z - 1.0) * 2.0)
-            elif _z < -1.0:
-                _ind_bonus = max(-5.0, -3.0 + (_z + 1.0) * 2.0)
-            else:
-                _ind_bonus = _z * 3.0  # 线性 ±3 分
-
+            # 应用后验分数 (裁剪到 [0, 100])
             _old_score = evaluations[_i]["score"]
-            _new_score = float(np.clip(_old_score + _ind_bonus, 0, 100))
+            _new_score = float(np.clip(_mu_posterior, 0, 100))
             evaluations[_i]["score"] = _new_score
-            _n_ind_adjusted += 1
+            evaluations[_i]["confidence"] = round(_posterior_confidence, 4)
 
-            # 重新决策 (使用调整后的分数)
+            _shrinkage_delta = abs(_new_score - _old_score)
+            _total_shrinkage += _shrinkage_delta
+            _n_bayes_updated += 1
+
+            # 重新决策 (使用后验分数)
             if evaluations[_i].get("decision") != "veto":  # veto 决策不可逆
                 if _new_score >= eval_config.quality_threshold:
                     evaluations[_i]["decision"] = "quality"
@@ -1575,10 +1745,12 @@ def run_causal_bayesian_evaluator(
                 else:
                     evaluations[_i]["decision"] = "poor"
 
+    _avg_shrinkage = _total_shrinkage / _n_bayes_updated if _n_bayes_updated > 0 else 0.0
     if _industry_stats:
         logger.info(
-            f"v11.0 Industry Neutralization: {len(_industry_stats)} industries, "
-            f"{_n_ind_adjusted} scores adjusted (±5 max), decisions re-evaluated"
+            f"v12.0 Bayesian Posterior Update: {len(_industry_stats)} industries, "
+            f"{_n_bayes_updated} scores updated, avg_shrinkage={_avg_shrinkage:.2f}pts, "
+            f"decisions re-evaluated"
         )
 
     # 重建 quality/veto 列表 (决策未变, 但确保一致性)
