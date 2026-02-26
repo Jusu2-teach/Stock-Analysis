@@ -477,6 +477,78 @@ pipeline:
           - name: Cross_Validation_Report_Path
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # 🧪 v11.1 回测 & 因子诊断模块 (Backtest & Factor Diagnostics)
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # 可选步骤 — 用于验证系统评分的预测能力:
+    # - 滚动窗口历史回测: IC / 多空收益 / 质量持续性
+    # - 共识元分析: 结合 F-Score + Beneish + 双引擎互校
+    # - 因子正交化诊断: 8因子间相关性 / 共线性检测
+    # - IC 自动权重优化: 基于历史 IC 推荐最优因子权重
+    #
+    # 注意:
+    # - 回测步骤计算量较大 (约 2-5 分钟), 日常运行可注释掉
+    # - 适合定期执行 (月度/季度) 以验证系统有效性
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 📈 TRUTH 引擎滚动窗口回测
+    # - name: "Run_TRUTH_Backtest"
+    #   component: "business_engine"
+    #   engine: "backtest"
+    #   method: ["run_truth_backtest"]
+    #   depends_on:
+    #     - "Run_TRUTH"
+    #   parameters:
+    #     truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
+    #     min_train_years: 5
+    #     fast_mode: false
+    #   outputs:
+    #     parameters:
+    #       - name: TRUTH_Backtest_Result
+
+    # 📊 Evaluator 引擎回测
+    # - name: "Run_Evaluator_Backtest"
+    #   component: "business_engine"
+    #   engine: "backtest"
+    #   method: ["run_evaluator_backtest"]
+    #   depends_on:
+    #     - "Run_Causal_Bayesian_Evaluator"
+    #   parameters:
+    #     evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
+    #     min_train_years: 5
+    #   outputs:
+    #     parameters:
+    #       - name: Evaluator_Backtest_Result
+
+    # 🤝 双引擎共识元分析 (Meta-Score: TRUTH×45% + Eval×35% + FScore×20%)
+    # - name: "Run_Consensus_Analysis"
+    #   component: "business_engine"
+    #   engine: "backtest"
+    #   method: ["run_consensus_analysis"]
+    #   depends_on:
+    #     - "Run_TRUTH"
+    #     - "Run_Causal_Bayesian_Evaluator"
+    #   parameters:
+    #     truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
+    #     evaluator_result: "steps.Run_Causal_Bayesian_Evaluator.outputs.parameters.Evaluator_Result"
+    #   outputs:
+    #     parameters:
+    #       - name: Consensus_Meta_Result
+
+    # 🔬 因子正交化 & 质量稳定性诊断
+    # - name: "Run_Factor_Diagnostics"
+    #   component: "business_engine"
+    #   engine: "backtest"
+    #   method: ["run_factor_diagnostics"]
+    #   depends_on:
+    #     - "Run_TRUTH"
+    #   parameters:
+    #     truth_result: "steps.Run_TRUTH.outputs.parameters.Truth_Result"
+    #   outputs:
+    #     parameters:
+    #       - name: Factor_Diagnostics_Result
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # 📊 估值分析模块 (Valuation Analysis)
     # ═══════════════════════════════════════════════════════════════════════════
     #

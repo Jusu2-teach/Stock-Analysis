@@ -1658,35 +1658,85 @@ def report_cross_validation(
     lines.append("> 两个独立引擎都给出积极评价的股票")
     lines.append("")
 
-    # 共识评分 = T.R.U.T.H. 分 × 0.5 + Eval 分(归一化) × 0.5
+    # v11.1: 使用 compute_consensus_meta_score (TRUTH×45%+Eval×35%+F-Score×20%+Beneish)
+    # 替代旧版简单 50/50 平均
+    from ..backtest.engine import compute_consensus_meta_score, compute_piotroski_fscore
+
     consensus_list = []
+    _n_manipulators = 0
+    _n_strong_consensus = 0
     for ts_code in common_ts:
         tp = truth_by_ts[ts_code]
         ep = eval_by_ts[ts_code]
 
         t_score = tp.get("final_score", 0) or 0
-        e_score = (ep.get("score", 0) or 0) / 100.0
-        consensus_score = t_score * 0.5 + e_score * 0.5
+        e_score = (ep.get("score", 0) or 0)
+        t_grade = tp.get("grade", "C")
+        e_decision = ep.get("decision", "uncertain")
+
+        # 提取 F-Score 和 Beneish (从 Eval factors)
+        _fscore = 0
+        _beneish_flag = False
+        eval_factors = ep.get("factors", [])
+        for _f in eval_factors:
+            _fn = _f.get("name", "")
+            if _fn == "piotroski_fscore":
+                _fscore = int(_f.get("value", 0))
+            elif _fn == "beneish_mscore":
+                _beneish_flag = True
+
+        meta = compute_consensus_meta_score(
+            truth_score=t_score,
+            eval_score=e_score,
+            truth_grade=t_grade,
+            eval_decision=e_decision,
+            fscore=_fscore,
+            beneish_manipulator=_beneish_flag,
+        )
+
+        if _beneish_flag:
+            _n_manipulators += 1
+        if meta["consensus_level"] == "strong_consensus":
+            _n_strong_consensus += 1
 
         consensus_list.append({
             "ts_code": ts_code,
-            "consensus_score": consensus_score,
+            "consensus_score": meta["meta_score"],
+            "consensus_level": meta["consensus_level"],
+            "confidence": meta["confidence"],
+            "meta_pct": meta["meta_pct"],
             "truth_profile": tp,
             "eval_result": ep,
         })
 
     consensus_list.sort(key=lambda x: -x["consensus_score"])
+
+    # 共识统计
+    lines.append(f"- **Meta-Score 引擎**: TRUTH×45% + Eval×35% + F-Score×20% + Beneish惩罚")
+    lines.append(f"- **强共识 (双引擎同看好)**: {_n_strong_consensus} 家")
+    lines.append(f"- **Beneish 疑似操纵**: {_n_manipulators} 家")
+    lines.append("")
+
     top_20 = consensus_list[:20]
 
     if top_20:
-        lines.append("| # | 代码 | 共识分 | T.R.U.T.H. | Eval | 基因特征 | 生命周期 |")
-        lines.append("|---|------|--------|------------|------|----------|----------|")
+        lines.append("| # | 代码 | Meta分 | 共识 | 置信 | T.R.U.T.H. | Eval | 生命周期 |")
+        lines.append("|---|------|--------|------|------|------------|------|----------|")
+
+        _consensus_emoji = {
+            "strong_consensus": "🟢",
+            "divergent": "🔴",
+            "negative_consensus": "⚫",
+            "neutral": "⚪",
+        }
 
         for i, item in enumerate(top_20, 1):
             tp = item["truth_profile"]
             ep = item["eval_result"]
             ts_code = item["ts_code"]
             cs = item["consensus_score"]
+            cl = item.get("consensus_level", "neutral")
+            conf = item.get("confidence", 0.0)
 
             # T.R.U.T.H. 信息
             t_grade = tp.get("grade", "-")
@@ -1726,9 +1776,10 @@ def report_cross_validation(
             }
             state_str = state_labels.get(state, "") + state
 
+            _ce = _consensus_emoji.get(cl, "⚪")
             lines.append(
-                f"| {i} | {ts_code} | {cs:.1%} | {t_emoji}{t_grade} | {e_decision}({e_score:.0f}) "
-                f"| {gene_str} | {state_str} |"
+                f"| {i} | {ts_code} | {cs:.1%} | {_ce}{cl[:6]} | {conf:.0%} "
+                f"| {t_emoji}{t_grade} | {e_decision}({e_score:.0f}) | {state_str} |"
             )
 
         lines.append("")
