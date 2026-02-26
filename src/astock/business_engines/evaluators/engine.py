@@ -20,6 +20,7 @@ Pipeline 集成:
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1045,6 +1046,105 @@ class CausalBayesianEvaluator:
         elif deterioration_count >= 3:
             base_score -= 2
 
+        # ══════ v11.0: π 盈利能力因子 (学习自 TRUTH v7.0) ══════
+        # Evaluator 最大盲点: 完全没有 GP/Assets (Novy-Marx 2013 最强单因子, IC=0.70)
+        # 实现: 从 financial_context 提取 GP/Assets + ROIC水平 + ROE水平 + 资产周转率
+        # 计算独立的盈利质量分数, 作为额外加减分 (±8分)
+        # 学术依据: AQR QMJ Profitability = GPOA + ROE + ROA + CFOA
+        _gp_assets = features.get("fc_profitability_gp_assets")
+        _roic_lvl = features.get("fc_profitability_roic_level", features.get("roic_level"))
+        _roe_lvl = features.get("fc_profitability_roe_level", features.get("roe_level"))
+        _asset_turn = features.get("fc_profitability_assets_turn")
+
+        _pi_components = []
+        if _gp_assets is not None:
+            # GP/Assets sigmoid: center=0.15, scale=0.10 (与 TRUTH config 对齐)
+            _gpa_sig = 1.0 / (1.0 + math.exp(-(_gp_assets - 0.15) / 0.10))
+            _pi_components.append(("gp_assets", _gpa_sig, 0.35))
+        if _roic_lvl is not None:
+            # ROIC level sigmoid: center=10%, scale=5%
+            _roic_sig = 1.0 / (1.0 + math.exp(-(_roic_lvl - 10.0) / 5.0))
+            _pi_components.append(("roic_level", _roic_sig, 0.30))
+        if _roe_lvl is not None:
+            # ROE level sigmoid: center=12%, scale=6%
+            _roe_sig = 1.0 / (1.0 + math.exp(-(_roe_lvl - 12.0) / 6.0))
+            _pi_components.append(("roe_level", _roe_sig, 0.20))
+        if _asset_turn is not None:
+            # Asset turnover sigmoid: center=0.5, scale=0.3
+            _at_sig = 1.0 / (1.0 + math.exp(-(_asset_turn - 0.5) / 0.3))
+            _pi_components.append(("asset_turn", _at_sig, 0.15))
+
+        if _pi_components:
+            _pi_total_w = sum(w for _, _, w in _pi_components)
+            _pi_score = sum(s * w for _, s, w in _pi_components) / _pi_total_w
+            # _pi_score ∈ [0, 1], 0.5 = 中性
+            # 映射: 0.0→-8, 0.25→-4, 0.50→0, 0.75→+4, 1.0→+8
+            _pi_adjustment = (_pi_score - 0.50) * 16.0  # ±8 分
+            _pi_adjustment = max(-8.0, min(8.0, _pi_adjustment))
+            base_score += _pi_adjustment
+            if abs(_pi_adjustment) > 0.5:
+                factors.append(Factor(
+                    name="pi_profitability",
+                    display_name="π 盈利能力因子 (Novy-Marx)",
+                    value=_pi_score,
+                    contribution=_pi_adjustment / 100,
+                    direction="positive" if _pi_adjustment > 0 else "negative",
+                    explanation=f"GP/A+ROIC+ROE+周转 → π={_pi_score:.2f} → {_pi_adjustment:+.1f}分",
+                ))
+
+        # ═══ v11.0: Piotroski F-Score 第三验证器 ═══
+        # Piotroski (2000): "Value Investing: The Use of Historical Financial Statement
+        # Information to Separate Winners from Losers"
+        # F-Score ≥ 6 → +3分; F-Score ≤ 2 → -4分
+        from ..backtest.engine import compute_piotroski_fscore, compute_beneish_mscore
+        _fs_result = compute_piotroski_fscore(features)
+        _fscore = _fs_result["fscore"]
+        _fs_max = _fs_result["max_possible"]
+
+        if _fs_max >= 4:  # 至少有 4 个指标可计算才有意义
+            if _fscore >= 6:
+                base_score += 3.0
+                factors.append(Factor(
+                    name="piotroski_fscore",
+                    display_name="Piotroski F-Score",
+                    value=float(_fscore),
+                    contribution=0.03,
+                    direction="positive",
+                    explanation=f"F={_fscore}/{_fs_max} ({_fs_result['interpretation']}) → +3",
+                ))
+            elif _fscore >= 5:
+                base_score += 1.5
+            elif _fscore <= 2:
+                base_score -= 4.0
+                factors.append(Factor(
+                    name="piotroski_fscore",
+                    display_name="Piotroski F-Score",
+                    value=float(_fscore),
+                    contribution=-0.04,
+                    direction="negative",
+                    explanation=f"F={_fscore}/{_fs_max} ({_fs_result['interpretation']}) → -4",
+                ))
+            elif _fscore <= 3:
+                base_score -= 2.0
+
+        # ═══ v11.0: Beneish M-Score 增强欺诈检测 ═══
+        # Beneish (1999): M > -1.78 → likely manipulator
+        # 与 TRUTH δ_fraud 因子互补: TRUTH 检测 OCF/NI 背离
+        # Beneish 检测 DSRI+GMI+AQI+SGI+TATA 组合模式
+        _bn_result = compute_beneish_mscore(features)
+        if _bn_result["confidence"] in ("high", "medium"):
+            if _bn_result["is_manipulator"]:
+                _bn_penalty = -5.0 if _bn_result["confidence"] == "high" else -3.0
+                base_score += _bn_penalty
+                factors.append(Factor(
+                    name="beneish_mscore",
+                    display_name="Beneish M-Score 欺诈检测",
+                    value=_bn_result["m_score"],
+                    contribution=_bn_penalty / 100,
+                    direction="negative",
+                    explanation=f"M={_bn_result['m_score']:.2f} > -1.78 ({_bn_result['confidence']}) → {_bn_penalty:+.0f}",
+                ))
+
         # v4.7: 卓越稳定性加分 — 多指标同时处于卓越水平 = 宽广护城河
         # 迈瑞医疗: ROIC 30%, ROE 34%, 毛利率 63%, 净利率 32% → 全面卓越
         # 这类公司即使趋势平稳也应获得额外认可
@@ -1420,9 +1520,14 @@ def run_causal_bayesian_evaluator(
         except Exception as e:
             logger.error(f"Error evaluating {ts_code}: {e}")
 
-    # ══════ Post-hoc 行业 z-score 归一化 ══════
-    # Eval 使用绝对分数阈值 (72/50)，对不同行业天然盈利能力差异无感
-    # 行业内 z-score 用于补充分析视角，不覆盖原有绝对分数和决策
+    # ══════ v11.0: 真正的行业中性化 (学习自 TRUTH cross-sectional normalization) ══════
+    # v7.4 的行业 z-score 是"事后分析不改决策"——形同虚设
+    # 升级: 行业内 z-score → 分数软调整 → 重新决策
+    # 原理: AQR QMJ / MSCI Quality 标准做法:
+    #   在行业内做 z-score, 消除行业系统性差异
+    #   例: 白酒行业天然 ROIC 高 → 绝对评分偏高 → 需要行业内竞争排名
+    #        钢铁行业天然 ROIC 低 → 绝对评分偏低 → 行业内优秀者应被公平对待
+    # 实现: 行业内 z-score → 乘法调整 (±10%), 然后重新决策
     _MIN_INDUSTRY_SIZE = 8
     _industry_groups = defaultdict(list)
     for _idx, _ev in enumerate(evaluations):
@@ -1430,22 +1535,50 @@ def run_causal_bayesian_evaluator(
         _industry_groups[_ind].append((_idx, _ev["score"]))
 
     _industry_stats = {}
+    _n_ind_adjusted = 0
     for _ind, _members in _industry_groups.items():
         if len(_members) < _MIN_INDUSTRY_SIZE:
             continue
         _scores = [s for _, s in _members]
         _mu = sum(_scores) / len(_scores)
-        _sigma = (sum((s - _mu) ** 2 for s in _scores) / len(_scores)) ** 0.5
+        _sigma = (sum((_s - _mu) ** 2 for _s in _scores) / len(_scores)) ** 0.5
         if _sigma < 1e-6:
             continue
         _industry_stats[_ind] = (_mu, _sigma)
         for _i, _s in _members:
-            evaluations[_i]["industry_z_score"] = round((_s - _mu) / _sigma, 3)
+            _z = (_s - _mu) / _sigma
+            evaluations[_i]["industry_z_score"] = round(_z, 3)
+
+            # v11.0: z-score 驱动的分数软调整
+            # z > +1.0 (行业内 top ~16%) → 奖励 +3~5 分
+            # z < -1.0 (行业内 bottom ~16%) → 惩罚 -3~5 分
+            # 中间区域 (-1, +1) → 线性调整 ±3 分
+            # 调整幅度保守: 最多 ±5 分, 不覆盖核心绝对评分
+            if _z > 1.0:
+                _ind_bonus = min(5.0, 3.0 + (_z - 1.0) * 2.0)
+            elif _z < -1.0:
+                _ind_bonus = max(-5.0, -3.0 + (_z + 1.0) * 2.0)
+            else:
+                _ind_bonus = _z * 3.0  # 线性 ±3 分
+
+            _old_score = evaluations[_i]["score"]
+            _new_score = float(np.clip(_old_score + _ind_bonus, 0, 100))
+            evaluations[_i]["score"] = _new_score
+            _n_ind_adjusted += 1
+
+            # 重新决策 (使用调整后的分数)
+            if evaluations[_i].get("decision") != "veto":  # veto 决策不可逆
+                if _new_score >= eval_config.quality_threshold:
+                    evaluations[_i]["decision"] = "quality"
+                elif _new_score >= eval_config.average_threshold:
+                    evaluations[_i]["decision"] = "average"
+                else:
+                    evaluations[_i]["decision"] = "poor"
 
     if _industry_stats:
         logger.info(
-            f"v7.4 Industry Z-Score: {len(_industry_stats)} industries normalized "
-            f"(min_size={_MIN_INDUSTRY_SIZE})"
+            f"v11.0 Industry Neutralization: {len(_industry_stats)} industries, "
+            f"{_n_ind_adjusted} scores adjusted (±5 max), decisions re-evaluated"
         )
 
     # 重建 quality/veto 列表 (决策未变, 但确保一致性)

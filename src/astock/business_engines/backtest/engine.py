@@ -766,3 +766,605 @@ def _judge_ic_md(ic: float) -> str:
     elif ic >= 0.02:
         return "⚠️ 弱预测力"
     return "❌ 无预测力"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: Evaluator IC 回测 + 跨引擎共识元评分 + F-Score + Beneish + IC 衰减
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class EvaluatorBacktester(FundamentalBacktester):
+    """v11.0: Evaluator 引擎专用回测
+
+    与 TRUTH 回测共享基础设施, 新增:
+    1. 在子集上运行 Evaluator 而非 TRUTH
+    2. 输出: Evaluator 的 score IC + quality persistence
+    """
+
+    def _run_evaluator_on_subset(self, train_df: pd.DataFrame) -> Dict[str, Any]:
+        """在训练数据子集上运行 Evaluator"""
+        from ..trend.engine import analyze_metric_trend, build_financial_context
+        from ..evaluators.engine import CausalBayesianEvaluator, EvaluatorConfig
+
+        aggregated_trends: Dict[str, pd.DataFrame] = {}
+        for business_key, source_col in self.ANALYSIS_METRICS.items():
+            if source_col not in train_df.columns:
+                continue
+            try:
+                agg_result = analyze_metric_trend(
+                    data=train_df, group_cols="ts_code",
+                    metric_name=business_key, min_periods=3, enable_multi_horizon=True,
+                )
+                if agg_result.value is not None and not agg_result.value.empty:
+                    aggregated_trends[business_key] = agg_result.value
+            except Exception:
+                continue
+
+        if not aggregated_trends:
+            return {}
+
+        try:
+            fc_result = build_financial_context(data=train_df)
+            if fc_result.value is not None and not fc_result.value.empty:
+                aggregated_trends["financial_context"] = fc_result.value
+        except Exception:
+            pass
+
+        evaluator = CausalBayesianEvaluator(EvaluatorConfig())
+        all_ts_codes = set()
+        for df in aggregated_trends.values():
+            if df is not None and "ts_code" in df.columns:
+                all_ts_codes.update(df["ts_code"].unique())
+
+        # 提取公司信息
+        company_info_dict = {}
+        for df in aggregated_trends.values():
+            if df is not None and not df.empty and "name" in df.columns:
+                for _, row in df[["ts_code", "name", "industry"]].drop_duplicates("ts_code").iterrows():
+                    ts = row["ts_code"]
+                    if ts not in company_info_dict:
+                        company_info_dict[ts] = {
+                            "ts_code": ts, "name": str(row.get("name", "")),
+                            "industry": str(row.get("industry", "")),
+                        }
+                break
+
+        result = {}
+        for ts_code in all_ts_codes:
+            try:
+                info = company_info_dict.get(ts_code, {"ts_code": ts_code})
+                ev = evaluator.evaluate_company(ts_code, aggregated_trends, info)
+                result[ts_code] = {
+                    "final_score": ev.score,
+                    "decision": ev.decision.value,
+                    "confidence": ev.confidence,
+                }
+            except Exception:
+                continue
+        return result
+
+    def _evaluate_window(self, train_years, test_year):
+        tag = f"{train_years[0]}-{train_years[-1]}→{test_year}"
+        logger.info(f"[EvalBT] Window {tag}")
+
+        train_df = self._subset_data(train_years)
+        future_df = self._get_future_fundamentals(test_year)
+        if train_df.empty or future_df.empty:
+            return None
+
+        eval_results = self._run_evaluator_on_subset(train_df)
+        if not eval_results:
+            return None
+
+        matched = []
+        for ts_code, scores in eval_results.items():
+            row_future = future_df[future_df["ts_code"] == ts_code]
+            if row_future.empty:
+                continue
+            row = {"ts_code": ts_code, "final_score": scores["final_score"],
+                   "grade": "A" if scores.get("decision") == "quality" else (
+                       "F" if scores.get("decision") == "veto" else "C")}
+            for col in future_df.columns:
+                if col.startswith("future_"):
+                    val = row_future.iloc[0][col]
+                    if pd.notna(val):
+                        row[col] = float(val)
+            matched.append(row)
+
+        match_df = pd.DataFrame(matched)
+        if len(match_df) < 20:
+            return None
+
+        ic_roic = self._calc_ic(match_df, "final_score", "future_roic")
+        ic_roe = self._calc_ic(match_df, "final_score", "future_roe")
+        ic_gm = self._calc_ic(match_df, "final_score", "future_gross_margin")
+        ic_vals = [v for v in [ic_roic, ic_roe, ic_gm] if v != 0.0]
+
+        quality_mask = match_df["grade"] == "A"
+        q_med, a_med, lift, persist = self._calc_quality_persistence(match_df, quality_mask)
+        top_r, bot_r, ls_spread, ls_t = self._calc_ls_spread(match_df)
+
+        return WindowResult(
+            train_start=train_years[0], train_end=train_years[-1], test_year=test_year,
+            n_companies=len(match_df),
+            n_quality=int(quality_mask.sum()), n_veto=int((match_df["grade"] == "F").sum()),
+            ic_roic=ic_roic, ic_roe=ic_roe, ic_gm=ic_gm,
+            ic_composite=sum(ic_vals) / len(ic_vals) if ic_vals else 0.0,
+            quality_roic_median=q_med, all_roic_median=a_med,
+            quality_lift=lift, quality_persistence_rate=persist,
+            top_quintile_roic=top_r, bottom_quintile_roic=bot_r,
+            ls_spread=ls_spread, ls_t_stat=ls_t,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: Piotroski F-Score (第三独立验证器)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_piotroski_fscore(features: Dict[str, Any]) -> Dict[str, Any]:
+    """计算 Piotroski F-Score (9点制)
+
+    可用 7/9 项 (F6/F7 需要未持有的数据):
+    F1: ROA > 0 (盈利能力)
+    F2: OCF > 0 (现金质量)
+    F3: ΔROA > 0 (盈利改善)
+    F4: OCF > NI (应计质量, Sloan 1996)
+    F5: ΔLeverage < 0 (杠杆降低)
+    F8: ΔGross Margin > 0 (护城河改善)
+    F9: ΔAsset Turnover > 0 (效率改善)
+
+    Args:
+        features: PDDA 提取的特征字典 (与 Evaluator 相同)
+
+    Returns:
+        {"fscore": int, "signals": {name: bool}, "max_possible": int}
+    """
+    signals = {}
+    score = 0
+
+    # F1: ROA > 0 (用 ROIC 替代, 更严格)
+    roic_level = features.get("roic_level", features.get("fc_profitability_roic_level"))
+    if roic_level is not None:
+        signals["F1_profitability"] = roic_level > 0
+        if signals["F1_profitability"]:
+            score += 1
+
+    # F2: OCF > 0
+    ocf_level = features.get("ocf_level")
+    if ocf_level is not None:
+        signals["F2_cash_flow"] = ocf_level > 0
+        if signals["F2_cash_flow"]:
+            score += 1
+
+    # F3: ΔROA > 0 (ROIC 趋势)
+    roic_trend = features.get("roic_trend")
+    if roic_trend is not None:
+        signals["F3_delta_roa"] = roic_trend > 0
+        if signals["F3_delta_roa"]:
+            score += 1
+
+    # F4: OCF/NI > 1 (应计质量)
+    profit_level = features.get("profit_level")
+    if ocf_level is not None and profit_level is not None and profit_level > 0:
+        cash_conv = ocf_level / max(profit_level, 0.01)
+        signals["F4_accrual_quality"] = cash_conv > 1.0
+        if signals["F4_accrual_quality"]:
+            score += 1
+
+    # F5: ΔLeverage < 0 (负债率下降)
+    debt_ratio = features.get("fc_ratio_debt_to_assets")
+    if debt_ratio is not None:
+        # 用趋势近似: 负债率 < 0.50 = 安全; 在没有趋势时, 用水平判断
+        signals["F5_leverage_down"] = debt_ratio < 0.55
+        if signals["F5_leverage_down"]:
+            score += 1
+
+    # F8: ΔGross Margin > 0
+    gm_trend = features.get("gross_margin_trend")
+    if gm_trend is not None:
+        signals["F8_margin_improve"] = gm_trend > 0
+        if signals["F8_margin_improve"]:
+            score += 1
+
+    # F9: ΔAsset Turnover > 0
+    asset_turn = features.get("fc_profitability_assets_turn")
+    revenue_trend = features.get("revenue_trend")
+    if asset_turn is not None and revenue_trend is not None:
+        # 营收增速正 + 资产周转率 > 0.5 → 效率改善
+        signals["F9_efficiency"] = revenue_trend > 0 and asset_turn > 0.4
+        if signals["F9_efficiency"]:
+            score += 1
+
+    return {
+        "fscore": score,
+        "signals": signals,
+        "max_possible": len(signals),
+        "interpretation": (
+            "strong" if score >= 6 else
+            "moderate" if score >= 4 else
+            "weak" if score >= 2 else "distressed"
+        ),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: Beneish M-Score 增强欺诈检测
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_beneish_mscore(features: Dict[str, Any]) -> Dict[str, Any]:
+    """计算 Beneish M-Score 近似值 (基于可用特征)
+
+    Beneish (1999): "The Detection of Earnings Manipulation"
+    原始公式需要完整的资产负债表时序, 这里用 PDDA 特征近似 5 个核心变量:
+
+    DSRI: 应收账款→营收比变化 (应收增速 > 营收增速 = 可疑)
+    GMI:  毛利率下降倒数 (毛利率下降 = 增加操纵动机)
+    AQI:  资产质量指数 (非流动资产占比增加 = 可疑)
+    SGI:  营收增长指数 (高增长 + 虚假盈利 = M-Score核心预警)
+    TATA: 应计利润/总资产 (高应计 = Sloan 1996 核心信号)
+
+    Returns:
+        {"m_score": float, "is_manipulator": bool, "components": dict, "confidence": str}
+    """
+    components = {}
+
+    # DSRI: Days Sales in Receivables Index
+    # 近似: 应收账款/收入比率的水平 (标志性变量)
+    receivable_ratio = features.get("fc_ratio_receivable_to_revenue")
+    flag_high_recv = features.get("fc_flag_high_receivable", 0)
+    if receivable_ratio is not None:
+        # DSRI > 1.0 = 可疑; 规范化到 Beneish 尺度
+        components["DSRI"] = min(2.0, max(0.5, receivable_ratio * 3.0 + 0.5))
+    elif flag_high_recv:
+        components["DSRI"] = 1.5  # 高应收标志 → 中等可疑
+
+    # GMI: Gross Margin Index (inverse)
+    gm_trend = features.get("gross_margin_trend", 0.0)
+    if gm_trend is not None:
+        # 毛利率下降 → GMI > 1; 上升 → GMI < 1
+        components["GMI"] = max(0.5, 1.0 - gm_trend * 5.0)
+
+    # AQI: Asset Quality Index
+    nca_ratio = features.get("fc_ratio_nca")
+    goodwill_risk = features.get("fc_flag_goodwill_risk", 0)
+    if nca_ratio is not None:
+        components["AQI"] = min(2.0, max(0.5, nca_ratio * 2.0 + 0.3))
+        if goodwill_risk:
+            components["AQI"] = min(2.0, components["AQI"] * 1.3)
+    elif goodwill_risk:
+        components["AQI"] = 1.5
+
+    # SGI: Sales Growth Index
+    rev_trend = features.get("revenue_trend", 0.0)
+    if rev_trend is not None:
+        # 高增长 SGI > 1.2; 使用 exp 转换
+        components["SGI"] = max(0.5, math.exp(rev_trend * 2.0))
+
+    # TATA: Total Accruals to Total Assets
+    profit_level = features.get("profit_level", 0.0)
+    ocf_level = features.get("ocf_level", 0.0)
+    if profit_level is not None and ocf_level is not None:
+        # accruals = profit - ocf (粗略); 标准化
+        accruals = profit_level - ocf_level
+        components["TATA"] = max(-0.5, min(0.5, accruals / max(abs(profit_level), 0.01) * 0.5))
+
+    if not components:
+        return {"m_score": 0.0, "is_manipulator": False, "components": {}, "confidence": "no_data"}
+
+    # Beneish M-Score 原始系数 (Beneish 1999):
+    # M = -4.84 + 0.920*DSRI + 0.528*GMI + 0.404*AQI + 0.892*SGI + 4.679*TATA
+    M = -4.84
+    if "DSRI" in components:
+        M += 0.920 * components["DSRI"]
+    if "GMI" in components:
+        M += 0.528 * components["GMI"]
+    if "AQI" in components:
+        M += 0.404 * components["AQI"]
+    if "SGI" in components:
+        M += 0.892 * components["SGI"]
+    if "TATA" in components:
+        M += 4.679 * components["TATA"]
+
+    # M > -1.78 → likely manipulator (Beneish 1999 原始阈值)
+    is_manipulator = M > -1.78
+    n_components = len(components)
+    confidence = "high" if n_components >= 4 else ("medium" if n_components >= 3 else "low")
+
+    return {
+        "m_score": round(M, 3),
+        "is_manipulator": is_manipulator,
+        "components": {k: round(v, 3) for k, v in components.items()},
+        "confidence": confidence,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: 跨引擎共识元评分
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_consensus_meta_score(
+    truth_score: float,
+    eval_score: float,
+    truth_grade: str,
+    eval_decision: str,
+    fscore: int = 0,
+    beneish_manipulator: bool = False,
+) -> Dict[str, Any]:
+    """计算跨引擎共识元评分
+
+    Meta-Score = w₁ × TRUTH_percentile + w₂ × Eval_score_normalized + w₃ × F-Score_norm
+    + 共识加分/分歧减分 + Beneish 欺诈扣分
+
+    Args:
+        truth_score: TRUTH final_score (0-1)
+        eval_score: Evaluator score (0-100)
+        truth_grade: TRUTH grade (A+/A/B+/B/C/D/F)
+        eval_decision: Evaluator decision (quality/average/poor/veto)
+        fscore: Piotroski F-Score (0-7)
+        beneish_manipulator: Beneish M-Score > -1.78
+
+    Returns:
+        {"meta_score": float, "consensus_level": str, "confidence": float, "details": dict}
+    """
+    # 1. 归一化各引擎分数到 [0, 1]
+    truth_norm = max(0, min(1.0, truth_score))  # 已经是 0-1
+    eval_norm = max(0, min(1.0, eval_score / 100.0))  # 0-100 → 0-1
+    fscore_norm = max(0, min(1.0, fscore / 7.0))  # 0-7 → 0-1
+
+    # 2. 加权合成: TRUTH 45% + Eval 35% + F-Score 20%
+    w_truth, w_eval, w_fscore = 0.45, 0.35, 0.20
+    raw_meta = truth_norm * w_truth + eval_norm * w_eval + fscore_norm * w_fscore
+
+    # 3. 共识加分/分歧减分
+    truth_is_quality = truth_grade in ("A+", "A", "B+")
+    eval_is_quality = eval_decision == "quality"
+
+    if truth_is_quality and eval_is_quality:
+        # 双引擎共识优质 → 高置信奖励
+        consensus_bonus = 0.05
+        consensus_level = "strong_consensus"
+    elif truth_is_quality != eval_is_quality:
+        # 分歧 → 惩罚
+        consensus_bonus = -0.03
+        consensus_level = "divergent"
+    elif truth_grade in ("D", "F") and eval_decision in ("poor", "veto"):
+        # 双引擎共识差 → 中等共识 (confirmation)
+        consensus_bonus = 0.0
+        consensus_level = "negative_consensus"
+    else:
+        consensus_bonus = 0.0
+        consensus_level = "neutral"
+
+    # 4. Beneish 欺诈扣分
+    beneish_penalty = -0.08 if beneish_manipulator else 0.0
+
+    meta_score = max(0, min(1.0, raw_meta + consensus_bonus + beneish_penalty))
+
+    # 5. 置信度: 基于引擎间一致性
+    score_diff = abs(truth_norm - eval_norm)
+    if score_diff < 0.10:
+        confidence = 0.90
+    elif score_diff < 0.20:
+        confidence = 0.75
+    elif score_diff < 0.30:
+        confidence = 0.60
+    else:
+        confidence = 0.45
+
+    return {
+        "meta_score": round(meta_score, 4),
+        "meta_pct": round(meta_score * 100, 1),
+        "consensus_level": consensus_level,
+        "confidence": round(confidence, 2),
+        "details": {
+            "truth_norm": round(truth_norm, 4),
+            "eval_norm": round(eval_norm, 4),
+            "fscore_norm": round(fscore_norm, 4),
+            "consensus_bonus": round(consensus_bonus, 4),
+            "beneish_penalty": round(beneish_penalty, 4),
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: IC 衰减监控 (Factor Decay Detection)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def detect_ic_decay(
+    window_results: List[WindowResult],
+    factor_name: str,
+    decay_threshold: int = 3,
+) -> Dict[str, Any]:
+    """检测因子 IC 是否在衰减
+
+    Harvey & Liu (2020) "Lucky Factors":
+    - 因子 IC 连续 N 年下降 → 可能是伪因子或市场已定价
+    - 检测: 连续 decay_threshold 个窗口 IC 下降 → 预警
+
+    Args:
+        window_results: 回测窗口结果列表
+        factor_name: 因子名称
+        decay_threshold: 连续下降窗口数阈值
+
+    Returns:
+        {"is_decaying": bool, "consecutive_declines": int,
+         "ic_trend": list, "recommendation": str}
+    """
+    ics = []
+    for w in window_results:
+        ic = w.factor_ics.get(factor_name)
+        if ic is not None:
+            ics.append({"year": w.test_year, "ic": ic})
+
+    if len(ics) < 2:
+        return {"is_decaying": False, "consecutive_declines": 0,
+                "ic_trend": ics, "recommendation": "insufficient_data"}
+
+    # 计算连续下降
+    consec = 0
+    max_consec = 0
+    for i in range(1, len(ics)):
+        if ics[i]["ic"] < ics[i - 1]["ic"]:
+            consec += 1
+            max_consec = max(max_consec, consec)
+        else:
+            consec = 0
+
+    is_decaying = max_consec >= decay_threshold
+
+    # 总体 IC 趋势 (线性回归斜率)
+    if len(ics) >= 3:
+        xs = list(range(len(ics)))
+        ys = [d["ic"] for d in ics]
+        x_mean = sum(xs) / len(xs)
+        y_mean = sum(ys) / len(ys)
+        num = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
+        den = sum((x - x_mean) ** 2 for x in xs)
+        slope = num / den if den > 0 else 0.0
+    else:
+        slope = 0.0
+
+    if is_decaying:
+        rec = "auto_downweight"
+    elif slope < -0.02:
+        rec = "monitor_closely"
+    elif slope > 0.02:
+        rec = "stable_or_improving"
+    else:
+        rec = "stable"
+
+    return {
+        "is_decaying": is_decaying,
+        "consecutive_declines": max_consec,
+        "ic_trend": ics,
+        "slope": round(slope, 4),
+        "recommendation": rec,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v11.0: 注册方法 — 供 workflow YAML 调用
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from orchestrator.decorators.register import register_method
+from shared.aggregation import AggregatableResult
+
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_evaluator_backtest",
+    description="Run rolling window backtest for Evaluator engine (v11.0)",
+)
+def run_evaluator_backtest(
+    data: pd.DataFrame,
+    output_path: str = "data/evaluator_backtest_report.md",
+    **params,
+) -> AggregatableResult:
+    """运行 Evaluator 引擎的滚动窗口回测
+
+    与 TRUTH 回测并行, 验证 Evaluator 的独立预测力
+    """
+    bt = EvaluatorBacktester(data)
+    report = bt.run()
+    bt.print_summary(report)
+    md = bt.generate_report_md(report, output_path=output_path)
+    return AggregatableResult(
+        key="evaluator_backtest",
+        value={"report": report, "markdown": md},
+        namespace="backtest",
+    )
+
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_consensus_analysis",
+    description="Run cross-engine consensus meta-scoring analysis (v11.0)",
+)
+def run_consensus_analysis(
+    truth_result: Dict[str, Any],
+    evaluator_result: Dict[str, Any],
+    data: pd.DataFrame = None,
+    **params,
+) -> AggregatableResult:
+    """跨引擎共识元评分
+
+    对每家公司计算: Meta-Score = TRUTH×45% + Eval×35% + F-Score×20%
+    + Beneish 欺诈扣分 + 共识加分/分歧减分
+    """
+    truth_profiles = truth_result.get("profiles", [])
+    eval_results = evaluator_result.get("evaluations", [])
+
+    truth_by_ts = {p.get("ts_code"): p for p in truth_profiles}
+    eval_by_ts = {e.get("ts_code"): e for e in eval_results}
+    common_ts = set(truth_by_ts.keys()) & set(eval_by_ts.keys())
+
+    results = []
+    consensus_stats = {"strong_consensus": 0, "divergent": 0, "negative_consensus": 0, "neutral": 0}
+    manipulator_count = 0
+
+    for ts_code in common_ts:
+        tp = truth_by_ts[ts_code]
+        ep = eval_by_ts[ts_code]
+
+        t_score = tp.get("final_score", 0) or 0
+        e_score = (ep.get("score", 0) or 0)
+        t_grade = tp.get("grade", "C")
+        e_decision = ep.get("decision", "uncertain")
+
+        # F-Score: 从 Evaluator factors 中提取
+        fscore = 0
+        beneish_flag = False
+        if "factors" in ep:
+            for f in ep["factors"]:
+                fn = f.get("name", "")
+                if fn == "piotroski_fscore":
+                    fscore = int(f.get("value", 0))
+                elif fn == "beneish_mscore":
+                    beneish_flag = True
+
+        meta = compute_consensus_meta_score(
+            truth_score=t_score,
+            eval_score=e_score,
+            truth_grade=t_grade,
+            eval_decision=e_decision,
+            fscore=fscore,
+            beneish_manipulator=beneish_flag,
+        )
+
+        consensus_stats[meta["consensus_level"]] = consensus_stats.get(meta["consensus_level"], 0) + 1
+        if beneish_flag:
+            manipulator_count += 1
+
+        results.append({
+            "ts_code": ts_code,
+            "name": tp.get("name", ep.get("name", "")),
+            **meta,
+        })
+
+    # 排序
+    results.sort(key=lambda x: -x["meta_score"])
+
+    summary = {
+        "total": len(results),
+        "consensus_stats": consensus_stats,
+        "manipulator_count": manipulator_count,
+        "top_10": results[:10],
+        "bottom_10": results[-10:],
+        "avg_meta": sum(r["meta_score"] for r in results) / len(results) if results else 0,
+        "avg_confidence": sum(r["confidence"] for r in results) / len(results) if results else 0,
+    }
+
+    logger.info(
+        f"Consensus analysis: {len(results)} companies, "
+        f"strong={consensus_stats.get('strong_consensus', 0)}, "
+        f"divergent={consensus_stats.get('divergent', 0)}, "
+        f"manipulators={manipulator_count}"
+    )
+
+    return AggregatableResult(
+        key="consensus_meta",
+        value={"results": results, "summary": summary},
+        namespace="backtest",
+    )
+

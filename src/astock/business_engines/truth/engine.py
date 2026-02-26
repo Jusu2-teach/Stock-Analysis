@@ -442,8 +442,30 @@ def _calibrate(
             solver_total += weight
     solver_score = solver_sum / solver_total if solver_total > 0 else 0.5
 
-    # ── Combined raw score ──
-    factor_ratio = scoring.factor_vs_solver_weight
+    # ── v11.0: Dynamic Factor/Solver Fusion (学习自 Evaluator v4.7 动态权重) ──
+    # 核心洞察 (Buffett 竞争优势持续性理论):
+    #   - π (盈利水平) 高 + γ (趋势) 平稳 → 护城河型, 因子(水平)主导: 0.70
+    #   - π 高 + γ 高 → 双优型, 均衡: 0.60
+    #   - π 低 + γ 高 → 困境反转型, 求解器(趋势阈值)主导: 0.50
+    #   - 默认: 0.60 (原静态值)
+    base_factor_ratio = scoring.factor_vs_solver_weight  # 0.60
+    pi_result = factors.get(FactorId.PI)
+    gamma_result = factors.get(FactorId.GAMMA)
+    pi_score = pi_result.score if pi_result and pi_result.score is not None else 0.5
+    gamma_score = gamma_result.score if gamma_result and gamma_result.score is not None else 0.5
+
+    if pi_score > 0.70 and gamma_score < 0.50:
+        # 高盈利 + 平稳/低趋势 → 护城河型 (迈瑞式), 因子主导
+        factor_ratio = 0.70
+    elif pi_score > 0.70 and gamma_score > 0.50:
+        # 双优 → 均衡
+        factor_ratio = base_factor_ratio  # 0.60
+    elif pi_score < 0.35 and gamma_score > 0.55:
+        # 低盈利 + 强趋势 → 困境反转型, 求解器(趋势阈值)更重要
+        factor_ratio = 0.50
+    else:
+        factor_ratio = base_factor_ratio
+
     final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
 
     # ── Confidence (data years scaling) ──
@@ -840,6 +862,19 @@ def _cross_sectional_normalize(
 
     new_profiles: List[TruthProfile] = []
     n_hard_constrained = 0
+    n_multi_dim_veto = 0
+
+    # ══════ v11.0: 多维共识 Veto (学习自 Evaluator v7.1 独立因子组否决) ══════
+    # TRUTH 原仅靠单一 δ_fraud > 0.58 熔断, 缺少多维度共识否决
+    # Evaluator 的 5 组去共线性 Veto (≥3组共识) 统计上更严谨
+    # 这里定义 4 个独立因子组, 每组内取最差表现:
+    VETO_FACTOR_GROUPS = {
+        "profitability": [FactorId.PI],                   # 盈利能力组
+        "growth_quality": [FactorId.GAMMA, FactorId.VERIFICATION],  # 增长质量组
+        "risk_safety":   [FactorId.ALPHA, FactorId.LAMBDA],         # 风险安全组
+        "decay_fraud":   [FactorId.DELTA_DECAY, FactorId.DELTA_FRAUD],  # 衰退欺诈组
+    }
+    # β (资本密度) 不参与 veto — 重资产不等于差公司
 
     for i, p in enumerate(profiles):
         # 熔断 → 保持原样
@@ -875,6 +910,28 @@ def _cross_sectional_normalize(
 
         # ── Combined score ──
         final_score = factor_score * factor_ratio + solver_score * (1.0 - factor_ratio)
+
+        # ══════ v11.0: 多维共识 Veto 检查 ══════
+        # 当 ≥3 个独立因子组同时处于底部 20%(百分位 < 0.20)时,
+        # 该公司几乎没有任何维度表现良好 → 硬性封顶 0.25
+        # 这比 δ_fraud 单因子熔断更全面, 捕捉"全方位衰退"
+        _veto_group_count = 0
+        for _group_name, _group_fids in VETO_FACTOR_GROUPS.items():
+            # 组内取最差百分位 (去共线性: 组内高相关因子取min而非累加)
+            _group_pcts = []
+            for _fid in _group_fids:
+                _pct = factor_pct[_fid][i]
+                if _fid in _NEGATIVE_FACTORS:
+                    _pct = 1.0 - _pct  # 负向因子翻转
+                _group_pcts.append(_pct)
+            _worst_pct = min(_group_pcts) if _group_pcts else 0.5
+            if _worst_pct < 0.20:
+                _veto_group_count += 1
+
+        if _veto_group_count >= 3:
+            # 3/4 组共识否决: 多维度同时极差 → 硬性封顶
+            final_score = min(final_score, 0.25)
+            n_multi_dim_veto += 1
 
         # ══════ Hard constraints: ROIC 绝对水平约束 ══════
         # 向下: ROIC < WACC(≈88%) 的公司封顶，消除假阳性
@@ -1046,6 +1103,7 @@ def _cross_sectional_normalize(
         f"Cross-Sectional Normalization: "
         f"{len(profiles)} companies, "
         f"{n_hard_constrained} hard-constrained (ROIC<8% penalized, ROIC>10% rewarded), "
+        f"{n_multi_dim_veto} multi-dim-veto (≥3/4 groups bottom 20%), "
         f"momentum +{n_momentum_pos}/-{n_momentum_neg}, "
         f"percentile grading applied"
     )
