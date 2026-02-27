@@ -84,18 +84,29 @@ class EvaluatorConfig:
     rule_veto_enabled: bool = True
 
     # 评分权重 — 8 个核心指标
-    # v4.6: ROIC↔ROE去相关 — ROIC作为首要质量指标(Buffett/Greenblatt)提权,
-    #        ROE因与ROIC相关系数~0.8+杠杆膨胀降权;
-    #        OCF+毛利率提权(现金质量+结构性竞争优势)
+    # v13.1: IC-OPTIMAL WEIGHTS (Grinold 1989, 数据驱动)
+    # 由 v13.0 calibrate_evaluator_weights() 回测校准:
+    #   - 5 年滚动窗口 × Spearman IC(指标水平, 未来ROIC)
+    #   - Grinold 权重 = IC_i / Σ max(0, IC_j), floor=3%
+    #
+    # IC 证据 (v13.0 回测):
+    #   roic:    IC=+0.716  → w=0.199  (核心质量, 仍是最高 IC)
+    #   roe:     IC=+0.709  → w=0.197  (v13.1 ↑↑ 0.08→0.20: IC证明ROE预测力被严重低估)
+    #   profit:  IC=+0.590  → w=0.164  (v13.1 ↑ 0.10→0.16: EPS预测力强)
+    #   net_m:   IC=+0.526  → w=0.146  (v13.1 ↑ 0.10→0.15: 净利率预测力被低估)
+    #   ocf:     IC=+0.421  → w=0.117  (v13.1 ↓ 0.14→0.12: 现金流IC不如预期)
+    #   revenue: IC=+0.330  → w=0.092  (v13.1 ↓ 0.12→0.09: 营收预测力偏弱)
+    #   gross_m: IC=+0.206  → w=0.057  (v13.1 ↓↓ 0.14→0.06: IC远低于手调预期)
+    #   roiic:   IC=+0.000  → w=0.029  (v13.1 ↓ 0.10→0.03: 派生指标IC最弱)
     score_weights: Dict[str, float] = field(default_factory=lambda: {
-        "roic_trend": 0.22,          # v4.6 ↑ 0.18→0.22: 投入资本回报率=核心质量
-        "roe_trend": 0.08,           # v4.6 ↓ 0.14→0.08: 与ROIC高相关+杠杆虚增
-        "revenue_trend": 0.12,       # v4.6 ↓ 0.14→0.12
-        "gross_margin_trend": 0.14,  # v4.6 ↑ 0.12→0.14: 护城河标志
-        "net_margin_trend": 0.10,    # 不变
-        "ocf_trend": 0.14,           # v4.6 ↑ 0.12→0.14: 现金为王
-        "roiic_trend": 0.10,         # 不变
-        "profit_trend": 0.10,        # 不变
+        "roic_trend": 0.199,         # v13.1 IC=+0.716: 投入资本回报率=核心质量
+        "roe_trend": 0.197,          # v13.1 ↑↑ 0.08→0.20: IC证实ROE预测力极强
+        "profit_trend": 0.164,       # v13.1 ↑ 0.10→0.16: EPS预测力
+        "net_margin_trend": 0.146,   # v13.1 ↑ 0.10→0.15: 净利率预测力
+        "ocf_trend": 0.117,          # v13.1 ↓ 0.14→0.12: 现金流
+        "revenue_trend": 0.092,      # v13.1 ↓ 0.12→0.09: 营收
+        "gross_margin_trend": 0.057, # v13.1 ↓↓ 0.14→0.06: 毛利率IC偏弱
+        "roiic_trend": 0.029,        # v13.1 ↓ 0.10→0.03: ROIIC派生指标
     })
 
     # 决策阈值

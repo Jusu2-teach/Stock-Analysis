@@ -549,6 +549,36 @@ pipeline:
     #       - name: Factor_Diagnostics_Result
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # 🔬 v13.0 Professional Enhancement Suite
+    # ═══════════════════════════════════════════════════════════════════════════
+    #
+    # v13.0/v13.1 专业增强模块:
+    # - Walk-Forward OOS 验证 (Pardo 2008): 严格 IS/OOS 分离
+    # - 结构性断裂检测 (Bai-Perron 1998 / CUSUM): 体制划分
+    # - Evaluator IC-权重校准 (Grinold 1989): 数据驱动权重
+    # - Bootstrap IC 置信区间 (Efron 1979): 统计显著性
+    # - Regime-Aware 动态权重 (Hamilton 1989): 体制感知
+    #
+    # 注意:
+    # - 计算量较大 (约 10 分钟), 建议季度/半年度执行
+    # - 日常运行可注释掉, 不影响核心分析流程
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 🧪 v13.0 一键专业诊断 (Walk-Forward + Breaks + Bootstrap + Regime)
+    # - name: "Run_V13_Professional_Suite"
+    #   component: "business_engine"
+    #   engine: "backtest"
+    #   method: ["run_v13_professional_suite"]
+    #   depends_on:
+    #     - "Run_TRUTH"
+    #     - "Run_Causal_Bayesian_Evaluator"
+    #   parameters:
+    #     data_path: "data/polars/10yd_final_industry.csv"
+    #   outputs:
+    #     parameters:
+    #       - name: V13_Professional_Suite_Result
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # 📊 估值分析模块 (Valuation Analysis)
     # ═══════════════════════════════════════════════════════════════════════════
     #

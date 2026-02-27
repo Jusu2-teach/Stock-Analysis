@@ -1,6 +1,6 @@
 # AStock Analysis - Copilot 指令
 
-> A股基本面量化分析系统：趋势探针 → 规则评估/六维基因 → 报告生成
+> A股基本面量化分析系统：趋势探针 → 规则评估/八维基因 → 报告生成
 
 ## 四层架构（严格分层）
 
@@ -9,7 +9,7 @@ workflow/*.yaml → pipeline/ → orchestrator/ → src/astock/business_engines/
   (声明式配置)    (DAG执行/PDDA聚合)  (方法注册/路由)     (纯业务逻辑)
 ```
 
-**数据流**: `trend/`(8探针) → PDDA聚合 → `evaluators/`(29规则) + `truth/`(六维基因) **并行** → `reporters/`
+**数据流**: `trend/`(8探针) → PDDA聚合 → `evaluators/`(29规则) + `truth/`(八维基因) **并行** → `reporters/`
 
 ## 常用命令
 

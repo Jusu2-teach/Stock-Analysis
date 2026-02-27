@@ -297,14 +297,32 @@ class ScoringConfig:
       原阈值导致0家A+/A, 现在top 5%能拿到A
     """
     factor_weights: Mapping[str, float] = field(default_factory=lambda: {
-        "ALPHA": 0.13,             # v10.0 ↑ 0.10→0.13: IC=0.36, 回测验证周期性因子高预测力
-        "BETA": 0.06,              # v10.0 ↓ 0.08→0.06: IC=0.11, 资本结构预测力最弱
-        "GAMMA": 0.14,             # v10.0 ≈ 0.14: IC=0.32, 成长趋势稳定
-        "PI": 0.23,                # v10.0 ↑ 0.15→0.23: IC=0.70(!), 盈利水平是最强预测因子
-        "LAMBDA": 0.08,            # v10.0 ↓ 0.10→0.08: IC=0.15
-        "DELTA_FRAUD": 0.12,       # v10.0 ↓ 0.15→0.12: IC=0.21
-        "DELTA_DECAY": 0.16,       # v10.0 ≈ 0.16: IC=0.37, 质量衰退检测稳定
-        "VERIFICATION": 0.08,      # v10.0 ↓ 0.12→0.08: IC=0.12, 与π部分重叠
+        # v13.1: OOS-DRIVEN JAMES-STEIN SHRINKAGE (Stein 1956 / Efron-Morris 1977)
+        #
+        # 方法论:
+        #   w_oos = (1 - λ) × w_ic_optimal + λ × w_uniform
+        #   λ = 1 - (OOS_IC / IS_IC) = 1 - 0.444/0.632 = 0.297 ≈ 0.30
+        #   w_uniform = 1/8 = 0.125
+        #
+        # 为什么要收缩:
+        #   v10.0 的权重基于全样本 IC (in-sample), IS IC=0.632
+        #   v13.0 Walk-Forward 验证: OOS IC=0.444, 衰减 29.7%
+        #   表明 ~30% 的 IS IC 是过拟合噪声
+        #   James-Stein: 收缩向均匀分布可消除此偏差
+        #
+        # IC 证据 (v13.0 Backtest, 5 windows, IS):
+        #   PI=0.703  DD=0.366  α=0.360  γ=0.315  DF=0.212  λ=0.149  V=0.121  β=0.107
+        # IC-Optimal (Grinold):  PI=0.301  DD=0.157  α=0.154  γ=0.135  ...
+        # 30% 收缩后:           PI=0.25   DD=0.15   α=0.15   γ=0.13   ...
+        #
+        "ALPHA": 0.15,          # v13.1 ↑ 0.13→0.15: OOS收缩后IC=0.36仍强
+        "BETA": 0.07,           # v13.1 ↑ 0.06→0.07: 收缩向均匀拉高
+        "GAMMA": 0.13,          # v13.1 ↓ 0.14→0.13: 微调
+        "PI": 0.25,             # v13.1 ↑ 0.23→0.25: 收缩把IC-optimal的0.30拉回
+        "LAMBDA": 0.08,         # v13.1 = 0.08: 不变
+        "DELTA_FRAUD": 0.10,    # v13.1 ↓ 0.12→0.10: OOS收缩
+        "DELTA_DECAY": 0.15,    # v13.1 ↓ 0.16→0.15: OOS收缩
+        "VERIFICATION": 0.07,   # v13.1 ↓ 0.08→0.07: 收缩向均匀
     })
     solver_weights: Mapping[str, float] = field(default_factory=lambda: {
         "GRAVITY": 0.50,     # v5.1: ↑ 0.35→0.50 (ROIC阈值推导, 核心价值锚)

@@ -630,11 +630,27 @@ class FundamentalBacktester:
             print(f"    {f:16s}: {ic:+.4f}  {_judge_ic_short(ic)}")
         print()
         print("  --- IC-Weighted Optimal Weights (Grinold 1989) ---")
-        cur_w = {
-            "alpha": 0.10, "beta": 0.08, "gamma": 0.14, "pi_profitability": 0.15,
-            "lambda_leverage": 0.10, "delta_fraud": 0.15, "delta_decay": 0.16,
-            "verification": 0.12,
-        }
+        # v13.1: 动态从 TRUTH config 读取权重, 消除硬编码副本
+        try:
+            from src.astock.business_engines.truth.config import get_default_config
+            _cfg = get_default_config()
+            _fw = _cfg.scoring.factor_weights
+            cur_w = {
+                "alpha": _fw.get("ALPHA", 0.13),
+                "beta": _fw.get("BETA", 0.06),
+                "gamma": _fw.get("GAMMA", 0.14),
+                "pi_profitability": _fw.get("PI", 0.23),
+                "lambda_leverage": _fw.get("LAMBDA", 0.08),
+                "delta_fraud": _fw.get("DELTA_FRAUD", 0.12),
+                "delta_decay": _fw.get("DELTA_DECAY", 0.16),
+                "verification": _fw.get("VERIFICATION", 0.08),
+            }
+        except Exception:
+            cur_w = {
+                "alpha": 0.13, "beta": 0.06, "gamma": 0.14, "pi_profitability": 0.23,
+                "lambda_leverage": 0.08, "delta_fraud": 0.12, "delta_decay": 0.16,
+                "verification": 0.08,
+            }
         for f, w in sorted(report.optimal_weights.items(), key=lambda x: x[1], reverse=True):
             d = w - cur_w.get(f, 0)
             arrow = "↑" if d > 0.02 else ("↓" if d < -0.02 else "≈")
@@ -700,11 +716,27 @@ class FundamentalBacktester:
         L.append("## IC-Weighted 最优权重 (Grinold 1989)\n")
         L.append("| 因子 | 当前权重 | IC最优权重 | 差异 |")
         L.append("|------|---------|-----------|------|")
-        cur = {
-            "alpha": 0.10, "beta": 0.08, "gamma": 0.14, "pi_profitability": 0.15,
-            "lambda_leverage": 0.10, "delta_fraud": 0.15, "delta_decay": 0.16,
-            "verification": 0.12,
-        }
+        # v13.1: 动态从 TRUTH config 读取
+        try:
+            from src.astock.business_engines.truth.config import get_default_config
+            _cfg = get_default_config()
+            _fw = _cfg.scoring.factor_weights
+            cur = {
+                "alpha": _fw.get("ALPHA", 0.13),
+                "beta": _fw.get("BETA", 0.06),
+                "gamma": _fw.get("GAMMA", 0.14),
+                "pi_profitability": _fw.get("PI", 0.23),
+                "lambda_leverage": _fw.get("LAMBDA", 0.08),
+                "delta_fraud": _fw.get("DELTA_FRAUD", 0.12),
+                "delta_decay": _fw.get("DELTA_DECAY", 0.16),
+                "verification": _fw.get("VERIFICATION", 0.08),
+            }
+        except Exception:
+            cur = {
+                "alpha": 0.13, "beta": 0.06, "gamma": 0.14, "pi_profitability": 0.23,
+                "lambda_leverage": 0.08, "delta_fraud": 0.12, "delta_decay": 0.16,
+                "verification": 0.08,
+            }
         for f in sorted(report.optimal_weights.keys()):
             ow = report.optimal_weights[f]
             cw = cur.get(f, 0)
@@ -2567,12 +2599,16 @@ def calibrate_evaluator_weights(
         total_w = sum(ic_weights.values())
         ic_weights = {m: round(w / total_w, 3) for m, w in ic_weights.items()}
 
-    # 当前手动权重
-    current_weights = {
-        "roic_trend": 0.22, "roe_trend": 0.08, "revenue_trend": 0.12,
-        "gross_margin_trend": 0.14, "net_margin_trend": 0.10,
-        "ocf_trend": 0.14, "roiic_trend": 0.10, "profit_trend": 0.10,
-    }
+    # v13.1: 动态从 EvaluatorConfig 读取当前权重
+    try:
+        from src.astock.business_engines.evaluators.engine import EvaluatorConfig
+        current_weights = dict(EvaluatorConfig().score_weights)
+    except Exception:
+        current_weights = {
+            "roic_trend": 0.199, "roe_trend": 0.197, "revenue_trend": 0.092,
+            "gross_margin_trend": 0.057, "net_margin_trend": 0.146,
+            "ocf_trend": 0.117, "roiic_trend": 0.029, "profit_trend": 0.164,
+        }
 
     # 建议
     deltas = {}
