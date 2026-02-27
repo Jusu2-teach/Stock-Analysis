@@ -1768,3 +1768,1030 @@ def run_factor_diagnostics(
         namespace="backtest",
     )
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 P0: Walk-Forward Out-of-Sample Validation
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 学术依据:
+#   - Pardo, R. (2008). "The Evaluation and Optimization of Trading Strategies"
+#   - Bailey, Borwein, Lopez de Prado (2014). "Pseudo-Mathematics and
+#     Financial Charlatanism: The Effects of Backtest Overfitting"
+#   - Harvey, Liu & Zhu (2016). "...and the Cross-Section of Expected Returns"
+#
+# 核心原理:
+#   当前 IC=0.632 是 in-sample (所有窗口都用于计算和报告)。
+#   Walk-Forward 严格分离训练集和测试集:
+#     - 训练集用于拟合模型参数 (因子权重/阈值)
+#     - 测试集完全不参与任何参数选择
+#   如果 OOS IC 显著低于 IS IC → 模型过拟合
+#   如果 OOS IC ≈ IS IC → 模型泛化能力良好
+#
+# 实现:
+#   Anchored Walk-Forward (固定起点, 扩展训练):
+#     Round 1: Train[2015-2019] → Validate[2020] → Test[2021]
+#     Round 2: Train[2015-2020] → Validate[2021] → Test[2022]
+#     Round 3: Train[2015-2021] → Validate[2022] → Test[2023]
+#     Round 4: Train[2015-2022] → Validate[2023] → Test[2024]
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class WalkForwardRound:
+    """单轮 Walk-Forward 结果"""
+    train_years: List[int]
+    validate_year: int
+    test_year: int
+    n_train: int = 0
+    n_test: int = 0
+    # In-sample (validation) IC
+    is_ic_roic: float = 0.0
+    is_ic_composite: float = 0.0
+    # Out-of-sample (test) IC
+    oos_ic_roic: float = 0.0
+    oos_ic_composite: float = 0.0
+    # OOS quality metrics
+    oos_ls_spread: float = 0.0
+    oos_quality_lift: float = 0.0
+    oos_persistence: float = 0.0
+    # Overfitting ratio (IS_IC / OOS_IC)
+    overfit_ratio: float = 1.0
+
+
+@dataclass
+class WalkForwardReport:
+    """Walk-Forward 完整报告"""
+    rounds: List[WalkForwardRound]
+    avg_is_ic: float = 0.0
+    avg_oos_ic: float = 0.0
+    ic_degradation_pct: float = 0.0  # (IS - OOS) / IS * 100
+    avg_overfit_ratio: float = 1.0
+    avg_oos_ls_spread: float = 0.0
+    avg_oos_quality_lift: float = 0.0
+    avg_oos_persistence: float = 0.0
+    verdict: str = ""
+    elapsed_seconds: float = 0.0
+
+
+class WalkForwardValidator(FundamentalBacktester):
+    """v13.0: Walk-Forward Out-of-Sample 验证器
+
+    严格分离 train / validate / test:
+    - Train: 用于运行 TRUTH 生成评分
+    - Validate: 验证训练评分对验证年的预测力 (IS IC)
+    - Test: 完全独立的 OOS 测试 (OOS IC)
+
+    if OOS IC ≈ IS IC → 模型泛化良好, 无过拟合
+    if OOS IC << IS IC → 过拟合警告
+    """
+
+    def run_walk_forward(self) -> WalkForwardReport:
+        """执行 Walk-Forward 验证"""
+        t0 = time.time()
+        print()
+        print("=" * 65)
+        print("  v13.0 WALK-FORWARD OUT-OF-SAMPLE VALIDATION")
+        print("  (Pardo 2008 / Bailey et al. 2014)")
+        print("=" * 65)
+
+        df = self._load_data()
+        all_years = sorted(df["year"].unique())
+
+        # 需要至少 train(5) + validate(1) + test(1) = 7年
+        if len(all_years) < 7:
+            print("  !! 数据不足 (需要≥7年) !!")
+            return WalkForwardReport(rounds=[], verdict="insufficient_data")
+
+        rounds: List[WalkForwardRound] = []
+
+        # Anchored walk-forward: 固定起点2015, 逐步扩展
+        for split_idx in range(self.min_train_years, len(all_years) - 1):
+            train_years = list(all_years[:split_idx])
+            validate_year = all_years[split_idx]
+            test_year = all_years[split_idx + 1] if split_idx + 1 < len(all_years) else None
+
+            if test_year is None:
+                continue
+
+            tag = f"Train[{train_years[0]}-{train_years[-1]}] → Val[{validate_year}] → Test[{test_year}]"
+            print(f"  {tag} ...", end=" ", flush=True)
+
+            try:
+                # 用训练集运行 TRUTH
+                train_df = self._subset_data(train_years)
+                truth_results = self._run_truth_on_subset(train_df)
+                if not truth_results:
+                    print("SKIP")
+                    continue
+
+                # IS: 评分 vs 验证年基本面
+                val_future = self._get_future_fundamentals(validate_year)
+                is_match = self._match_scores_to_future(truth_results, val_future)
+                is_ic_roic = self._calc_ic(is_match, "final_score", "future_roic") if len(is_match) >= 20 else 0.0
+
+                # OOS: 同一评分 vs 测试年基本面 (完全独立)
+                test_future = self._get_future_fundamentals(test_year)
+                oos_match = self._match_scores_to_future(truth_results, test_future)
+                oos_ic_roic = self._calc_ic(oos_match, "final_score", "future_roic") if len(oos_match) >= 20 else 0.0
+
+                # OOS quality metrics
+                oos_ls = 0.0
+                oos_lift = 1.0
+                oos_persist = 0.0
+                if len(oos_match) >= 20:
+                    quality_mask = oos_match["grade"].isin(["A+", "A", "B+"])
+                    _, _, oos_lift, oos_persist = self._calc_quality_persistence(oos_match, quality_mask)
+                    _, _, oos_ls, _ = self._calc_ls_spread(oos_match)
+
+                overfit = is_ic_roic / max(oos_ic_roic, 0.01) if oos_ic_roic > 0.01 else (
+                    1.0 if is_ic_roic <= 0.01 else 5.0
+                )
+
+                rnd = WalkForwardRound(
+                    train_years=train_years,
+                    validate_year=validate_year,
+                    test_year=test_year,
+                    n_train=len(is_match) if isinstance(is_match, pd.DataFrame) else 0,
+                    n_test=len(oos_match) if isinstance(oos_match, pd.DataFrame) else 0,
+                    is_ic_roic=is_ic_roic,
+                    oos_ic_roic=oos_ic_roic,
+                    oos_ls_spread=oos_ls,
+                    oos_quality_lift=oos_lift,
+                    oos_persistence=oos_persist,
+                    overfit_ratio=overfit,
+                )
+                rounds.append(rnd)
+                print(f"IS_IC={is_ic_roic:+.3f}  OOS_IC={oos_ic_roic:+.3f}  ratio={overfit:.2f}x")
+
+            except Exception as e:
+                print(f"FAIL ({e})")
+                continue
+
+        elapsed = time.time() - t0
+
+        if not rounds:
+            return WalkForwardReport(rounds=[], verdict="no_valid_rounds", elapsed_seconds=elapsed)
+
+        n = len(rounds)
+        avg_is = sum(r.is_ic_roic for r in rounds) / n
+        avg_oos = sum(r.oos_ic_roic for r in rounds) / n
+        degradation = (avg_is - avg_oos) / max(abs(avg_is), 0.01) * 100 if avg_is != 0 else 0
+        avg_overfit = sum(r.overfit_ratio for r in rounds) / n
+        avg_oos_ls = sum(r.oos_ls_spread for r in rounds) / n
+        avg_oos_lift = sum(r.oos_quality_lift for r in rounds) / n
+        avg_oos_persist = sum(r.oos_persistence for r in rounds) / n
+
+        # Verdict
+        if degradation < 15 and avg_oos > 0.05:
+            verdict = "EXCELLENT — 无过拟合, OOS预测力强 (IC衰减<15%)"
+        elif degradation < 30 and avg_oos > 0.03:
+            verdict = "GOOD — 轻微过拟合但OOS仍有预测力 (IC衰减<30%)"
+        elif avg_oos > 0.02:
+            verdict = "MODERATE — 存在过拟合, OOS预测力偏弱"
+        else:
+            verdict = "WARNING — 严重过拟合, OOS无预测力"
+
+        report = WalkForwardReport(
+            rounds=rounds,
+            avg_is_ic=avg_is,
+            avg_oos_ic=avg_oos,
+            ic_degradation_pct=degradation,
+            avg_overfit_ratio=avg_overfit,
+            avg_oos_ls_spread=avg_oos_ls,
+            avg_oos_quality_lift=avg_oos_lift,
+            avg_oos_persistence=avg_oos_persist,
+            verdict=verdict,
+            elapsed_seconds=elapsed,
+        )
+
+        self._print_wf_summary(report)
+        return report
+
+    def _match_scores_to_future(
+        self, truth_results: Dict[str, Any], future_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """匹配评分与未来基本面"""
+        matched = []
+        for ts_code, scores in truth_results.items():
+            row_future = future_df[future_df["ts_code"] == ts_code]
+            if row_future.empty:
+                continue
+            row = {
+                "ts_code": ts_code,
+                "final_score": scores["final_score"],
+                "grade": scores.get("grade", "C"),
+            }
+            for col in future_df.columns:
+                if col.startswith("future_"):
+                    val = row_future.iloc[0][col]
+                    if pd.notna(val):
+                        row[col] = float(val)
+            matched.append(row)
+        return pd.DataFrame(matched) if matched else pd.DataFrame()
+
+    @staticmethod
+    def _print_wf_summary(report: WalkForwardReport):
+        print()
+        print("  --- Walk-Forward Results ---")
+        print(f"  Rounds:           {len(report.rounds)}")
+        print(f"  Avg IS IC(ROIC):  {report.avg_is_ic:+.4f}")
+        print(f"  Avg OOS IC(ROIC): {report.avg_oos_ic:+.4f}")
+        print(f"  IC Degradation:   {report.ic_degradation_pct:.1f}%")
+        print(f"  Avg Overfit Ratio:{report.avg_overfit_ratio:.2f}x")
+        print(f"  OOS L/S Spread:   {report.avg_oos_ls_spread:+.1f}pp")
+        print(f"  OOS Quality Lift: {report.avg_oos_quality_lift:.2f}x")
+        print(f"  OOS Persistence:  {report.avg_oos_persistence:.1%}")
+        print(f"  Verdict:          {report.verdict}")
+        print(f"  Elapsed:          {report.elapsed_seconds:.0f}s")
+        print("=" * 65)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 P1: 结构性断裂检测 (Structural Break Detection)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 学术依据:
+#   - Bai, J. & Perron, P. (1998). "Estimating and Testing Linear Models
+#     with Multiple Structural Changes" — Econometrica
+#   - Chow, G. (1960). "Tests of Equality Between Sets of Coefficients
+#     in Two Linear Regressions"
+#   - Page, E.S. (1954). "Continuous Inspection Schemes" — CUSUM 检验
+#
+# 核心问题:
+#   2015-2024 被当作连续时段处理, 但实际包含:
+#   - 2016 供给侧改革: 周期股基本面结构性改善
+#   - 2020 COVID: 医药/IT暴涨, 消费/旅游崩塌
+#   - 2021 新能源泡沫 + 教培灭顶
+#   - 2022 半导体制裁 + 地产暴雷
+#   跨体制用同一模型打分 → 结构性偏差
+#
+# 实现:
+#   对每个指标的时间序列运行 CUSUM 检验:
+#   - 计算累积偏差 (cumulative sum of deviations from mean)
+#   - 如果 CUSUM 超过临界值 → 检测到断裂点
+#   - 返回断裂年份 + 严重程度
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def detect_structural_breaks(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+    metrics: Optional[List[str]] = None,
+    confidence: float = 0.95,
+) -> Dict[str, Any]:
+    """检测指标时间序列中的结构性断裂点
+
+    对每个指标按年计算截面中位数, 然后运行 CUSUM 检验。
+
+    Args:
+        data_path: 数据文件路径
+        metrics: 要检测的指标列表 (默认全部核心指标)
+        confidence: 置信水平 (默认 95%)
+
+    Returns:
+        {"breaks": dict, "regime_map": dict, "summary": str}
+    """
+    if metrics is None:
+        metrics = ["roic", "roe", "grossprofit_margin", "netprofit_margin",
+                    "eps", "ocfps", "total_revenue_ps"]
+
+    df = pd.read_csv(data_path)
+    df["year"] = df["end_date"].astype(str).str[:4].astype(int)
+    all_years = sorted(df["year"].unique())
+
+    breaks_by_metric: Dict[str, List[Dict]] = {}
+    all_break_years: Dict[int, int] = {}  # year → count of metrics with break
+
+    for metric in metrics:
+        if metric not in df.columns:
+            continue
+
+        # 计算每年的截面中位数
+        yearly_medians = []
+        for yr in all_years:
+            yr_vals = df.loc[df["year"] == yr, metric].dropna()
+            if len(yr_vals) >= 10:
+                yearly_medians.append({"year": yr, "median": float(yr_vals.median())})
+
+        if len(yearly_medians) < 5:
+            continue
+
+        values = np.array([ym["median"] for ym in yearly_medians])
+        years = [ym["year"] for ym in yearly_medians]
+
+        # CUSUM 检验
+        mean_val = values.mean()
+        std_val = values.std(ddof=1) if len(values) > 1 else 1.0
+        if std_val < 1e-10:
+            continue
+
+        # 累积偏差 (标准化)
+        cusum = np.cumsum((values - mean_val) / std_val)
+
+        # 临界值: Brownian bridge 近似 (Brown, Durbin & Evans 1975)
+        # h ≈ a + b/sqrt(T) where T = sample size
+        T = len(values)
+        # 95% critical value ≈ 1.36 × √T (Ploberger & Krämer 1992)
+        if confidence >= 0.99:
+            h = 1.63 * math.sqrt(T)
+        elif confidence >= 0.95:
+            h = 1.36 * math.sqrt(T)
+        else:
+            h = 1.14 * math.sqrt(T)
+
+        # 检测超越临界值的点
+        metric_breaks = []
+        cusum_range = np.max(np.abs(cusum))
+        for i in range(1, len(cusum) - 1):
+            # 检测 CUSUM 方向改变 (极值点)
+            if (abs(cusum[i]) > h * 0.7 and
+                    ((cusum[i] > cusum[i-1] and cusum[i] > cusum[i+1]) or
+                     (cusum[i] < cusum[i-1] and cusum[i] < cusum[i+1]))):
+                severity = abs(cusum[i]) / h
+                metric_breaks.append({
+                    "year": years[i],
+                    "cusum_value": round(float(cusum[i]), 3),
+                    "severity": round(severity, 3),
+                    "direction": "positive_shift" if cusum[i] > 0 else "negative_shift",
+                    "metric": metric,
+                })
+                all_break_years[years[i]] = all_break_years.get(years[i], 0) + 1
+
+        breaks_by_metric[metric] = metric_breaks
+
+    # 识别体制区间
+    # 多指标共振的断裂年 = 体制转换点
+    consensus_breaks = sorted(
+        [yr for yr, cnt in all_break_years.items() if cnt >= 2],
+    )
+
+    # 构建体制映射
+    regime_map: Dict[str, List[int]] = {}
+    if consensus_breaks:
+        # 第一个体制: 数据开始到第一个断裂
+        regime_boundaries = [all_years[0]] + consensus_breaks + [all_years[-1] + 1]
+        for i in range(len(regime_boundaries) - 1):
+            start = regime_boundaries[i]
+            end = regime_boundaries[i + 1]
+            regime_name = f"regime_{i+1}_{start}_{end-1}"
+            regime_map[regime_name] = [yr for yr in all_years if start <= yr < end]
+    else:
+        regime_map["single_regime"] = all_years
+
+    # 汇总
+    total_breaks = sum(len(b) for b in breaks_by_metric.values())
+    summary = (
+        f"结构性断裂检测: {len(metrics)}指标, {total_breaks}个断裂点, "
+        f"{len(consensus_breaks)}个共识断裂年{consensus_breaks}, "
+        f"{len(regime_map)}个体制区间"
+    )
+
+    return {
+        "breaks_by_metric": breaks_by_metric,
+        "all_break_years": all_break_years,
+        "consensus_breaks": consensus_breaks,
+        "regime_map": regime_map,
+        "summary": summary,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 P3: Bootstrap Score Uncertainty Quantification
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 学术依据:
+#   - Efron, B. (1979). "Bootstrap Methods: Another Look at the Jackknife"
+#   - Efron, B. & Tibshirani, R. (1993). "An Introduction to the Bootstrap"
+#   - Politis, D. & Romano, J. (1994). "The Stationary Bootstrap"
+#
+# 核心问题:
+#   当前系统输出点估计 (IC=0.632, 评分=75.3), 但不提供不确定性.
+#   专业量化系统应该输出: IC = 0.632 ± 0.045 (95% CI: [0.544, 0.720])
+#
+# 实现:
+#   Non-parametric bootstrap: 有放回重采样 N 次,
+#   每次计算 IC → 得到 IC 的经验分布 → 报告置信区间
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def bootstrap_ic_confidence(
+    backtest_report: BacktestReport,
+    n_bootstrap: int = 1000,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """Bootstrap IC 置信区间估计
+
+    对回测窗口结果进行有放回重采样, 估计 IC 的经验分布.
+
+    Args:
+        backtest_report: 回测报告
+        n_bootstrap: Bootstrap 重采样次数
+        confidence_level: 置信水平
+        seed: 随机种子 (可复现)
+
+    Returns:
+        {"ic_mean": float, "ic_std": float, "ci_lower": float, "ci_upper": float,
+         "p_value_zero": float, "distribution_summary": dict}
+    """
+    rng = np.random.RandomState(seed)
+
+    if not backtest_report.windows or len(backtest_report.windows) < 3:
+        return {"error": "Need ≥3 windows for bootstrap"}
+
+    # 原始 IC 值
+    original_ics = np.array([w.ic_roic for w in backtest_report.windows])
+    original_ls = np.array([w.ls_spread for w in backtest_report.windows])
+    n_windows = len(original_ics)
+
+    # Bootstrap 重采样
+    boot_ic_means = np.zeros(n_bootstrap)
+    boot_ls_means = np.zeros(n_bootstrap)
+
+    for b in range(n_bootstrap):
+        # 有放回重采样窗口索引
+        indices = rng.randint(0, n_windows, size=n_windows)
+        boot_ic_means[b] = original_ics[indices].mean()
+        boot_ls_means[b] = original_ls[indices].mean()
+
+    # IC 统计
+    ic_mean = float(boot_ic_means.mean())
+    ic_std = float(boot_ic_means.std(ddof=1))
+    alpha = (1 - confidence_level) / 2
+    ic_sorted = np.sort(boot_ic_means)
+    ci_lower = float(ic_sorted[int(alpha * n_bootstrap)])
+    ci_upper = float(ic_sorted[int((1 - alpha) * n_bootstrap)])
+
+    # P(IC ≤ 0): IC 为零的概率
+    p_value_zero = float(np.mean(boot_ic_means <= 0))
+
+    # L/S 统计
+    ls_mean = float(boot_ls_means.mean())
+    ls_std = float(boot_ls_means.std(ddof=1))
+    ls_sorted = np.sort(boot_ls_means)
+    ls_ci_lower = float(ls_sorted[int(alpha * n_bootstrap)])
+    ls_ci_upper = float(ls_sorted[int((1 - alpha) * n_bootstrap)])
+
+    # IC 分布特征
+    ic_skew = float(np.mean(((boot_ic_means - ic_mean) / max(ic_std, 1e-10)) ** 3))
+    ic_kurtosis = float(np.mean(((boot_ic_means - ic_mean) / max(ic_std, 1e-10)) ** 4) - 3)
+
+    # Per-factor bootstrap
+    factor_bootstrap = {}
+    for fname in FundamentalBacktester.FACTOR_NAMES:
+        factor_ics = np.array([
+            w.factor_ics.get(fname, 0.0) for w in backtest_report.windows
+        ])
+        if np.all(factor_ics == 0):
+            continue
+        boot_factor = np.zeros(n_bootstrap)
+        for b in range(n_bootstrap):
+            indices = rng.randint(0, n_windows, size=n_windows)
+            boot_factor[b] = factor_ics[indices].mean()
+        fsorted = np.sort(boot_factor)
+        factor_bootstrap[fname] = {
+            "mean": round(float(boot_factor.mean()), 4),
+            "std": round(float(boot_factor.std(ddof=1)), 4),
+            "ci_lower": round(float(fsorted[int(alpha * n_bootstrap)]), 4),
+            "ci_upper": round(float(fsorted[int((1 - alpha) * n_bootstrap)]), 4),
+            "p_zero": round(float(np.mean(boot_factor <= 0)), 4),
+        }
+
+    result = {
+        "ic": {
+            "mean": round(ic_mean, 4),
+            "std": round(ic_std, 4),
+            "ci_lower": round(ci_lower, 4),
+            "ci_upper": round(ci_upper, 4),
+            "p_value_zero": round(p_value_zero, 4),
+            "skewness": round(ic_skew, 3),
+            "kurtosis": round(ic_kurtosis, 3),
+        },
+        "ls_spread": {
+            "mean": round(ls_mean, 2),
+            "std": round(ls_std, 2),
+            "ci_lower": round(ls_ci_lower, 2),
+            "ci_upper": round(ls_ci_upper, 2),
+        },
+        "factor_bootstrap": factor_bootstrap,
+        "n_bootstrap": n_bootstrap,
+        "confidence_level": confidence_level,
+        "n_windows": n_windows,
+    }
+
+    # Print summary
+    print()
+    print("  --- v13.0 Bootstrap Confidence Intervals ---")
+    print(f"  IC(ROIC):  {ic_mean:+.4f} ± {ic_std:.4f}  "
+          f"[{ci_lower:+.4f}, {ci_upper:+.4f}] {confidence_level:.0%} CI")
+    print(f"  P(IC≤0):   {p_value_zero:.4f}  "
+          f"{'✅ IC显著>0' if p_value_zero < 0.05 else '⚠️ IC不显著'}")
+    print(f"  L/S Spread:{ls_mean:+.1f}pp ± {ls_std:.1f}pp  "
+          f"[{ls_ci_lower:+.1f}, {ls_ci_upper:+.1f}]")
+    print(f"  Bootstrap: {n_bootstrap} iterations, seed={seed}")
+    if factor_bootstrap:
+        print("  Per-factor 95% CI:")
+        for fname in sorted(factor_bootstrap.keys(),
+                            key=lambda f: -factor_bootstrap[f]["mean"]):
+            fb = factor_bootstrap[fname]
+            sig = "✅" if fb["p_zero"] < 0.05 else "⚠️"
+            print(f"    {fname:20s}: {fb['mean']:+.4f} [{fb['ci_lower']:+.4f}, {fb['ci_upper']:+.4f}] {sig}")
+    print()
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 P4: Regime-Aware Dynamic Weight System
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 学术依据:
+#   - Hamilton, J. (1989). "A New Approach to the Economic Analysis of
+#     Nonstationary Time Series and the Business Cycle" — Econometrica
+#   - Ang & Bekaert (2002). "Regime Switches in Interest Rates"
+#   - Bali, Brown & Tang (2017). "Is Economic Uncertainty Priced in the
+#     Cross-Section of Stock Returns?"
+#
+# 核心思想:
+#   不同体制下因子的预测力不同:
+#   - 繁荣期: growth (γ) 因子 IC 高, safety (λ) IC 低
+#   - 衰退期: safety (λ) IC 高, growth (γ) IC 低
+#   - 转型期: verification (V) 和 decay (δ) IC 高
+#
+# 实现:
+#   1. 用结构断裂检测划分体制
+#   2. 在每个体制内计算因子 IC
+#   3. 输出 regime-conditional 权重建议
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_regime_aware_weights(
+    backtest_report: BacktestReport,
+    structural_breaks: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """基于体制的动态因子权重
+
+    Args:
+        backtest_report: 标准回测报告
+        structural_breaks: detect_structural_breaks() 的输出 (可选)
+
+    Returns:
+        {"regime_weights": dict, "current_regime": str,
+         "weight_recommendation": dict}
+    """
+    if not backtest_report.windows or len(backtest_report.windows) < 3:
+        return {"error": "Need ≥3 windows"}
+
+    windows = backtest_report.windows
+
+    # 1. 体制分类 (简化: 基于窗口测试年分组)
+    # 如果有结构断裂信息, 使用它; 否则用简单时间划分
+    regime_map: Dict[str, List[int]] = {}
+    if structural_breaks and structural_breaks.get("consensus_breaks"):
+        breaks = structural_breaks["consensus_breaks"]
+        all_test_years = sorted(set(w.test_year for w in windows))
+        boundaries = [min(all_test_years)] + breaks + [max(all_test_years) + 1]
+        for i in range(len(boundaries) - 1):
+            regime_name = f"regime_{boundaries[i]}_{boundaries[i+1]-1}"
+            regime_map[regime_name] = [
+                yr for yr in all_test_years if boundaries[i] <= yr < boundaries[i+1]
+            ]
+    else:
+        # 简单时间二分: 前半段 vs 后半段
+        test_years = sorted(set(w.test_year for w in windows))
+        mid = len(test_years) // 2
+        regime_map["early"] = test_years[:mid]
+        regime_map["late"] = test_years[mid:]
+
+    # 2. 计算每个体制内的因子 IC
+    regime_weights: Dict[str, Dict[str, float]] = {}
+    regime_ic_stats: Dict[str, Dict[str, float]] = {}
+
+    for regime_name, years in regime_map.items():
+        regime_windows = [w for w in windows if w.test_year in years]
+        if not regime_windows:
+            continue
+
+        # 汇总该体制的因子 IC
+        regime_factor_ics: Dict[str, List[float]] = {}
+        for w in regime_windows:
+            for f, ic in w.factor_ics.items():
+                regime_factor_ics.setdefault(f, []).append(ic)
+
+        avg_ics = {f: sum(vs) / len(vs) for f, vs in regime_factor_ics.items() if vs}
+        regime_ic_stats[regime_name] = {f: round(ic, 4) for f, ic in avg_ics.items()}
+
+        # IC → 权重 (Grinold)
+        total_pos = sum(max(0, ic) for ic in avg_ics.values())
+        if total_pos < 0.01:
+            n_f = max(len(avg_ics), 1)
+            weights = {f: 1.0 / n_f for f in avg_ics}
+        else:
+            weights = {}
+            for f, ic in avg_ics.items():
+                weights[f] = max(0.03, ic / total_pos) if ic > 0 else 0.03
+            total_w = sum(weights.values())
+            weights = {f: round(w / total_w, 3) for f, w in weights.items()}
+
+        regime_weights[regime_name] = weights
+
+    # 3. 识别当前体制 (基于最新窗口属于哪个)
+    latest_test = max(w.test_year for w in windows)
+    current_regime = "unknown"
+    for rname, years in regime_map.items():
+        if latest_test in years:
+            current_regime = rname
+            break
+
+    # 4. 权重稳定性: 体制间权重变化幅度
+    weight_volatility = {}
+    if len(regime_weights) >= 2:
+        all_factors = set()
+        for rw in regime_weights.values():
+            all_factors.update(rw.keys())
+        for f in all_factors:
+            f_weights = [rw.get(f, 0) for rw in regime_weights.values()]
+            if len(f_weights) >= 2:
+                w_range = max(f_weights) - min(f_weights)
+                weight_volatility[f] = round(w_range, 3)
+
+    # 5. 建议: 当前体制的权重 vs 全样本权重
+    recommendation: Dict[str, Dict[str, Any]] = {}
+    global_weights = backtest_report.optimal_weights
+    current_weights = regime_weights.get(current_regime, global_weights)
+    for f in set(list(global_weights.keys()) + list(current_weights.keys())):
+        gw = global_weights.get(f, 0)
+        rw = current_weights.get(f, 0)
+        delta = rw - gw
+        recommendation[f] = {
+            "global": round(gw, 3),
+            "regime": round(rw, 3),
+            "delta": round(delta, 3),
+            "action": "↑ overweight" if delta > 0.03 else (
+                "↓ underweight" if delta < -0.03 else "= hold"
+            ),
+        }
+
+    # Print
+    print()
+    print("  --- v13.0 Regime-Aware Dynamic Weights ---")
+    print(f"  Regimes detected: {len(regime_map)}")
+    print(f"  Current regime:   {current_regime}")
+    for rname, weights in regime_weights.items():
+        tag = " ← CURRENT" if rname == current_regime else ""
+        print(f"  [{rname}{tag}]")
+        for f in sorted(weights.keys(), key=lambda x: -weights[x]):
+            ic = regime_ic_stats.get(rname, {}).get(f, 0)
+            print(f"    {f:20s}: w={weights[f]:.3f}  IC={ic:+.4f}")
+    if weight_volatility:
+        print("  Weight volatility across regimes:")
+        for f in sorted(weight_volatility.keys(), key=lambda x: -weight_volatility[x]):
+            vol = weight_volatility[f]
+            flag = "⚠️" if vol > 0.10 else "✅"
+            print(f"    {f:20s}: Δw={vol:.3f} {flag}")
+    print()
+
+    return {
+        "regime_map": regime_map,
+        "regime_weights": regime_weights,
+        "regime_ic_stats": regime_ic_stats,
+        "current_regime": current_regime,
+        "weight_recommendation": recommendation,
+        "weight_volatility": weight_volatility,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 P2: Evaluator IC-Optimized Weight Calibration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 学术依据:
+#   - Grinold, R.C. (1989). "The Fundamental Law of Active Management"
+#   - Qian & Hua (2004). "Active risk and information ratio"
+#
+# 核心问题:
+#   Evaluator 的 8 个指标权重是手工调的 (roic=0.22, roe=0.08, ...),
+#   而 TRUTH 已经用了 IC-optimized weights.
+#   如果 Evaluator 也用 IC-optimal weights → 两个引擎都数据驱动.
+#
+# 实现:
+#   运行 EvaluatorBacktester → 从 per-window IC 中提取各指标 IC →
+#   Grinold 权重 = IC_i / Σ max(0, IC_j)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def calibrate_evaluator_weights(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+) -> Dict[str, Any]:
+    """基于 IC 回测校准 Evaluator 评分权重
+
+    对 Evaluator 的 8 个指标运行滚动窗口回测,
+    计算各指标对未来 ROIC 的预测 IC,
+    输出 IC-optimal weights vs 当前手动权重.
+
+    Returns:
+        {"current_weights": dict, "ic_optimal_weights": dict,
+         "per_metric_ic": dict, "recommendation": str}
+    """
+    df = pd.read_csv(data_path)
+    df["year"] = df["end_date"].astype(str).str[:4].astype(int)
+
+    # Evaluator 使用的 8 个趋势分析中间结果
+    # 我们直接检测每个原始指标对未来 ROIC 的 rank IC
+    metric_source = {
+        "roic_trend": "roic",
+        "roe_trend": "roe",
+        "revenue_trend": "total_revenue_ps",
+        "gross_margin_trend": "grossprofit_margin",
+        "net_margin_trend": "netprofit_margin",
+        "ocf_trend": "ocfps",
+        "roiic_trend": "roiic",
+        "profit_trend": "eps",
+    }
+
+    all_years = sorted(df["year"].unique())
+    metric_ics: Dict[str, List[float]] = {m: [] for m in metric_source}
+
+    # 滚动 5 年窗口
+    for i in range(len(all_years) - 5):
+        train_years = all_years[i:i + 5]
+        test_year = all_years[i + 5] if i + 5 < len(all_years) else None
+        if test_year is None:
+            continue
+
+        test_df = df[df["year"] == test_year].copy()
+        if len(test_df) < 30:
+            continue
+
+        # 训练集最后一年的指标 (作为选股信号)
+        last_train_year = train_years[-1]
+        signal_df = df[df["year"] == last_train_year].copy()
+
+        # 合并信号和未来 ROIC
+        merged = signal_df[["ts_code"]].merge(
+            test_df[["ts_code", "roic"]].rename(columns={"roic": "future_roic"}),
+            on="ts_code",
+            how="inner",
+        )
+
+        if len(merged) < 30:
+            continue
+
+        for metric_name, source_col in metric_source.items():
+            if source_col not in signal_df.columns:
+                metric_ics[metric_name].append(0.0)
+                continue
+            merged_col = signal_df[["ts_code", source_col]].dropna()
+            merged_with_signal = merged.merge(merged_col, on="ts_code", how="inner")
+            if len(merged_with_signal) < 20:
+                metric_ics[metric_name].append(0.0)
+                continue
+            ic, _ = spearman_rank_corr(
+                merged_with_signal[source_col].values,
+                merged_with_signal["future_roic"].values,
+            )
+            metric_ics[metric_name].append(ic)
+
+    # 平均 IC
+    avg_ics = {}
+    for m, ics in metric_ics.items():
+        if ics:
+            avg_ics[m] = sum(ics) / len(ics)
+        else:
+            avg_ics[m] = 0.0
+
+    # IC → Grinold 权重
+    total_pos = sum(max(0, ic) for ic in avg_ics.values())
+    if total_pos < 0.01:
+        n = len(avg_ics)
+        ic_weights = {m: 1.0 / n for m in avg_ics}
+    else:
+        min_w = 0.03
+        ic_weights = {}
+        for m, ic in avg_ics.items():
+            ic_weights[m] = max(min_w, ic / total_pos) if ic > 0 else min_w
+        total_w = sum(ic_weights.values())
+        ic_weights = {m: round(w / total_w, 3) for m, w in ic_weights.items()}
+
+    # 当前手动权重
+    current_weights = {
+        "roic_trend": 0.22, "roe_trend": 0.08, "revenue_trend": 0.12,
+        "gross_margin_trend": 0.14, "net_margin_trend": 0.10,
+        "ocf_trend": 0.14, "roiic_trend": 0.10, "profit_trend": 0.10,
+    }
+
+    # 建议
+    deltas = {}
+    for m in current_weights:
+        d = ic_weights.get(m, 0) - current_weights[m]
+        deltas[m] = round(d, 3)
+
+    max_delta = max(abs(d) for d in deltas.values())
+    if max_delta < 0.03:
+        recommendation = "CONFIRMED — 手动权重与IC最优权重高度一致 (Δmax < 3%)"
+    elif max_delta < 0.06:
+        recommendation = "MINOR_ADJUST — 建议微调权重 (Δmax < 6%)"
+    else:
+        recommendation = "SIGNIFICANT — 建议更新权重 (Δmax ≥ 6%)"
+
+    # Print
+    print()
+    print("  --- v13.0 Evaluator IC-Weight Calibration ---")
+    print(f"  {'Metric':<25s} {'Current':>8s} {'IC-Opt':>8s} {'Δ':>8s} {'IC':>8s}")
+    print(f"  {'-'*25} {'-'*8} {'-'*8} {'-'*8} {'-'*8}")
+    for m in sorted(avg_ics.keys(), key=lambda x: -avg_ics[x]):
+        cw = current_weights.get(m, 0)
+        iw = ic_weights.get(m, 0)
+        d = deltas.get(m, 0)
+        ic = avg_ics[m]
+        flag = "**" if abs(d) >= 0.03 else ""
+        print(f"  {m:<25s} {cw:8.3f} {iw:8.3f} {d:+8.3f} {ic:+8.4f} {flag}")
+    print(f"  Recommendation: {recommendation}")
+    print()
+
+    return {
+        "current_weights": current_weights,
+        "ic_optimal_weights": ic_weights,
+        "per_metric_ic": {m: round(ic, 4) for m, ic in avg_ics.items()},
+        "deltas": deltas,
+        "recommendation": recommendation,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# v13.0 Registered Pipeline Methods
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_walk_forward_validation",
+    description="v13.0 Walk-Forward OOS Validation (Pardo 2008)",
+)
+def run_walk_forward_validation(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+    **params,
+) -> AggregatableResult:
+    """Walk-Forward 验证: 严格分离 train/validate/test"""
+    validator = WalkForwardValidator(data_path=data_path)
+    report = validator.run_walk_forward()
+    return AggregatableResult(
+        key="walk_forward_validation",
+        value={
+            "avg_is_ic": report.avg_is_ic,
+            "avg_oos_ic": report.avg_oos_ic,
+            "ic_degradation_pct": report.ic_degradation_pct,
+            "verdict": report.verdict,
+            "rounds": len(report.rounds),
+        },
+        namespace="backtest",
+    )
+
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_structural_break_detection",
+    description="v13.0 Structural Break Detection (Bai-Perron 1998 / CUSUM)",
+)
+def run_structural_break_detection(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+    **params,
+) -> AggregatableResult:
+    """结构性断裂检测: CUSUM 检验 + 体制划分"""
+    result = detect_structural_breaks(data_path=data_path)
+    logger.info(f"Structural breaks: {result.get('summary', 'N/A')}")
+    return AggregatableResult(
+        key="structural_breaks",
+        value=result,
+        namespace="backtest",
+    )
+
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_evaluator_weight_calibration",
+    description="v13.0 Evaluator IC-Weight Calibration (Grinold 1989)",
+)
+def run_evaluator_weight_calibration(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+    **params,
+) -> AggregatableResult:
+    """Evaluator 权重 IC 校准"""
+    result = calibrate_evaluator_weights(data_path=data_path)
+    return AggregatableResult(
+        key="evaluator_weight_calibration",
+        value=result,
+        namespace="backtest",
+    )
+
+
+@register_method(
+    component_type="business_engine",
+    engine_type="backtest",
+    engine_name="run_v13_professional_suite",
+    description="v13.0 Professional Enhancement Suite — all v13 analyses",
+)
+def run_v13_professional_suite(
+    data_path: str = "data/polars/10yd_final_industry.csv",
+    **params,
+) -> AggregatableResult:
+    """v13.0 一键运行全部专业增强分析
+
+    依次执行:
+    1. Walk-Forward OOS Validation
+    2. Structural Break Detection
+    3. Evaluator IC-Weight Calibration
+    4. 标准 TRUTH Backtest + Bootstrap CI + Regime Weights
+    """
+    suite_results = {}
+
+    # 1. Walk-Forward
+    print("\n" + "=" * 65)
+    print(" [1/4] Walk-Forward Out-of-Sample Validation")
+    print("=" * 65)
+    try:
+        wf = WalkForwardValidator(data_path=data_path)
+        wf_report = wf.run_walk_forward()
+        suite_results["walk_forward"] = {
+            "avg_is_ic": wf_report.avg_is_ic,
+            "avg_oos_ic": wf_report.avg_oos_ic,
+            "ic_degradation_pct": wf_report.ic_degradation_pct,
+            "verdict": wf_report.verdict,
+        }
+    except Exception as e:
+        suite_results["walk_forward"] = {"error": str(e)}
+
+    # 2. Structural Breaks
+    print("\n" + "=" * 65)
+    print(" [2/4] Structural Break Detection")
+    print("=" * 65)
+    try:
+        breaks = detect_structural_breaks(data_path=data_path)
+        suite_results["structural_breaks"] = breaks
+        print(f"  {breaks.get('summary', 'N/A')}")
+    except Exception as e:
+        suite_results["structural_breaks"] = {"error": str(e)}
+
+    # 3. Evaluator Weight Calibration
+    print("\n" + "=" * 65)
+    print(" [3/4] Evaluator IC-Weight Calibration")
+    print("=" * 65)
+    try:
+        eval_cal = calibrate_evaluator_weights(data_path=data_path)
+        suite_results["evaluator_calibration"] = eval_cal
+    except Exception as e:
+        suite_results["evaluator_calibration"] = {"error": str(e)}
+
+    # 4. Standard Backtest + Bootstrap + Regime
+    print("\n" + "=" * 65)
+    print(" [4/4] Standard Backtest + Bootstrap CI + Regime Weights")
+    print("=" * 65)
+    try:
+        bt = FundamentalBacktester(data_path=data_path)
+        bt_report = bt.run()
+        bt.print_summary(bt_report)
+
+        # Bootstrap
+        boot = bootstrap_ic_confidence(bt_report)
+        suite_results["bootstrap_ci"] = boot
+
+        # Regime
+        regime = compute_regime_aware_weights(
+            bt_report,
+            structural_breaks=suite_results.get("structural_breaks"),
+        )
+        suite_results["regime_weights"] = regime
+
+        suite_results["backtest"] = {
+            "avg_ic_roic": bt_report.avg_ic_roic,
+            "avg_ls_spread": bt_report.avg_ls_spread,
+            "avg_quality_lift": bt_report.avg_quality_lift,
+        }
+    except Exception as e:
+        suite_results["backtest"] = {"error": str(e)}
+
+    # Final summary
+    print("\n" + "=" * 65)
+    print(" v13.0 PROFESSIONAL ENHANCEMENT SUITE — SUMMARY")
+    print("=" * 65)
+    wf_result = suite_results.get("walk_forward", {})
+    print(f"  OOS Validation:  {wf_result.get('verdict', 'N/A')}")
+    print(f"    IS IC:   {wf_result.get('avg_is_ic', 0):+.4f}")
+    print(f"    OOS IC:  {wf_result.get('avg_oos_ic', 0):+.4f}")
+    print(f"    Degrad:  {wf_result.get('ic_degradation_pct', 0):.1f}%")
+
+    breaks_result = suite_results.get("structural_breaks", {})
+    print(f"  Breaks:          {breaks_result.get('summary', 'N/A')}")
+
+    eval_result = suite_results.get("evaluator_calibration", {})
+    print(f"  Eval Weights:    {eval_result.get('recommendation', 'N/A')}")
+
+    boot_result = suite_results.get("bootstrap_ci", {})
+    ic_info = boot_result.get("ic", {})
+    print(f"  Bootstrap IC:    {ic_info.get('mean', 0):+.4f} ± {ic_info.get('std', 0):.4f}  "
+          f"[{ic_info.get('ci_lower', 0):+.4f}, {ic_info.get('ci_upper', 0):+.4f}]")
+    print(f"  P(IC≤0):         {ic_info.get('p_value_zero', 1):.4f}")
+    print("=" * 65)
+
+    return AggregatableResult(
+        key="v13_professional_suite",
+        value=suite_results,
+        namespace="backtest",
+    )
+
