@@ -14,8 +14,8 @@ Similar to pluggy's hookspec, this module provides:
 
 from __future__ import annotations
 import inspect
-from typing import Protocol, Any, Dict, Optional, runtime_checkable, Callable, List, Set, Tuple
-from dataclasses import dataclass, field
+from typing import Protocol, Any, Dict, Optional, runtime_checkable, Callable, List, Tuple
+from dataclasses import dataclass
 
 
 # =============================================================================

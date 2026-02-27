@@ -24,11 +24,7 @@ from typing import (
     Generic,
     List,
     Optional,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
-    Union,
     get_args,
     get_origin,
     get_type_hints,
@@ -61,7 +57,6 @@ T = TypeVar("T")
 
 class InjectionError(AggregationError):
     """注入异常基类"""
-    pass
 
 
 class MissingDependencyError(InjectionError):
@@ -123,7 +118,6 @@ class Aggregated(Generic[T]):
     2. 参数名匹配: aggregated_trends → "trends"
     3. 参数名直接匹配: trends → "trends"
     """
-    pass
 
 
 # =============================================================================

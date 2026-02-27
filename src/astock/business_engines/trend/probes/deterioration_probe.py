@@ -205,7 +205,7 @@ class DeteriorationProbe:
         config = get_default_config()
         checker = DataQualityChecker(config)
         values_array = checker.ensure_window(values)
-        n = len(values_array)
+        len(values_array)
 
         # 取最近3年数据
         year_n_2, year_n_1, year_n = values_array[-3], values_array[-2], values_array[-1]

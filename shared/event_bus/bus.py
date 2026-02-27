@@ -34,13 +34,9 @@ Features:
     bus.emit(UserCreatedEvent(user_id="123"))
 """
 from __future__ import annotations
-import asyncio
-from dataclasses import dataclass, field
 from typing import (
-    Callable, Optional, List, Any, Dict, Set, TypeVar,
-    Union, TYPE_CHECKING, overload
+    Callable, Optional, List, Any, Dict, TypeVar, Union
 )
-from datetime import datetime
 from collections import defaultdict
 import logging
 import threading
@@ -50,18 +46,15 @@ import functools
 
 # 本地导入
 from .config import EventBusConfig
-from .models import HandlerInfo, EmitResult, EventPriority, EventBusStats
+from .models import HandlerInfo, EmitResult, EventBusStats
 from .specs import HookSpec, HookSpecRegistry
 from .dead_letter import DeadEvent, DeadLetterQueue
 from .historic import HistoricEventStore
 from .middleware import (
-    Middleware, MiddlewarePipeline, MiddlewareContext,
-    LoggingMiddleware, TracingMiddleware, RetryMiddleware,
-    TimeoutMiddleware, MetricsMiddleware, CircuitBreakerMiddleware
+    Middleware, MiddlewarePipeline
 )
 from .subscription import (
-    Subscription, CompositeDisposable, SubscriptionManager,
-    Disposable
+    Subscription, SubscriptionManager
 )
 
 logger = logging.getLogger(__name__)
@@ -577,7 +570,7 @@ class EventBusV6:
 
         # 同步到 HookSpec
         if HookSpecRegistry.has_spec(event_type):
-            spec = HookSpecRegistry.get(event_type)
+            HookSpecRegistry.get(event_type)
             # HookSpec 是不可变的，这里只是记录
             logger.debug(f"📜 Event type marked as historic: {event_type}")
 

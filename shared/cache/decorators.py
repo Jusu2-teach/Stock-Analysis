@@ -11,11 +11,11 @@
 """
 from __future__ import annotations
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, Callable, Optional, TypeVar
 import hashlib
 import inspect
 
-from .core import Cache, CacheKey, get_default_cache
+from .core import Cache, get_default_cache
 
 F = TypeVar('F', bound=Callable[..., Any])
 T = TypeVar('T')
@@ -104,7 +104,7 @@ def cached_property(
                 return compute_something()
     """
     def decorator(method: Callable[[Any], T]) -> property:
-        attr_name = f"_cached_{method.__name__}"
+        f"_cached_{method.__name__}"
 
         @property
         @wraps(method)

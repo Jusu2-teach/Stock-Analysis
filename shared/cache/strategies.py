@@ -12,10 +12,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional
-import time
-import heapq
 
-from .core import CacheEntry, CacheKey
+from .core import CacheEntry
 
 
 class EvictionStrategy(ABC):
@@ -24,20 +22,16 @@ class EvictionStrategy(ABC):
     @abstractmethod
     def should_evict(self, entry: CacheEntry) -> bool:
         """判断是否应该淘汰"""
-        pass
 
     @abstractmethod
     def select_victim(self, entries: Dict[str, CacheEntry]) -> Optional[str]:
         """选择淘汰目标"""
-        pass
 
     def on_access(self, entry: CacheEntry) -> None:
         """访问时回调"""
-        pass
 
     def on_insert(self, entry: CacheEntry) -> None:
         """插入时回调"""
-        pass
 
 
 class LRUStrategy(EvictionStrategy):

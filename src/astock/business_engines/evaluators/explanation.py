@@ -19,11 +19,10 @@ AStock Evaluators v2.0 - 决策解释模块
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import numpy as np
 
 
 class ExplanationLevel(Enum):
@@ -476,48 +475,3 @@ class DecisionExplainer:
             lines.append(f"- {caveat}")
 
         return "\n".join(lines)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 便捷函数
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def quick_explain(
-    decision: str,
-    score: float,
-    factors: List[Dict[str, Any]],
-    company_name: str = "该公司"
-) -> str:
-    """
-    快速生成解释
-
-    Args:
-        decision: "quality" | "average" | "poor" | "veto"
-        score: 评分
-        factors: [{"name": str, "value": float, "contribution": float, "direction": str}, ...]
-        company_name: 公司名称
-
-    Returns:
-        Markdown 格式的解释
-    """
-    explainer = DecisionExplainer(company_name=company_name)
-
-    factor_objs = [
-        Factor(
-            name=f["name"],
-            display_name=FACTOR_DISPLAY_NAMES.get(f["name"], f["name"]),
-            value=f["value"],
-            contribution=f["contribution"],
-            direction=f.get("direction", "neutral")
-        )
-        for f in factors
-    ]
-
-    result = explainer.explain(
-        decision=DecisionType(decision),
-        confidence=0.75,
-        factors=factor_objs,
-        score=score
-    )
-
-    return explainer.format_markdown(result)

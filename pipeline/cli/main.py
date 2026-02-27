@@ -14,8 +14,7 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Type
+from typing import Any, Dict, List, Optional
 
 from ..protocols import MethodResolverProtocol
 
@@ -238,7 +237,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     """执行工作流"""
     from ..config import load_flow
     from ..execution import FlowRunner, RunnerConfig
-    from ..core.container import Container, get_container
+    from ..core.container import get_container
 
     try:
         # 动态加载 MethodResolver（支持通过环境变量配置）

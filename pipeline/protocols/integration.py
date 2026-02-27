@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
@@ -25,18 +24,14 @@ from typing import (
     Callable,
     Dict,
     Generic,
-    Iterator,
     List,
     Optional,
     Protocol,
     Set,
-    Type,
     TypeVar,
-    Union,
     runtime_checkable,
 )
 
-from .core import ExecutionResult, ExecutionStatus, ResolveResult
 
 __all__ = [
     # 方法解析器

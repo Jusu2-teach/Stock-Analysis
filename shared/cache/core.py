@@ -12,8 +12,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar
 import hashlib
 import threading
 import time
@@ -99,32 +98,26 @@ class CacheBackend(ABC):
     @abstractmethod
     def get(self, key: CacheKey) -> Optional[CacheEntry]:
         """获取缓存条目"""
-        pass
 
     @abstractmethod
     def set(self, entry: CacheEntry) -> None:
         """设置缓存条目"""
-        pass
 
     @abstractmethod
     def delete(self, key: CacheKey) -> bool:
         """删除缓存条目"""
-        pass
 
     @abstractmethod
     def exists(self, key: CacheKey) -> bool:
         """检查键是否存在"""
-        pass
 
     @abstractmethod
     def clear(self) -> None:
         """清空缓存"""
-        pass
 
     @abstractmethod
     def size(self) -> int:
         """缓存条目数量"""
-        pass
 
     def get_many(self, keys: list[CacheKey]) -> Dict[CacheKey, CacheEntry]:
         """批量获取"""

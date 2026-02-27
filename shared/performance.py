@@ -21,8 +21,7 @@ import time
 import logging
 import functools
 from typing import Callable, Optional, Dict, Any
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
 
 logger = logging.getLogger(__name__)

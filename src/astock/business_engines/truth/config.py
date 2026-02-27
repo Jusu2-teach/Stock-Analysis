@@ -16,7 +16,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Tuple
 
-from .models import FactorId
 
 
 # ============================================================================

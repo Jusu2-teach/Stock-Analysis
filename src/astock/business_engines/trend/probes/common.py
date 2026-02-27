@@ -1,10 +1,9 @@
 import logging
 import numpy as np
-from typing import List, Optional, Sequence, Tuple, Any
+from typing import List, Optional, Sequence
 from abc import ABC, abstractmethod
 
 from ..models import (
-    DataQualitySummary,
     OutlierDetectionResult,
     TrendWarning,
 )

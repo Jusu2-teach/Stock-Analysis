@@ -20,7 +20,6 @@ import logging
 import threading
 import time
 import uuid
-import weakref
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -31,14 +30,11 @@ from typing import (
     Generic,
     Iterator,
     List,
-    Mapping,
     Optional,
-    Set,
     Tuple,
     Type,
     TypeVar,
     Union,
-    overload,
 )
 
 try:
@@ -81,7 +77,6 @@ T = TypeVar("T")  # Generic type
 
 class AggregationError(Exception):
     """聚合系统基础异常"""
-    pass
 
 
 class KeyConflictError(AggregationError):

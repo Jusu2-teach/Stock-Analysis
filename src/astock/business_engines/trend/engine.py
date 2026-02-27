@@ -28,7 +28,7 @@ except ImportError:
 from orchestrator.decorators.register import register_method
 
 # 🌟 统一命名规范系统 (必需依赖)
-from shared.naming_convention import MetricRegistry, ColumnBuilder
+from shared.naming_convention import MetricRegistry
 
 # 🌟 PDDA 聚合系统 (必需依赖)
 from shared.aggregation import AggregatableResult, AggregationMetadata
@@ -37,7 +37,6 @@ from .core import (
     TrendAnalyzer,
     TrendResultCollector,
     ConfigResolver,
-    get_default_metric_probes,
 )
 from .models import (
     TrendAnalyzerConfig,
@@ -45,7 +44,6 @@ from .models import (
     TrendEvaluationResult,
     TrendSnapshot,
 )
-from .config import get_default_config
 from .derivers import (
     find_deriver,
     check_derivable,

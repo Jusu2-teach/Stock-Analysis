@@ -25,9 +25,8 @@ from __future__ import annotations
 import logging
 import time
 import traceback
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.run import TaskRun
 from ..core.state import TaskState
@@ -35,7 +34,6 @@ from ..core.policy import RetryPolicy, CachePolicy
 from ..core.policy import TimeoutPolicy
 from ..core.middleware import (
     MiddlewareBase as CoreMiddlewareBase,
-    MiddlewareChain as CoreMiddlewareChain,
     MiddlewareAction,
     BaseContext,
 )

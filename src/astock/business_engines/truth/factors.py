@@ -22,20 +22,12 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from .models import FactorId, FactorResult, ProbeInput, TruthWarning, WarningLevel
 from .config import (
     TruthConfig,
-    AlphaFactorConfig,
-    BetaFactorConfig,
-    GammaFactorConfig,
-    PiFactorConfig,
-    LambdaFactorConfig,
-    DeltaFraudFactorConfig,
-    DeltaDecayFactorConfig,
-    VerificationFactorConfig,
 )
 
 

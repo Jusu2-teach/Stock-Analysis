@@ -86,13 +86,11 @@ class BaseDeriver(ABC):
     @abstractmethod
     def metric_name(self) -> str:
         """返回派生指标名称（小写）"""
-        pass
 
     @property
     @abstractmethod
     def required_columns(self) -> Set[str]:
         """返回派生所需的源数据列"""
-        pass
 
     @property
     def description(self) -> str:
@@ -122,7 +120,6 @@ class BaseDeriver(ABC):
         group_column: str
     ) -> str:
         """执行派生逻辑，返回新视图名称"""
-        pass
 
 
 # ============================================================================

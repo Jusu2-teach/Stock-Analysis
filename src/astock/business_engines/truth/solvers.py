@@ -22,8 +22,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Mapping, Tuple
 
 from .models import (
     DynamicThreshold,
@@ -36,9 +36,6 @@ from .models import (
 )
 from .config import (
     TruthConfig,
-    GravitySolverConfig,
-    VelocitySolverConfig,
-    StructureSolverConfig,
 )
 
 
@@ -322,7 +319,6 @@ class GravitySolver:
         """生成人类可读的解释文本"""
         components = result.components or {}
         details = result.details or {}
-        thresholds = result.thresholds or {}
 
         roic_threshold = components.get("roic_threshold", 12.0)
         alpha = components.get("alpha", 0.5)
@@ -397,9 +393,33 @@ class VelocitySolver:
         alpha = get_factor_score(factors, FactorId.ALPHA, 0.5)  # 周期性
 
         components["gamma"] = gamma
+        components["delta_fraud"] = delta_fraud
         components["delta_decay"] = delta_decay
         components["verification"] = verification
         components["alpha"] = alpha
+
+        # ============================================================
+        # 欺诈熔断: 与 GravitySolver 对齐
+        # δ_fraud > 0.7 时增长天花板估算完全不可信
+        # ============================================================
+        if config.fraud_meltdown_enabled and delta_fraud > 0.7:
+            warnings.append(TruthWarning(
+                code="VELOCITY_FRAUD_MELTDOWN",
+                level=WarningLevel.FATAL,
+                title="欺诈熔断触发",
+                message=f"欺诈熵 δ_fraud={delta_fraud:.2f} > 0.7, 增长天花板估算无效",
+                source="velocity_solver",
+                values={"delta_fraud": delta_fraud},
+            ))
+            return SolverResult(
+                solver_id=self.solver_id,
+                ts_code=ts_code,
+                score=0.0,
+                confidence=0.0,
+                thresholds={},
+                components=components,
+                details={"status": "fraud_meltdown"},
+            ), warnings
 
         # ============================================================
         # v5.2: 使用独立信号替代 γ×V 乘积 (消除三重计数)
@@ -463,7 +483,9 @@ class VelocitySolver:
         components["base_growth"] = base_growth
 
         # 因子估计的增长天花板
-        factor_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100 - decay_drag * 100
+        fraud_drag = 3.0 * delta_fraud  # 欺诈惩罚: 最大 -3pp (非熔断情况)
+        components["fraud_drag"] = fraud_drag
+        factor_ceiling = base_growth + true_growth_factor * 100 - cycle_tolerance * 100 - decay_drag * 100 - fraud_drag
         factor_ceiling = clamp(factor_ceiling, 0.0, 50.0)
         components["factor_ceiling"] = factor_ceiling
 

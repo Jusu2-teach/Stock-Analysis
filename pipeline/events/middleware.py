@@ -21,7 +21,6 @@ Pipeline Events Middleware - 可组合的事件处理中间件
 
 from __future__ import annotations
 
-import functools
 import logging
 import threading
 import time

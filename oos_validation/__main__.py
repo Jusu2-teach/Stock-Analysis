@@ -123,7 +123,7 @@ def main():
 
     # 运行
     validator = OOSValidator(base_dir, config)
-    results = validator.run()
+    validator.run()
 
     # 终端摘要
     print()

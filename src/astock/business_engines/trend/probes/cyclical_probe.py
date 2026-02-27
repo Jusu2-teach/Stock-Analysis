@@ -45,7 +45,6 @@ from dataclasses import dataclass, field
 
 from ..models import CyclicalPatternResult, TrendWarning
 from ..config import get_default_config
-from .common import DataQualityChecker
 
 logger = logging.getLogger(__name__)
 

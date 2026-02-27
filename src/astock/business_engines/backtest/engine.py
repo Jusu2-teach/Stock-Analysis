@@ -1635,7 +1635,6 @@ def diagnose_factor_orthogonality(
         return {"error": f"Only {len(rows)} valid rows (need ≥50)"}
 
     # 计算 Spearman 相关矩阵
-    n = len(rows)
     # 构建排名矩阵
     ranked = {fid: [] for fid in factor_ids}
     for row in rows:
@@ -1745,7 +1744,6 @@ def analyze_quality_stability(
         # 使用 IC/quality 数量变化作为稳定性代理
         ic_change = abs(w_curr.ic_roic - w_prev.ic_roic)
         lift_change = abs(w_curr.quality_lift - w_prev.quality_lift)
-        quality_change = abs(w_curr.n_quality - w_prev.n_quality)
 
         # 近似 Jaccard: 基于质量数量变化 (真实计算需要 ts_code 列表)
         min_q = min(w_curr.n_quality, w_prev.n_quality)
@@ -2153,7 +2151,6 @@ def detect_structural_breaks(
 
         # 检测超越临界值的点
         metric_breaks = []
-        cusum_range = np.max(np.abs(cusum))
         for i in range(1, len(cusum) - 1):
             # 检测 CUSUM 方向改变 (极值点)
             if (abs(cusum[i]) > h * 0.7 and

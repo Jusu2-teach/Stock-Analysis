@@ -33,13 +33,10 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Optional, List, Any, Dict, TypeVar, Generic, Set
+from typing import Callable, Optional, List, Any, Dict, Set
 from datetime import datetime
-from contextlib import contextmanager
 import logging
 import threading
-import time
-import weakref
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -58,13 +55,11 @@ class Disposable(ABC):
         Returns:
             是否成功释放
         """
-        pass
     
     @property
     @abstractmethod
     def is_disposed(self) -> bool:
         """是否已释放"""
-        pass
     
     def __enter__(self):
         return self

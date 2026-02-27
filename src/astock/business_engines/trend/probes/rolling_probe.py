@@ -28,7 +28,7 @@
 
 import logging
 import numpy as np
-from typing import List, Optional
+from typing import List
 
 from ..models import RollingTrendResult, TrendWarning
 from ..config import get_default_config

@@ -31,10 +31,9 @@ from datetime import datetime
 from collections import deque, defaultdict
 import logging
 import threading
-import time
 
 if TYPE_CHECKING:
-    from ..events import Event
+    pass
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, Optional, Union, TYPE_CHECKING
 
 from .core import DataSet, DataSetConfig
 
@@ -135,7 +135,7 @@ class JSONDataSet(DataSet):
         return pd.read_json(self._path, **self._config.load_args)
 
     def _save(self, data: "pd.DataFrame") -> None:
-        import pandas as pd
+        pass
 
         save_args = self._config.save_args.copy()
         if self._lines:

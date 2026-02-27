@@ -25,7 +25,6 @@ class BaseReader(ABC):
     @abstractmethod
     def read(self, path: Union[str, Path], **kwargs) -> Any:
         """读取数据"""
-        pass
 
     @classmethod
     def supports(cls, path: Union[str, Path]) -> bool:

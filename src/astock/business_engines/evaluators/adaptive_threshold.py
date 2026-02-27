@@ -13,10 +13,10 @@ AStock Evaluators v2.0 - 自适应阈值模块
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import yaml
 

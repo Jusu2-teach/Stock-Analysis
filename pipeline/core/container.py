@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 import threading
 import weakref
-from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -34,7 +33,6 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    overload,
 )
 
 logger = logging.getLogger(__name__)

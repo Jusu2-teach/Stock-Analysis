@@ -28,7 +28,7 @@ trend/ 目录是 **纯数学层**，不包含任何业务逻辑：
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Tuple
+from typing import Dict
 import numpy as np
 
 

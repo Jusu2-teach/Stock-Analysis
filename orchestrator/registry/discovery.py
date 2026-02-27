@@ -16,7 +16,7 @@ import logging
 import pkgutil
 from pathlib import Path
 from types import ModuleType
-from typing import Any, List, Optional, Tuple, Callable, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from ..config import RegistryConfig
 from ..models import MethodRegistration

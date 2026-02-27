@@ -30,7 +30,7 @@ import threading
 import time
 
 if TYPE_CHECKING:
-    from ..events import Event
+    pass
 
 logger = logging.getLogger(__name__)
 

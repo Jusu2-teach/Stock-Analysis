@@ -915,10 +915,8 @@ def _cross_sectional_normalize(
         _raw_decays_sorted = sorted(_raw_decays_valid)
         _n_rd = len(_raw_decays_sorted)
         _extreme_threshold = _raw_decays_sorted[int(_n_rd * 0.95)]  # top 5%
-        _severe_threshold = _raw_decays_sorted[int(_n_rd * 0.90)]   # top 10%
-        _moderate_threshold = _raw_decays_sorted[int(_n_rd * 0.80)]  # top 20%
     else:
-        _extreme_threshold, _severe_threshold, _moderate_threshold = 0.70, 0.60, 0.50  # fallback
+        _extreme_threshold = 0.70  # fallback
 
     new_profiles: List[TruthProfile] = []
     n_hard_constrained = 0

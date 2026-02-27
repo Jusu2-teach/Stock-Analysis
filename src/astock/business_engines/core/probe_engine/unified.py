@@ -19,9 +19,8 @@
 from __future__ import annotations
 
 import logging
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Protocol, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, Protocol, TypeVar
 
 import numpy as np
 

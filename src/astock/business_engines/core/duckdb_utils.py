@@ -1,7 +1,7 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-from typing import Union, Tuple, Optional, Any
+from typing import Tuple, Any
 import logging
 
 logger = logging.getLogger(__name__)

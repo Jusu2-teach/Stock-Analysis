@@ -11,7 +11,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 import os
 
 
@@ -22,7 +22,6 @@ class ConfigProvider(ABC):
     @abstractmethod
     def name(self) -> str:
         """提供者名称"""
-        pass
 
     @property
     def priority(self) -> int:
@@ -32,12 +31,10 @@ class ConfigProvider(ABC):
     @abstractmethod
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值"""
-        pass
 
     @abstractmethod
     def has(self, key: str) -> bool:
         """检查键是否存在"""
-        pass
 
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置"""

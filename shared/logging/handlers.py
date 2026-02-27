@@ -56,11 +56,9 @@ class LogHandler(ABC):
         exception: Optional[BaseException] = None,
     ) -> None:
         """发送日志记录"""
-        pass
 
     def close(self) -> None:
         """关闭处理器"""
-        pass
 
 
 class ConsoleHandler(LogHandler):

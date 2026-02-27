@@ -22,16 +22,15 @@ from __future__ import annotations
 
 import logging
 import inspect
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from ..core.run import TaskRun
-from ..core.state import TaskState
-from ..core.container import Container, get_container
+from ..core.container import Container
 from ..catalog import DataCatalog
 from ..events import EventBus, TaskEvents
 from .middleware import ExecutionMiddlewareChain, MiddlewareContext
-from ..protocols import MethodResolverProtocol, MethodInfo
+from ..protocols import MethodResolverProtocol
 from ..aggregation import Collector as AggregationCollector
 from ..aggregation.inject import Injector
 from ..cache.backends import CacheBackend

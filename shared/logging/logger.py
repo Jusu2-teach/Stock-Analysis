@@ -12,7 +12,7 @@
 from __future__ import annotations
 from datetime import datetime
 from enum import IntEnum
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 import threading
 import logging as stdlib_logging
 

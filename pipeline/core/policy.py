@@ -16,7 +16,7 @@ from __future__ import annotations
 import random  # 移到顶部，避免每次调用时导入
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, List, Optional
+from typing import Optional
 
 
 # =============================================================================

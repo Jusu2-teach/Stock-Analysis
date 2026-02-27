@@ -1320,7 +1320,6 @@ class CausalBayesianEvaluator:
                 final_score -= _la_penalty
 
         # 记录交互效应
-        _interaction_total = 0.0  # 简化: 求和统计
         factors.append(Factor(
             name="cross_factor_interactions",
             display_name="v12.0 因子交互引擎",
@@ -1729,7 +1728,7 @@ def run_causal_bayesian_evaluator(
             _mu_posterior = _w * _s + (1.0 - _w) * _mu_prior
 
             # 后验方差 (更新置信度)
-            _var_posterior = 1.0 / (1.0 / _var_prior + 1.0 / _var_data) if _var_data > 0 else _var_prior
+            1.0 / (1.0 / _var_prior + 1.0 / _var_data) if _var_data > 0 else _var_prior
             _posterior_confidence = min(0.95, _conf * (1.0 + 0.10 * (1.0 - _w)))
 
             # z-score (在行业内的相对位置)

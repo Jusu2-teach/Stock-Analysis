@@ -34,22 +34,14 @@ Probe Output Builders
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
     # 避免循环导入
-    from ...trend.models import (
-        LogTrendResult,
-        VolatilityResult,
-        CyclicalPatternResult,
-        RecentDeteriorationResult,
-        RollingTrendResult,
-        RobustTrendResult,
-        InflectionResult,
-    )
+    pass
 
 logger = logging.getLogger(__name__)
 

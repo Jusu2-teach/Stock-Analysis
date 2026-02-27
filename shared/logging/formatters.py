@@ -31,7 +31,6 @@ class Formatter(ABC):
         exception: Optional[BaseException] = None,
     ) -> str:
         """格式化日志记录"""
-        pass
 
 
 class ConsoleFormatter(Formatter):

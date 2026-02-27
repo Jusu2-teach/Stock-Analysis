@@ -11,8 +11,7 @@
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Optional, Type
+from typing import Any, Optional
 import pickle
 import json
 import io
@@ -24,12 +23,10 @@ class Serializer(ABC):
     @abstractmethod
     def serialize(self, value: Any) -> bytes:
         """序列化"""
-        pass
 
     @abstractmethod
     def deserialize(self, data: bytes) -> Any:
         """反序列化"""
-        pass
 
     @property
     def content_type(self) -> str:
@@ -118,7 +115,6 @@ class ParquetSerializer(Serializer):
     def deserialize(self, data: bytes) -> Any:
         try:
             import pyarrow.parquet as pq
-            import pandas as pd
         except ImportError:
             raise ImportError("pyarrow and pandas are required for ParquetSerializer")
 

@@ -10,7 +10,7 @@
 提供线程安全的上下文绑定机制。
 """
 from __future__ import annotations
-from contextvars import ContextVar, copy_context
+from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, Optional

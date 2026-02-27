@@ -23,7 +23,6 @@ import numpy as np
 from scipy import stats
 from typing import List, Dict, Any, Optional, Tuple
 
-from shared.performance import probe_timing
 from ..models import LogTrendResult, TrendWarning, DataQualitySummary, OutlierDetectionResult
 from ..config import TrendAnalysisConfig, get_default_config
 from .common import DataQualityChecker, OutlierDetectorFactory

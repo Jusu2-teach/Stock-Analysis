@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum, auto
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # =============================================================================
 # 状态枚举 - 从 core.state 统一导入，避免重复定义
@@ -244,7 +243,6 @@ class FlowResult:
 # 执行计划类型 - 从 core.dag 统一导入，避免重复定义
 # =============================================================================
 
-from ..core.dag import ExecutionLayer, ExecutionPlan
 
 # 向后兼容：api/types.py 曾经定义了 index 属性，但 core/dag.py 使用 level
 # 如果需要 index 属性，可以使用 layer.level 替代

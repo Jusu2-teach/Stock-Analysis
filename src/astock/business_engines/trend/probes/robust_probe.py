@@ -30,13 +30,11 @@ import logging
 import math
 import numpy as np
 from scipy.stats import theilslopes, norm
-from scipy.special import comb
 from typing import List, Tuple
 
 from ..models import (
     RobustTrendResult,
     TrendWarning,
-    MetricProbeContext,
 )
 from ..config import get_default_config
 

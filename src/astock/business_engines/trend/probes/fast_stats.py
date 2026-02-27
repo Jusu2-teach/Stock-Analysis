@@ -15,7 +15,7 @@
 """
 
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple
 from scipy import stats as scipy_stats
 
 

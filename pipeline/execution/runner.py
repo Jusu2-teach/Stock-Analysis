@@ -23,7 +23,7 @@ from ..core.spec import FlowSpec
 from ..core.run import FlowRun, TaskRun
 from ..core.state import TaskState, FlowState
 from ..core.dag import DAG, ExecutionLayer
-from ..core.container import Container, get_container
+from ..core.container import Container
 from ..catalog import DataCatalog
 from ..events import EventBus, FlowEvents
 from ..core.policy import FailureStrategy

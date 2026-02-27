@@ -24,7 +24,6 @@ class BaseWriter(ABC):
     @abstractmethod
     def write(self, data: Any, path: Union[str, Path], **kwargs) -> None:
         """写入数据"""
-        pass
 
     @classmethod
     def supports(cls, path: Union[str, Path]) -> bool:

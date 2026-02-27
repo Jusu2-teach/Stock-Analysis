@@ -17,13 +17,11 @@ import logging
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     Any,
-    Callable,
     Dict,
-    Generic,
     Iterator,
     List,
     Optional,
@@ -33,7 +31,7 @@ from typing import (
 )
 
 from .entry import DataEntry, EntryKey, EntryStatus, DatasetType, LineageInfo
-from ..events import EventBus, Event, DataEvents
+from ..events import EventBus, DataEvents
 
 logger = logging.getLogger(__name__)
 

@@ -24,10 +24,10 @@ HookSpec 类型安全系统
     )
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import (
     Callable, Dict, List, Optional, Any, Tuple,
-    TypeVar, Generic, Protocol, runtime_checkable, Set
+    TypeVar, Protocol, runtime_checkable
 )
 import inspect
 import logging

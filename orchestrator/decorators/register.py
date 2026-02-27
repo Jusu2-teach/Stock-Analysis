@@ -7,8 +7,7 @@ from ..models import MethodRegistration
 from ..protocols import (
     HookSpecRegistry,
     SignatureValidator,
-    get_protocol_for_component,
-    COMPONENT_PROTOCOLS
+    get_protocol_for_component
 )
 
 logger = logging.getLogger(__name__)

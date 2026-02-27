@@ -27,7 +27,7 @@ from typing import (
 )
 import re
 
-from .spec import FlowSpec, TaskSpec
+from .spec import FlowSpec
 
 
 # =============================================================================

@@ -27,10 +27,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import (
-    Callable, Optional, List, Any, Dict, Set, Coroutine,
-    TypeVar, Union, Awaitable
+    Callable, Optional, List, Any, Dict, Coroutine, TypeVar,
+    Union
 )
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import threading

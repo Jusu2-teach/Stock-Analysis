@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import inspect
 import logging
 import threading
 import time
@@ -40,9 +39,7 @@ from typing import (
     Generic,
     List,
     Optional,
-    Set,
     Tuple,
-    Type,
     TypeVar,
     Union,
 )
@@ -450,7 +447,7 @@ class AsyncMiddlewareChain:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         # 在已运行的循环中，创建 task
-                        future = asyncio.ensure_future(create_next(index + 1))
+                        asyncio.ensure_future(create_next(index + 1))
                         # 同步中间件无法 await，我们需要不同策略
                         # 改为在同步中间件中返回协程
                         raise RuntimeError(

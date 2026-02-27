@@ -6,8 +6,10 @@
 """
 
 import logging
+from pathlib import Path
+
 import pandas as pd
-from typing import Dict, Any, Optional, Union
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +120,6 @@ def store(data: Optional[pd.DataFrame] = None,
 
         logger.info(f"Akshare引擎成功保存 {len(data)} 行数据到: {path} (格式: {format})")
         return data  # 返回原数据以供管道继续使用
-
-    except Exception as e:
-        logger.error(f"Akshare引擎保存数据失败: {e}")
-        return data  # 即使保存失败也返回原数据
 
     except Exception as e:
         logger.error(f"Akshare引擎保存数据失败: {e}")

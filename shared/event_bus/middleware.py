@@ -15,18 +15,15 @@ Features:
 
 from __future__ import annotations
 
-import functools
 import logging
 import time
 import threading
-import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .bus import Event
+    pass
 
 logger = logging.getLogger(__name__)
 

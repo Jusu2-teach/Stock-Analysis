@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, Dict, Iterable, List, Optional, Sequence, Tuple, TYPE_CHECKING, Protocol, Callable
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Sequence, Tuple, TYPE_CHECKING, Protocol
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,6 @@ from .models import (
     TrendSnapshot,
     TrendVector,
     VolatilityResult,
-    TrendWarning,
     TrendField,
     MetricProbeContext,
     TrendAnalyzerConfig,
@@ -44,7 +43,6 @@ from .models import (
     TrendEvaluationResult,
 )
 from .config import (
-    get_default_config,
     DEFAULT_CV_THRESHOLDS,
 )
 
@@ -110,7 +108,6 @@ from .probes.multi_horizon_probe import (
     StructuralBreakDetector,
     MultiHorizonResult,
     StructuralBreakResult,
-    BreakType,
 )
 
 if TYPE_CHECKING:
@@ -949,64 +946,6 @@ class TrendAnalyzer:
             break_effect_size=break_effect,
             data_regime=data_regime,
         )
-
-    # ------------------------------------------------------------------
-    def build_result_row(
-        self,
-        snapshot: TrendSnapshot,
-        include_penalty: bool,
-    ) -> Dict[str, Any]:
-        row: Dict[str, Any] = {self.group_column: snapshot.group_key}
-
-        for col, value in snapshot.extra_fields.items():
-            row[col] = value
-
-        metric_prefix = f"{self.prefix}{snapshot.metric_name}"
-        suffix = self.suffix
-
-        for field in self.field_schema:
-            try:
-                value = field.resolve(snapshot)
-            except AttributeError as exc:
-                self.logger.debug(
-                    "%s 字段%s解析失败: %s",
-                    self.group_key,
-                    field.key,
-                    exc,
-                )
-                value = None
-
-            column_name = f"{metric_prefix}_{field.key}{suffix}"
-            row[column_name] = value
-
-        if include_penalty:
-            penalties = snapshot.evaluation.penalty_details
-            row[f"{metric_prefix}_penalty{suffix}"] = snapshot.evaluation.penalty
-            row[f"{metric_prefix}_penalty_details{suffix}"] = "; ".join(penalties) if penalties else ""
-
-        # Add Strategy Columns
-        strategies = snapshot.evaluation.strategies
-        row[f"{metric_prefix}_strategies{suffix}"] = ",".join(strategies) if strategies else ""
-        row[f"{metric_prefix}_strategy_reasons{suffix}"] = "; ".join(snapshot.evaluation.strategy_reasons) if snapshot.evaluation.strategy_reasons else ""
-
-        # Add specific boolean flags for common strategies
-        for strategy_name in ["high_growth", "turnaround"]:
-             col_name = f"{metric_prefix}_is_{strategy_name}{suffix}"
-             row[col_name] = 1 if strategy_name in strategies else 0
-
-        notes = snapshot.evaluation.auxiliary_notes
-        if notes:
-            row[f"{metric_prefix}_notes{suffix}"] = "; ".join(notes)
-
-        # 多时间窗口分析结果
-        row[f"{metric_prefix}_full_years{suffix}"] = snapshot.full_data_years
-        row[f"{metric_prefix}_trend_years{suffix}"] = snapshot.trend_window_years
-        row[f"{metric_prefix}_has_break{suffix}"] = 1 if snapshot.has_structural_break else 0
-        row[f"{metric_prefix}_break_idx{suffix}"] = snapshot.break_year_index
-        row[f"{metric_prefix}_break_effect{suffix}"] = snapshot.break_effect_size
-        row[f"{metric_prefix}_regime{suffix}"] = snapshot.data_regime
-
-        return row
 
 
 # ============================================================================

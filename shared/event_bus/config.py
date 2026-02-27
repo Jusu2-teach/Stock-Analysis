@@ -1,8 +1,7 @@
 """
 EventBus 配置模块
 """
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 import os
 
 

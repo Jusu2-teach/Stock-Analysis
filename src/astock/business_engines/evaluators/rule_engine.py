@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import ast
 import logging
-import operator
 import re
 from dataclasses import dataclass, field
 from pathlib import Path

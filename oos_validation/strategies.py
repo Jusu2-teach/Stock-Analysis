@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field, replace as dc_replace
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, replace as dc_replace
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -602,7 +602,7 @@ def run_cross_engine_strategy(
     grade_match = metrics.grade_consistency(g_a, g_b)
 
     # 信号对齐百分比
-    common = set(truth_scores.keys()) & set(eval_scores.keys())
+    set(truth_scores.keys()) & set(eval_scores.keys())
     if truth_quality_set:
         signal_aligned = sum(1 for ts in truth_quality_set if ts in eval_quality_set)
         signal_pct = signal_aligned / len(truth_quality_set) * 100

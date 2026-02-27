@@ -793,7 +793,6 @@ def _infer_decision_from_truth(profile: Dict[str, Any]) -> str:
     # 3. 因子驱动的否决  (v4.3 新增)
     #    用因子细节判断结构性崩溃，弥补纯评级映射的盲区
     decay_fd = factors.get("delta_decay") or factors.get("DELTA_DECAY", {})
-    decay_score = decay_fd.get("score", 0) if isinstance(decay_fd, dict) else 0
     fraud_fd = factors.get("delta_fraud") or factors.get("DELTA_FRAUD", {})
     fraud_score = fraud_fd.get("score", 0) if isinstance(fraud_fd, dict) else 0
     gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
@@ -876,7 +875,6 @@ def _infer_lifecycle_from_truth(profile: Dict[str, Any]) -> Tuple[str, float]:
 
     cagr = _get_factor_detail(factors, "gamma", "cagr", 0) or 0
     recent_3y = _get_factor_detail(factors, "gamma", "recent_3y_slope", 0) or 0
-    consec_decline = _get_factor_detail(factors, "delta_decay", "consecutive_decline_years", 0) or 0
     has_deterioration = _get_factor_detail(factors, "delta_decay", "has_deterioration", False)
 
     # α score: 高=周期性强(不稳定), 低=稳定
@@ -888,7 +886,6 @@ def _infer_lifecycle_from_truth(profile: Dict[str, Any]) -> Tuple[str, float]:
 
     # δ_decay score (0~1, 越高越差)
     decay_fd = factors.get("delta_decay") or factors.get("DELTA_DECAY", {})
-    decay_score = decay_fd.get("score", 0) if isinstance(decay_fd, dict) else 0
 
     # γ score (成长动能)
     gamma_fd = factors.get("gamma") or factors.get("GAMMA", {})
@@ -1077,7 +1074,6 @@ def report_truth(
     lines.append("")
     lines.append("| 状态 | 数量 |")
     lines.append("|------|------|")
-    lifecycle_order = ["growth", "emerging", "cash_cow", "mature", "slowing", "declining", "turnaround", "distressed"]
     for lc in sorted(lifecycle_dist.keys(), key=lambda x: -lifecycle_dist[x]):
         label = LIFECYCLE_LABELS.get(lc, lc)
         lines.append(f"| {label} | {lifecycle_dist[lc]} |")
@@ -1091,7 +1087,6 @@ def report_truth(
             lines.append("### 评级 & 信号详情")
             lines.append("")
             if grade_dist:
-                total_g = sum(grade_dist.values())
                 grade_parts = []
                 for g in ["A+", "A", "B+", "B", "C", "D", "F"]:
                     cnt = grade_dist.get(g, 0)
@@ -1661,7 +1656,7 @@ def report_cross_validation(
     # v12.0: 使用增强版 compute_consensus_meta_score
     # 改进: 置信度自适应权重 (TRUTH×50%base + Eval×30%base + F-Score×20%base)
     # 每个公司的实际权重基于引擎内部置信度动态调整
-    from ..backtest.engine import compute_consensus_meta_score, compute_piotroski_fscore
+    from ..backtest.engine import compute_consensus_meta_score
 
     consensus_list = []
     _n_manipulators = 0
@@ -1779,7 +1774,7 @@ def report_cross_validation(
                 if isinstance(fd, dict):
                     gene_parts.append(f"V:{fd.get('score', 0):.2f}")
                     break
-            gene_str = " ".join(gene_parts) if gene_parts else "-"
+            " ".join(gene_parts) if gene_parts else "-"
 
             # 生命周期
             state = ep.get("company_state", "-")
@@ -1999,7 +1994,6 @@ def report_cross_validation(
         # T.R.U.T.H. 评级分布
         truth_summary = truth_result.get("summary", {})
         grade_dist = truth_summary.get("grade_distribution", {})
-        signal_dist = truth_summary.get("signal_distribution", {})
 
         if grade_dist:
             lines.append("### T.R.U.T.H. 评级分布")

@@ -9,8 +9,8 @@
 提供类型安全的配置类。
 """
 from __future__ import annotations
-from dataclasses import dataclass, field, fields, Field as DataField
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Type, TypeVar, get_type_hints
+from dataclasses import dataclass
+from typing import Any, Callable, ClassVar, Dict, Optional, TypeVar, get_type_hints
 import os
 
 T = TypeVar('T')

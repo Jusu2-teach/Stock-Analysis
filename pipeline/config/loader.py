@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Set
 
@@ -44,7 +44,6 @@ logger = logging.getLogger(__name__)
 
 class ConfigSchemaError(ValueError):
     """配置 Schema 验证错误"""
-    pass
 
 
 class ConfigSchemaValidator:

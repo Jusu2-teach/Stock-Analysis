@@ -3,7 +3,6 @@
 =====================
 
 提供业务引擎的核心基础设施：
-- interfaces: 分析引擎接口定义
 - duckdb_utils: DuckDB工具函数
 - probe_engine: 探针引擎（纯数学计算层）
 
@@ -20,7 +19,6 @@
     └─────────────────┴─────────────────┘
 """
 
-from .interfaces import AnalysisResult, ScoreResult, IAnalyzer, IScorer, IReporter
 from .duckdb_utils import _q, _get_duckdb_module, _init_duckdb_and_source
 
 # 统一探针引擎
@@ -47,12 +45,6 @@ from .probe_engine import (
 )
 
 __all__ = [
-    # 接口
-    "AnalysisResult",
-    "ScoreResult",
-    "IAnalyzer",
-    "IScorer",
-    "IReporter",
     # DuckDB工具
     "_q",
     "_get_duckdb_module",

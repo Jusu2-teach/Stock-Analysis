@@ -13,7 +13,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
-import hashlib
 import time
 
 
@@ -87,12 +86,10 @@ class DataSet(ABC, Generic[T]):
     @abstractmethod
     def _load(self) -> T:
         """加载数据（子类实现）"""
-        pass
 
     @abstractmethod
     def _save(self, data: T) -> None:
         """保存数据（子类实现）"""
-        pass
 
     def _describe(self) -> Dict[str, Any]:
         """描述数据集"""

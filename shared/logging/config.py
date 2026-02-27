@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Literal, Optional
 import os
 import json
 
-from .logger import LogLevel, configure_logging
+from .logger import configure_logging
 from .formatters import Formatter, ConsoleFormatter, ColoredFormatter, JSONFormatter
 from .handlers import (
     LogHandler, ConsoleHandler, FileHandler,

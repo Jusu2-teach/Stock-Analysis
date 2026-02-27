@@ -22,12 +22,10 @@ class ConfigLoader(ABC):
     @abstractmethod
     def load(self, source: Any, **kwargs) -> Dict[str, Any]:
         """加载配置"""
-        pass
 
     @abstractmethod
     def can_load(self, source: Any) -> bool:
         """检查是否可以加载此源"""
-        pass
 
 
 class YAMLLoader(ConfigLoader):

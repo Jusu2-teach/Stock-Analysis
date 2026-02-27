@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
@@ -26,7 +25,6 @@ from typing import (
     Protocol,
     Type,
     TypeVar,
-    Union,
     runtime_checkable,
 )
 

@@ -18,7 +18,7 @@ Math Utilities - 数学工具函数
     weighted_avg = ewma(np.array([1, 2, 3, 4, 5]))  # -> 加权平均
 """
 
-from typing import Optional, Union, Sequence
+from typing import Optional, Sequence
 import numpy as np
 
 
