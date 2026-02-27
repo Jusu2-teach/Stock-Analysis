@@ -589,24 +589,36 @@ class StructuralBreakDetector:
         计算近似p值
 
         使用F分布的近似，但针对小样本进行调整
+
+        v13.2 升级: 使用 scipy F 分布精确计算 p 值 (替代硬编码映射)
+        原硬编码映射在 n=5~10 小样本下误差约 ±0.05,
+        现在用 F(k, n-2k) 分布的生存函数获得精确 p 值。
         """
         if f_stat <= 0:
             return 1.0
 
-        # 简化：使用经验映射
-        # F > 6.0 通常 p < 0.05
-        # F > 4.0 通常 p < 0.10
-        # F > 2.5 通常 p < 0.20
-        if f_stat > 8.0:
-            return 0.01
-        elif f_stat > 6.0:
-            return 0.05
-        elif f_stat > 4.0:
-            return 0.10
-        elif f_stat > 2.5:
-            return 0.20
-        else:
+        # v13.2: 精确 F 分布 p 值 (Chow test: k=2 参数, df2=n-2k)
+        k = 2  # 线性回归参数数 (斜率 + 截距)
+        df2 = n - 2 * k
+        if df2 <= 0:
+            # 自由度不足, 退化到保守估计
             return 0.50
+        try:
+            from scipy.stats import f as f_dist
+            p_value = float(f_dist.sf(f_stat, k, df2))
+            return max(0.001, min(1.0, p_value))  # clamp 防止数值极端
+        except (ImportError, Exception):
+            # scipy 不可用时的 fallback (保留原始映射保证鲁棒性)
+            if f_stat > 8.0:
+                return 0.01
+            elif f_stat > 6.0:
+                return 0.05
+            elif f_stat > 4.0:
+                return 0.10
+            elif f_stat > 2.5:
+                return 0.20
+            else:
+                return 0.50
 
     def _compute_effect_size(
         self, pre_stats: Dict[str, float], post_stats: Dict[str, float]

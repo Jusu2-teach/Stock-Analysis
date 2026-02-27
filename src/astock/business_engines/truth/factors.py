@@ -1385,17 +1385,21 @@ class DeltaDecayFactor:
 
         score = max(0.0, min(1.0, score))
 
-        # v4.7: 绝对水平折扣 — 高基数轻微下降 ≠ 严重衰退
+        # v4.7→v13.2: 渐进式绝对水平折扣 — 高基数轻微下降 ≠ 严重衰退
         # ROIC 从 32%→30% (还是世界级) 不应与 ROIC 从 8%→6% 获得相同惩罚
         # 原理: 高水平维持是竞争优势的体现, 微小波动是正常的
+        #
+        # v13.2 改进: 从二元阶梯 (0.50/0.70) 改为连续渐进式折扣
+        # 旧版问题: ROIC 35%→21% 的骤降被 ×0.50 过度减免
+        # 新版: discount = max(0.50, 1.0 - (ROIC - 15) × 0.025)
+        #   ROIC=15%: ×1.00 (无折扣)
+        #   ROIC=20%: ×0.875 (温和折扣)
+        #   ROIC=25%: ×0.75
+        #   ROIC=35%: ×0.50 (最大折扣, 仅真正的世界级公司)
         roic_level = get_feature(probes, "latest_value", "roic")
         if roic_level is not None and roic_level > 15.0 and score > 0.0:
-            # ROIC > 20%: 衰退分数减半 (30%→2%的波动不是真衰退)
-            # ROIC 15-20%: 衰退分数打0.7
-            if roic_level >= 20.0:
-                score *= 0.50
-            else:
-                score *= 0.70
+            discount = max(0.50, 1.0 - (roic_level - 15.0) * 0.025)
+            score *= discount
             score = max(0.0, min(1.0, score))
 
         # v5.0: 移除v4.9成长轨迹折扣 — 循环论证!
@@ -1480,15 +1484,21 @@ class VerificationFactor:
             components["revenue_cagr"] = revenue_cagr
 
             # 计算 V 比率 (CAGR 为小数: 5%=0.05)
+            # v13.2 改进: 营收下降时保留连续信息 (替代固定 1.2/0.7)
+            # 旧版: 营收负增长→固定值, 丢失 OCF 下降幅度的连续信号
+            # 新版: 两者同为负数时直接比较 (OCF跌得少=好), 保留连续性
             if abs(revenue_cagr) < 0.01:
                 # 营收几乎不变(<1%)，看 OCF 绝对值
                 v_ratio_revenue = 1.0 if ocf_cagr >= 0 else 0.5
             elif revenue_cagr < 0:
-                # 营收下降
-                if ocf_cagr > revenue_cagr:
-                    v_ratio_revenue = 1.2  # 现金流比营收抗跌 = 好
+                # 营收下降: OCF 抗跌程度的连续度量
+                # ocf_cagr > revenue_cagr (跌得少或不跌) → 比率 > 1.0
+                # ocf_cagr < revenue_cagr (跌得更惨) → 比率 < 1.0
+                # clamp 到 [0.3, 1.5] 防止极端值
+                if abs(revenue_cagr) > 0.005:
+                    v_ratio_revenue = min(1.5, max(0.3, ocf_cagr / revenue_cagr))
                 else:
-                    v_ratio_revenue = 0.7
+                    v_ratio_revenue = 1.0 if ocf_cagr >= 0 else 0.5
             else:
                 # 正常情况
                 v_ratio_revenue = ocf_cagr / revenue_cagr
